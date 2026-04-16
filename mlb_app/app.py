@@ -3,6 +3,7 @@ FastAPI application for the MLB prediction engine.
 
 Endpoints:
     GET  /matchups?date=YYYY-MM-DD       Daily matchups with win probabilities
+    GET  /matchup/{game_pk}              Full matchup detail (lineups, splits, outings)
     GET  /pitcher/{player_id}            Pitcher aggregate + pitch arsenal
     GET  /batter/{player_id}             Batter aggregate + platoon splits
     POST /predict                        Score a specific pitcher vs batter
@@ -31,6 +32,7 @@ except ImportError:
 
 from .database import get_engine, create_tables, get_session
 from .matchup_generator import generate_matchups_for_date
+from .matchup_detail import build_matchup_detail
 from .db_utils import (
     get_pitcher_aggregate,
     get_batter_aggregate,
@@ -83,6 +85,50 @@ def create_app():
         with Session() as session:
             try:
                 return generate_matchups_for_date(session, date)
+            except Exception as exc:
+                raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.get("/matchup/{game_pk}")
+    def get_matchup_detail(game_pk: int) -> Dict[str, Any]:
+        """Return a fully assembled matchup detail for a single game.
+
+        Combines live lineup data from the MLB Stats API with pitcher
+        aggregates, pitch arsenal, batter splits, team splits, recent
+        pitcher outings, and win probability from the database into a
+        single response.
+
+        Path parameters
+        ---------------
+        game_pk : int
+            The MLB game primary key (e.g. ``745528``).
+
+        Returns
+        -------
+        dict
+            See the module docstring in ``matchup_detail.py`` for the
+            complete response schema.
+
+        Raises
+        ------
+        404
+            If the MLB Stats API returns no game data for the given PK.
+        500
+            If an unexpected error occurs while assembling the response.
+        """
+        Session = _get_session()
+        with Session() as session:
+            try:
+                return build_matchup_detail(session, game_pk)
+            except RuntimeError as exc:
+                # MLB API call failed — treat as not found if it looks like a
+                # 404-style error, otherwise surface as a 500.
+                msg = str(exc)
+                if "404" in msg or "not found" in msg.lower():
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"Game {game_pk} not found: {msg}",
+                    )
+                raise HTTPException(status_code=500, detail=msg)
             except Exception as exc:
                 raise HTTPException(status_code=500, detail=str(exc))
 

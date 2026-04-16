@@ -40,6 +40,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from .database import (
+    StatcastEvent,
     PitcherAggregate,
     BatterAggregate,
     PitchArsenal,
@@ -167,10 +168,132 @@ def get_team_split(
     )
 
 
+def get_pitcher_game_log(
+    session: Session, pitcher_id: int, limit: int = 5
+) -> List[dict]:
+    """Return per-game pitching stats for a pitcher's most recent outings.
+
+    Groups ``StatcastEvent`` rows by ``game_date`` and computes inning-level
+    counting stats for each appearance.  Only games where the pitcher recorded
+    at least one pitch are included.
+
+    Stat definitions
+    ~~~~~~~~~~~~~~~~
+    * **ip** – innings pitched, approximated as ``(outs_recorded / 3)``.
+      An out is counted for any ``events`` value that ends a plate appearance
+      without a hit or walk (strikeouts, ground-outs, fly-outs, etc.).
+    * **h** – hits (single, double, triple, home_run).
+    * **r / er** – runs and earned runs are not tracked in Statcast pitch-level
+      data, so both are set to ``None``.
+    * **k** – strikeouts (``strikeout`` or ``strikeout_double_play``).
+    * **bb** – walks (``walk``).
+    * **hr** – home runs (``home_run``).
+
+    Parameters
+    ----------
+    session : Session
+        Active SQLAlchemy database session.
+    pitcher_id : int
+        MLBAM identifier for the pitcher.
+    limit : int, optional
+        Maximum number of recent games to return (default: 5).
+
+    Returns
+    -------
+    list of dict
+        Each element represents one game appearance::
+
+            {
+                "date": "2026-04-11",
+                "ip": 6.0,
+                "h": 5,
+                "r": None,
+                "er": None,
+                "k": 7,
+                "bb": 2,
+                "hr": 0,
+            }
+
+        Returned in reverse chronological order (most recent first).
+    """
+    # Fetch all pitch-level events for this pitcher, ordered by date desc.
+    # We pull only the columns we need to keep the query light.
+    rows = (
+        session.query(StatcastEvent.game_date, StatcastEvent.events)
+        .filter(StatcastEvent.pitcher_id == pitcher_id)
+        .order_by(StatcastEvent.game_date.desc())
+        .all()
+    )
+
+    if not rows:
+        return []
+
+    # Group by game_date (rows are already sorted desc, so we process in order)
+    from collections import defaultdict
+
+    games_events: dict = defaultdict(list)
+    for game_date, events in rows:
+        games_events[game_date].append(events or "")
+
+    # Terminal plate-appearance events that record an out
+    OUT_EVENTS = {
+        "strikeout",
+        "strikeout_double_play",
+        "field_out",
+        "force_out",
+        "grounded_into_double_play",
+        "double_play",
+        "triple_play",
+        "fielders_choice_out",
+        "sac_fly",
+        "sac_bunt",
+        "sac_fly_double_play",
+        "caught_stealing_2b",
+        "caught_stealing_3b",
+        "caught_stealing_home",
+        "pickoff_1b",
+        "pickoff_2b",
+        "pickoff_3b",
+        "other_out",
+    }
+    HIT_EVENTS = {"single", "double", "triple", "home_run"}
+    K_EVENTS = {"strikeout", "strikeout_double_play"}
+    BB_EVENTS = {"walk", "intent_walk"}
+    HR_EVENTS = {"home_run"}
+
+    game_log: List[dict] = []
+    # Iterate in reverse-chronological order (defaultdict preserves insertion order
+    # in Python 3.7+, and rows were fetched desc)
+    for game_date in list(games_events.keys())[:limit]:
+        event_list = games_events[game_date]
+        outs = sum(1 for e in event_list if e in OUT_EVENTS)
+        hits = sum(1 for e in event_list if e in HIT_EVENTS)
+        ks = sum(1 for e in event_list if e in K_EVENTS)
+        bbs = sum(1 for e in event_list if e in BB_EVENTS)
+        hrs = sum(1 for e in event_list if e in HR_EVENTS)
+        ip = round(outs / 3, 1)
+
+        game_log.append(
+            {
+                "date": game_date.isoformat() if hasattr(game_date, "isoformat") else str(game_date),
+                "ip": ip,
+                "h": hits,
+                "r": None,   # not available at pitch level
+                "er": None,  # not available at pitch level
+                "k": ks,
+                "bb": bbs,
+                "hr": hrs,
+            }
+        )
+
+    return game_log
+
+
 __all__ = [
     "get_pitcher_aggregate",
     "get_batter_aggregate",
     "get_pitch_arsenal",
     "get_player_split",
     "get_team_split",
+    "get_pitcher_game_log",
 ]
