@@ -15,6 +15,10 @@ fetch_team_records(season)
     Obtain win/loss records and run differentials for all teams in
     the specified season.
 
+fetch_standings(season)
+    Retrieve AL/NL division standings with per-team W-L, PCT, GB,
+    last-10 record, and current streak.
+
 fetch_team_splits(team_id, season, split)
     Fetch hitting statistics for a team against left‑ or
     right‑handed pitching.  Split should be ``"vsLHP"`` or ``"vsRHP"``.
@@ -118,6 +122,131 @@ def fetch_team_records(season: str) -> Dict[int, Dict[str, float]]:
             }
     return records
 
+
+
+def fetch_standings(season: int) -> Dict[str, Dict[str, List[Dict]]]:
+    """Retrieve AL/NL division standings for a given season.
+
+    Calls the MLB Stats API standings endpoint and organises the results
+    into a nested structure keyed by league (``"AL"`` / ``"NL"``) and
+    division (``"East"``, ``"Central"``, ``"West"``).  Teams within each
+    division are listed in the order returned by the API (i.e. by
+    division rank).
+
+    Parameters
+    ----------
+    season : int
+        Season year (e.g., 2025).
+
+    Returns
+    -------
+    dict
+        Structure::
+
+            {
+                "AL": {
+                    "East":    [<team_record>, ...],
+                    "Central": [<team_record>, ...],
+                    "West":    [<team_record>, ...],
+                },
+                "NL": { ... },
+            }
+
+        Each ``team_record`` dict contains:
+
+        * ``team_id``  – MLBAM team identifier (int)
+        * ``name``     – team name (str)
+        * ``w``        – wins (int)
+        * ``l``        – losses (int)
+        * ``pct``      – win percentage rounded to three decimal places (float)
+        * ``gb``       – games behind division leader; ``0`` for the leader (float)
+        * ``l10``      – last-10-games record, e.g. ``"6-4"`` (str)
+        * ``streak``   – current streak, e.g. ``"W2"`` or ``"L1"`` (str)
+
+    Raises
+    ------
+    RuntimeError
+        If the HTTP request fails or the API response cannot be parsed.
+    """
+    url = (
+        f"https://statsapi.mlb.com/api/v1/standings"
+        f"?leagueId=103,104&season={season}"
+    )
+    try:
+        resp = requests.get(url, timeout=20)
+        resp.raise_for_status()
+    except requests.RequestException as exc:
+        raise RuntimeError(f"Failed to fetch standings data: {exc}") from exc
+
+    data = resp.json()
+
+    # League IDs: 103 = AL, 104 = NL
+    league_map = {103: "AL", 104: "NL"}
+
+    # Division names contain "East", "Central", or "West"
+    def _division_label(name: str) -> str:
+        for label in ("East", "Central", "West"):
+            if label in name:
+                return label
+        return name  # fallback: return raw name
+
+    standings: Dict[str, Dict[str, List[Dict]]] = {
+        "AL": {"East": [], "Central": [], "West": []},
+        "NL": {"East": [], "Central": [], "West": []},
+    }
+
+    for div_record in data.get("records", []):
+        league_id = div_record.get("league", {}).get("id")
+        league_name = league_map.get(league_id)
+        if league_name is None:
+            continue
+
+        division_name = _division_label(
+            div_record.get("division", {}).get("nameShort", "")
+            or div_record.get("division", {}).get("name", "")
+        )
+
+        teams: List[Dict] = []
+        for tr in div_record.get("teamRecords", []):
+            team = tr.get("team", {})
+            wins = tr.get("wins", 0)
+            losses = tr.get("losses", 0)
+            total = wins + losses
+            pct = round(wins / total, 3) if total > 0 else 0.0
+
+            # Games behind: the leader has "gamesBack" of "-"; treat as 0
+            gb_raw = tr.get("gamesBack", "-")
+            try:
+                gb = float(gb_raw)
+            except (TypeError, ValueError):
+                gb = 0.0
+
+            # Last-10 record lives inside the "records" list
+            l10 = ""
+            for rec in tr.get("records", {}).get("splitRecords", []):
+                if rec.get("type") == "lastTen":
+                    l10 = f"{rec.get('wins', 0)}-{rec.get('losses', 0)}"
+                    break
+
+            # Streak: e.g. {"streakType": "wins", "streakNumber": 2, "streakCode": "W2"}
+            streak = tr.get("streak", {}).get("streakCode", "")
+
+            teams.append(
+                {
+                    "team_id": team.get("id"),
+                    "name": team.get("name", ""),
+                    "w": wins,
+                    "l": losses,
+                    "pct": pct,
+                    "gb": gb,
+                    "l10": l10,
+                    "streak": streak,
+                }
+            )
+
+        standings[league_name][division_name] = teams
+
+    return standings
 
 
 def fetch_team_splits(team_id: int, season: int, split: str) -> Optional[Dict[str, float]]:

@@ -2,6 +2,8 @@
 FastAPI application for the MLB prediction engine.
 
 Endpoints:
+    GET  /health                         Service health check
+    GET  /standings?season=YYYY          AL/NL division standings
     GET  /matchups?date=YYYY-MM-DD       Daily matchups with win probabilities
     GET  /pitcher/{player_id}            Pitcher aggregate + pitch arsenal
     GET  /batter/{player_id}             Batter aggregate + platoon splits
@@ -38,6 +40,7 @@ from .db_utils import (
     get_player_split,
 )
 from .scoring import score_individual_matchup
+from .data_ingestion import fetch_standings
 
 
 def _get_session():
@@ -74,6 +77,29 @@ def create_app():
     @app.get("/health")
     def health():
         return {"status": "ok", "version": "0.4.0"}
+
+    @app.get("/standings")
+    def get_standings(season: Optional[int] = None) -> Dict[str, Any]:
+        """Return AL/NL division standings for the given season.
+
+        Query Parameters
+        ----------------
+        season : int, optional
+            Season year (e.g. 2025).  Defaults to the current calendar year.
+
+        Returns
+        -------
+        dict
+            Nested dict keyed by league (``"AL"`` / ``"NL"``) and division
+            (``"East"`` / ``"Central"`` / ``"West"``).  Each division contains
+            a list of team records with ``team_id``, ``name``, ``w``, ``l``,
+            ``pct``, ``gb``, ``l10``, and ``streak``.
+        """
+        resolved_season = season or datetime.date.today().year
+        try:
+            return fetch_standings(resolved_season)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
 
     @app.get("/matchups")
     def list_matchups(date: Optional[str] = None) -> List[Dict[str, Any]]:
