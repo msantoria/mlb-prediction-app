@@ -21,6 +21,10 @@ entities used throughout the ETL and analysis pipeline:
 * ``PitcherAggregate`` and ``BatterAggregate`` – rolling or seasonal
   aggregates derived from ``StatcastEvent`` using functions defined in
   ``aggregation.py``.
+* ``PitcherGameLog`` – one row per pitching appearance with box-score line
+  (IP, H, R, ER, K, BB, HR, pitches) used to build game-log tables.
+* ``TeamRoster`` – season roster entries for pitchers, flagged as starter or
+  reliever, with ERA/WHIP/K%/BB% used to build rotation and bullpen sections.
 * ``Matchup`` – one row per game capturing the teams, pitchers and the
   computed feature vector for that game.
 
@@ -246,6 +250,71 @@ class BatterAggregate(Base):
 
     __table_args__ = (
         Index("ix_batter_aggregates_date_batter", "end_date", "batter_id"),
+    )
+
+
+class PitcherGameLog(Base):
+    """Per-game pitching log for a single pitcher appearance.
+
+    Each row represents one game start or relief appearance, capturing
+    traditional box-score pitching lines (IP, hits, runs, earned runs,
+    strikeouts, walks, home runs, pitch count) alongside the game date,
+    season, opponent team abbreviation, and win/loss/no-decision result.
+    """
+
+    __tablename__ = "pitcher_game_log"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    pitcher_id: int = Column(Integer, nullable=False, index=True)
+    season: int = Column(Integer, nullable=False, index=True)
+    game_date: date = Column(Date, nullable=False, index=True)
+    opponent: Optional[str] = Column(String(5), nullable=True)
+    result: Optional[str] = Column(String(2), nullable=True)   # 'W', 'L', 'ND'
+    ip: Optional[float] = Column(Float, nullable=True)
+    hits: Optional[int] = Column(Integer, nullable=True)
+    runs: Optional[int] = Column(Integer, nullable=True)
+    earned_runs: Optional[int] = Column(Integer, nullable=True)
+    strikeouts: Optional[int] = Column(Integer, nullable=True)
+    walks: Optional[int] = Column(Integer, nullable=True)
+    home_runs: Optional[int] = Column(Integer, nullable=True)
+    pitches: Optional[int] = Column(Integer, nullable=True)
+
+    __table_args__ = (
+        Index("ix_pitcher_game_log_pitcher_date", "pitcher_id", "game_date"),
+    )
+
+
+class TeamRoster(Base):
+    """Roster membership linking a player to a team for a given season.
+
+    Tracks whether a player is a starter (``is_starter=True``) or reliever
+    (``is_starter=False``) along with basic season-level pitching stats used
+    to populate the rotation and bullpen sections of the team profile page.
+    Non-pitchers are excluded; only pitching-role players are stored here.
+    """
+
+    __tablename__ = "team_roster"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    team_id: int = Column(Integer, nullable=False, index=True)
+    season: int = Column(Integer, nullable=False, index=True)
+    pitcher_id: int = Column(Integer, nullable=False, index=True)
+    player_name: Optional[str] = Column(String(100), nullable=True)
+    is_starter: bool = Column(Boolean, nullable=False, default=True)
+    wins: Optional[int] = Column(Integer, nullable=True)
+    losses: Optional[int] = Column(Integer, nullable=True)
+    era: Optional[float] = Column(Float, nullable=True)
+    whip: Optional[float] = Column(Float, nullable=True)
+    k_pct: Optional[float] = Column(Float, nullable=True)
+    bb_pct: Optional[float] = Column(Float, nullable=True)
+    xfip: Optional[float] = Column(Float, nullable=True)
+    ip: Optional[float] = Column(Float, nullable=True)
+    saves: Optional[int] = Column(Integer, nullable=True)
+    holds: Optional[int] = Column(Integer, nullable=True)
+    next_start: Optional[date] = Column(Date, nullable=True)  # starters only
+
+    __table_args__ = (
+        Index("ix_team_roster_season_team", "season", "team_id"),
     )
 
 
