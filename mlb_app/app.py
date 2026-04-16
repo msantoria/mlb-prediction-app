@@ -52,6 +52,7 @@ class PredictRequest(BaseModel):  # type: ignore[misc]
     batter_id: int
     season: Optional[int] = None
     pitcher_throws: str = "R"
+    venue_name: Optional[str] = None
 
 
 def create_app():
@@ -165,10 +166,12 @@ def create_app():
                 batter_id=req.batter_id,
                 season=season,
                 pitcher_throws=req.pitcher_throws,
+                venue_name=req.venue_name,
             )
         return {
             "pitcher_id": req.pitcher_id,
             "batter_id": req.batter_id,
+            "venue": req.venue_name,
             **result,
         }
 

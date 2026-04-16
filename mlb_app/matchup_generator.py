@@ -18,7 +18,7 @@ from .db_utils import (
     get_player_split,
     get_team_split,
 )
-from .scoring import compute_win_probability
+from .scoring import compute_win_probability, get_park_factor, park_logit_adjustment
 
 
 def _format_pitcher_features(session: Session, pitcher_id: int) -> Dict[str, Optional[float]]:
@@ -97,12 +97,23 @@ def generate_matchups_for_date(session: Session, date_str: str) -> List[Dict]:
         home_record = game.get("home", {}).get("leagueRecord", {})
         away_record = game.get("away", {}).get("leagueRecord", {})
 
+        venue_name = game.get("_venue")
+        pf = get_park_factor(venue_name)
+        park_adj = park_logit_adjustment(venue_name)
+        adj_sign = "+" if park_adj >= 0 else ""
+        ballpark_factor = {
+            "hr_factor": pf["hr_factor"],
+            "run_factor": pf["run_factor"],
+            "adjustment": f"{adj_sign}{park_adj:.2f}",
+        }
+
         if not all([home_team, away_team, home_pitcher_id, away_pitcher_id]):
             # Still include games without probable pitchers — just no win probs
             matchup = {
                 "game_date": date_str,
                 "game_time": game.get("_game_date"),
-                "venue": game.get("_venue"),
+                "venue": venue_name,
+                "ballpark_factor": ballpark_factor,
                 "status": game.get("_status"),
                 "home_team_id": home_team,
                 "away_team_id": away_team,
@@ -131,12 +142,14 @@ def generate_matchups_for_date(session: Session, date_str: str) -> List[Dict]:
             home_team_id=home_team,
             away_team_id=away_team,
             season=season,
+            venue_name=venue_name,
         )
 
         matchup = {
             "game_date": date_str,
             "game_time": game.get("_game_date"),
-            "venue": game.get("_venue"),
+            "venue": venue_name,
+            "ballpark_factor": ballpark_factor,
             "status": game.get("_status"),
             "home_team_id": home_team,
             "away_team_id": away_team,
