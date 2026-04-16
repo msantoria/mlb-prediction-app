@@ -25,6 +25,7 @@ from .database import (
     get_engine,
     create_tables,
     get_session,
+    AtBatOutcome,
     StatcastEvent,
     PitchArsenal,
     PitcherAggregate,
@@ -278,6 +279,115 @@ def _try_load_arsenal_leaderboard(session, season: int) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# AtBatOutcome materialisation
+# ---------------------------------------------------------------------------
+
+def _load_at_bat_outcomes(session, date_str: str) -> None:
+    """Materialise at-bat outcomes for all batters who appeared on *date_str*.
+
+    For each batter active on the given date, this function groups the
+    raw ``StatcastEvent`` rows by (batter_id, game_date, pitcher_id) and
+    identifies the terminal pitch of each plate appearance — the last
+    pitch in the sequence that carries a non-null ``events`` value.  It
+    then writes (or skips if already present) an :class:`AtBatOutcome`
+    row with a sequential ``ab_number`` that is unique and monotonically
+    increasing across all games for that batter.
+
+    The sequential ``ab_number`` is computed as::
+
+        max(existing ab_number for batter) + 1, 2, 3, …
+
+    so that new rows appended on each ETL run extend the all-time
+    sequence without gaps.
+
+    :param session: Active database session.
+    :param date_str: Date string in ``YYYY-MM-DD`` format.
+    """
+    target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+
+    # Fetch all events for the target date
+    events = (
+        session.query(StatcastEvent)
+        .filter(StatcastEvent.game_date == target_date)
+        .order_by(StatcastEvent.batter_id, StatcastEvent.pitcher_id, StatcastEvent.id)
+        .all()
+    )
+    if not events:
+        log.info("No StatcastEvents found for %s; skipping AtBatOutcome load", date_str)
+        return
+
+    # Group into PA sessions: (batter_id, pitcher_id) → list of pitches
+    # We use insertion order (id) as the within-PA sequence proxy.
+    from collections import defaultdict
+    pa_groups: dict = defaultdict(list)
+    for ev in events:
+        pa_groups[(ev.batter_id, ev.pitcher_id)].append(ev)
+
+    # For each batter, find the current max ab_number so we can extend it
+    batter_ids = list({ev.batter_id for ev in events})
+    ab_counters: dict = {}
+    for batter_id in batter_ids:
+        max_row = (
+            session.query(AtBatOutcome.ab_number)
+            .filter(AtBatOutcome.batter_id == batter_id)
+            .order_by(AtBatOutcome.ab_number.desc())
+            .first()
+        )
+        ab_counters[batter_id] = max_row.ab_number if max_row else 0
+
+    # Check which (batter_id, pitcher_id, game_date) combos are already loaded
+    existing_keys: set = set()
+    existing_rows = (
+        session.query(
+            AtBatOutcome.batter_id,
+            AtBatOutcome.pitcher_id,
+            AtBatOutcome.game_date,
+        )
+        .filter(AtBatOutcome.game_date == target_date)
+        .all()
+    )
+    for row in existing_rows:
+        existing_keys.add((row.batter_id, row.pitcher_id, row.game_date))
+
+    new_outcomes = []
+    for (batter_id, pitcher_id), pitches in pa_groups.items():
+        if (batter_id, pitcher_id, target_date) in existing_keys:
+            continue  # already materialised for this date
+
+        # The terminal pitch is the last pitch that has a non-null events value.
+        # If none carry an event (e.g. mid-game data), fall back to the last pitch.
+        terminal = next(
+            (p for p in reversed(pitches) if p.events),
+            pitches[-1],
+        )
+
+        ab_counters[batter_id] += 1
+        new_outcomes.append(
+            AtBatOutcome(
+                game_date=target_date,
+                batter_id=batter_id,
+                pitcher_id=pitcher_id,
+                ab_number=ab_counters[batter_id],
+                result=terminal.events,
+                pitch_count=len(pitches),
+                exit_velocity=terminal.launch_speed,
+                launch_angle=terminal.launch_angle,
+                last_pitch_type=terminal.pitch_type,
+                pitcher_hand=terminal.p_throws,
+            )
+        )
+
+    if new_outcomes:
+        session.bulk_save_objects(new_outcomes)
+        session.commit()
+        log.info(
+            "AtBatOutcome: inserted %d rows for %s", len(new_outcomes), date_str
+        )
+    else:
+        log.info("AtBatOutcome: no new rows for %s", date_str)
+
+
+# ---------------------------------------------------------------------------
 # Main ETL orchestration
 # ---------------------------------------------------------------------------
 
@@ -313,7 +423,11 @@ def run_etl_for_date(date_str: str) -> None:
             if not arsenal_loaded:
                 _load_pitch_arsenal_from_df(session, pitcher_id, df, season)
 
+        # Materialise at-bat outcomes for fast AB-based rolling queries
+        _load_at_bat_outcomes(session, date_str)
+
         log.info("ETL complete for %s", date_str)
+
 
 
 def run_backfill(days: int = 30) -> None:

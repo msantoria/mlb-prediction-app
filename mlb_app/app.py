@@ -2,10 +2,13 @@
 FastAPI application for the MLB prediction engine.
 
 Endpoints:
-    GET  /matchups?date=YYYY-MM-DD       Daily matchups with win probabilities
-    GET  /pitcher/{player_id}            Pitcher aggregate + pitch arsenal
-    GET  /batter/{player_id}             Batter aggregate + platoon splits
-    POST /predict                        Score a specific pitcher vs batter
+    GET  /matchups?date=YYYY-MM-DD            Daily matchups with win probabilities
+    GET  /pitcher/{player_id}                 Pitcher aggregate + pitch arsenal
+    GET  /pitcher/{player_id}/rolling         Game-based rolling metrics (L15G–L150G)
+    GET  /batter/{player_id}                  Batter aggregate + platoon splits
+    GET  /batter/{player_id}/rolling          AB-based rolling metrics (L10–L1000)
+    GET  /batter/{player_id}/at-bats          Paginated at-bat history
+    POST /predict                             Score a specific pitcher vs batter
 
 Run:
     uvicorn mlb_app.app:app --reload
@@ -29,13 +32,15 @@ except ImportError:
     BaseModel = object
     _FASTAPI = False
 
-from .database import get_engine, create_tables, get_session
+from .database import get_engine, create_tables, get_session, AtBatOutcome
 from .matchup_generator import generate_matchups_for_date
 from .db_utils import (
     get_pitcher_aggregate,
     get_batter_aggregate,
     get_pitch_arsenal,
     get_player_split,
+    get_pitcher_rolling_by_games,
+    get_batter_rolling_by_abs,
 )
 from .scoring import score_individual_matchup
 
@@ -172,7 +177,132 @@ def create_app():
             **result,
         }
 
-    return app
+    @app.get("/pitcher/{player_id}/rolling")
+    def get_pitcher_rolling(
+        player_id: int, windows: str = "15,30,60,90,120,150"
+    ) -> Dict[str, Any]:
+        """Return game-based rolling metrics for a pitcher.
 
+        ``windows`` is a comma-separated list of game counts.  Each entry
+        produces a key ``L{n}G`` in the response (e.g. ``L15G``, ``L30G``).
+        Metrics for each window are computed on-the-fly from
+        ``StatcastEvent`` data.
+        """
+        try:
+            game_counts = [int(w.strip()) for w in windows.split(",") if w.strip()]
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail="windows must be a comma-separated list of integers",
+            )
+        if not game_counts:
+            raise HTTPException(status_code=422, detail="windows must not be empty")
+
+        Session = _get_session()
+        with Session() as session:
+            result: Dict[str, Any] = {}
+            for n in game_counts:
+                metrics = get_pitcher_rolling_by_games(session, player_id, n)
+                result[f"L{n}G"] = metrics if metrics else None
+            if all(v is None for v in result.values()):
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"No Statcast data found for pitcher {player_id}",
+                )
+        return {"player_id": player_id, "rolling": result}
+
+    @app.get("/batter/{player_id}/rolling")
+    def get_batter_rolling(
+        player_id: int, windows: str = "10,25,50,100,200,400,1000"
+    ) -> Dict[str, Any]:
+        """Return AB-based rolling metrics for a batter.
+
+        ``windows`` is a comma-separated list of at-bat counts.  Each entry
+        produces a key ``L{n}`` in the response (e.g. ``L10``, ``L25``).
+        Metrics are computed on-the-fly from ``StatcastEvent`` rows where
+        ``events IS NOT NULL``.
+        """
+        try:
+            ab_counts = [int(w.strip()) for w in windows.split(",") if w.strip()]
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail="windows must be a comma-separated list of integers",
+            )
+        if not ab_counts:
+            raise HTTPException(status_code=422, detail="windows must not be empty")
+
+        Session = _get_session()
+        with Session() as session:
+            result: Dict[str, Any] = {}
+            for n in ab_counts:
+                metrics = get_batter_rolling_by_abs(session, player_id, n)
+                result[f"L{n}"] = metrics if metrics else None
+            if all(v is None for v in result.values()):
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"No Statcast data found for batter {player_id}",
+                )
+        return {"player_id": player_id, "rolling": result}
+
+    @app.get("/batter/{player_id}/at-bats")
+    def get_batter_at_bats(
+        player_id: int, n: int = 50, offset: int = 0
+    ) -> Dict[str, Any]:
+        """Return a paginated list of recent at-bats for a batter.
+
+        Results are ordered chronologically (oldest first within the page).
+        Use ``offset`` to page through the history; ``n`` controls page size.
+
+        Each item contains: ``ab_number``, ``date``, ``pitcher_id``,
+        ``result``, ``exit_velocity``, ``launch_angle``, ``last_pitch_type``.
+        """
+        if n < 1 or n > 500:
+            raise HTTPException(
+                status_code=422, detail="n must be between 1 and 500"
+            )
+        if offset < 0:
+            raise HTTPException(
+                status_code=422, detail="offset must be >= 0"
+            )
+
+        Session = _get_session()
+        with Session() as session:
+            # Fetch the most-recent (n + offset) rows then slice to the page
+            rows = (
+                session.query(AtBatOutcome)
+                .filter(AtBatOutcome.batter_id == player_id)
+                .order_by(AtBatOutcome.ab_number.desc())
+                .limit(n + offset)
+                .all()
+            )
+            if not rows:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"No at-bat data found for batter {player_id}",
+                )
+            # Apply offset and reverse to chronological order
+            page = list(reversed(rows[offset : offset + n]))
+            at_bats = [
+                {
+                    "ab_number": r.ab_number,
+                    "date": r.game_date.isoformat() if r.game_date else None,
+                    "pitcher_id": r.pitcher_id,
+                    "result": r.result,
+                    "exit_velocity": r.exit_velocity,
+                    "launch_angle": r.launch_angle,
+                    "last_pitch_type": r.last_pitch_type,
+                }
+                for r in page
+            ]
+        return {
+            "player_id": player_id,
+            "n": n,
+            "offset": offset,
+            "count": len(at_bats),
+            "at_bats": at_bats,
+        }
+
+    return app
 
 app = create_app()

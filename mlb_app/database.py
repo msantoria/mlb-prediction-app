@@ -21,6 +21,9 @@ entities used throughout the ETL and analysis pipeline:
 * ``PitcherAggregate`` and ``BatterAggregate`` – rolling or seasonal
   aggregates derived from ``StatcastEvent`` using functions defined in
   ``aggregation.py``.
+* ``AtBatOutcome`` – one row per plate appearance materialising the
+  terminal-pitch outcome and Statcast metrics for fast AB-based rolling
+  queries.
 * ``Matchup`` – one row per game capturing the teams, pitchers and the
   computed feature vector for that game.
 
@@ -246,6 +249,36 @@ class BatterAggregate(Base):
 
     __table_args__ = (
         Index("ix_batter_aggregates_date_batter", "end_date", "batter_id"),
+    )
+
+
+class AtBatOutcome(Base):
+    """Materialised at-bat session data for fast AB-based rolling queries.
+
+    Each row represents a single plate appearance (at-bat) for a batter,
+    capturing the terminal pitch outcome and key Statcast metrics.  The
+    ``ab_number`` field is a sequential, all-time counter per batter so
+    that AB-based rolling windows (e.g. last 50 ABs) can be retrieved
+    with a simple ``ORDER BY ab_number DESC LIMIT n`` query without
+    scanning the full ``statcast_events`` table.
+    """
+
+    __tablename__ = "at_bat_outcomes"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    game_date: date = Column(Date, nullable=False, index=True)
+    batter_id: int = Column(Integer, nullable=False, index=True)
+    pitcher_id: int = Column(Integer, nullable=False, index=True)
+    ab_number: int = Column(Integer, nullable=False)  # sequential AB number for this batter (all-time)
+    result: Optional[str] = Column(String(50), nullable=True)  # single/double/triple/home_run/strikeout/walk/field_out/...
+    pitch_count: Optional[int] = Column(Integer, nullable=True)
+    exit_velocity: Optional[float] = Column(Float, nullable=True)
+    launch_angle: Optional[float] = Column(Float, nullable=True)
+    last_pitch_type: Optional[str] = Column(String(5), nullable=True)
+    pitcher_hand: Optional[str] = Column(String(1), nullable=True)  # p_throws from last pitch
+
+    __table_args__ = (
+        Index("ix_at_bat_outcomes_batter_ab", "batter_id", "ab_number"),
     )
 
 
