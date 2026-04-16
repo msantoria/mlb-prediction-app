@@ -19,6 +19,12 @@ fetch_team_splits(team_id, season, split)
     Fetch hitting statistics for a team against left‑ or
     right‑handed pitching.  Split should be ``"vsLHP"`` or ``"vsRHP"``.
 
+fetch_live_lineup(game_pk)
+    Retrieve the confirmed batting order for both teams in a game
+    from the liveData endpoint.  Returns a dict with ``"away"`` and
+    ``"home"`` keys, each containing an ordered list of batter dicts
+    (``batter_id``, ``name``, ``position``, ``batting_order``).
+
 Note
 ----
 These functions interact with the public MLB Stats API and do not
@@ -31,6 +37,9 @@ from __future__ import annotations
 from typing import Dict, List, Optional
 
 import requests
+
+
+MLB_STATS_BASE = "https://statsapi.mlb.com/api/v1"
 
 
 
@@ -189,4 +198,84 @@ def fetch_team_splits(team_id: int, season: int, split: str) -> Optional[Dict[st
             result[k] = float(stat.get(k, 0))
         except (TypeError, ValueError):
             result[k] = 0.0
+    return result
+
+
+
+def fetch_live_lineup(game_pk: int) -> Dict[str, List[Dict]]:
+    """Fetch the confirmed live lineup for a game from the MLB Stats API.
+
+    Calls the liveData endpoint and extracts the boxscore batting order for
+    both the away and home teams.  This data is typically available
+    approximately one hour before first pitch.
+
+    Parameters
+    ----------
+    game_pk : int
+        The MLB game primary key (e.g., ``745456``).
+
+    Returns
+    -------
+    dict
+        A dict with keys ``"away"`` and ``"home"``, each containing a list
+        of batter dicts with the following fields:
+
+        * ``batter_id`` – MLBAM player identifier.
+        * ``name`` – Player's full name.
+        * ``position`` – Fielding position abbreviation (e.g., ``"1B"``).
+        * ``batting_order`` – Batting order slot (1–9).
+
+        Players without a batting order entry (e.g., pitchers in the
+        bullpen) are excluded.  If the request fails, ``{"away": [],
+        "home": []}`` is returned.
+
+    Raises
+    ------
+    RuntimeError
+        If the HTTP request fails or the API response cannot be parsed.
+    """
+    url = f"{MLB_STATS_BASE}/game/{game_pk}/liveData"
+    try:
+        resp = requests.get(url, timeout=20)
+        resp.raise_for_status()
+    except requests.RequestException as exc:
+        raise RuntimeError(
+            f"Failed to fetch live lineup for game {game_pk}: {exc}"
+        ) from exc
+
+    data = resp.json()
+    boxscore = data.get("liveData", {}).get("boxscore", {})
+    teams = boxscore.get("teams", {})
+
+    result: Dict[str, List[Dict]] = {"away": [], "home": []}
+
+    for side in ("away", "home"):
+        players = teams.get(side, {}).get("players", {})
+        batters: List[Dict] = []
+        for player_key, player_data in players.items():
+            batting_order_raw = player_data.get("battingOrder")
+            if not batting_order_raw:
+                # Player is not in the batting order (e.g., bullpen arm)
+                continue
+            try:
+                # battingOrder is a string like "100", "200", … "900"
+                batting_order = int(str(batting_order_raw).strip()) // 100
+            except (TypeError, ValueError):
+                continue
+
+            person = player_data.get("person", {})
+            position = player_data.get("position", {})
+            batters.append(
+                {
+                    "batter_id": person.get("id"),
+                    "name": person.get("fullName", ""),
+                    "position": position.get("abbreviation", ""),
+                    "batting_order": batting_order,
+                }
+            )
+
+        # Sort by batting order slot so callers receive an ordered list
+        batters.sort(key=lambda b: b["batting_order"])
+        result[side] = batters
+
     return result
