@@ -10,7 +10,7 @@ from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from . import data_ingestion
+from .etl import fetch_schedule
 from .db_utils import (
     get_pitcher_aggregate,
     get_batter_aggregate,
@@ -84,7 +84,7 @@ def generate_matchups_for_date(session: Session, date_str: str) -> List[Dict]:
     except ValueError:
         raise ValueError("date_str must be in YYYY-MM-DD format")
 
-    schedule = data_ingestion.fetch_schedule(date_str)
+    schedule = fetch_schedule(date_str)
     season = date_obj.year
     matchups = []
 
