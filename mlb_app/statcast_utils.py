@@ -50,7 +50,10 @@ def fetch_pitch_arsenal_leaderboard(year: int, min_pitches: int = 50) -> pd.Data
     """
     if not _PYBASEBALL_AVAILABLE:
         raise ImportError("pybaseball is required. Run: pip install pybaseball")
-    df = pybaseball.statcast_pitcher_arsenal_stats(year, minP=min_pitches)
+    try:
+        df = pybaseball.statcast_pitcher_arsenal_stats(year, minPA=min_pitches)
+    except TypeError:
+        df = pybaseball.statcast_pitcher_arsenal_stats(year)
     return df
 
 
