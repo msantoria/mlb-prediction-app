@@ -34,6 +34,8 @@ from .matchup_generator import generate_matchups_for_date
 from .db_utils import (
     get_pitcher_aggregate,
     get_batter_aggregate,
+    get_pitcher_aggregate_with_fallback,
+    get_batter_aggregate_with_fallback,
     get_pitch_arsenal,
     get_player_split,
 )
@@ -90,21 +92,20 @@ def create_app():
     def get_pitcher(player_id: int) -> Dict[str, Any]:
         Session = _get_session()
         with Session() as session:
-            agg = get_pitcher_aggregate(session, player_id, "90d")
+            agg_dict = get_pitcher_aggregate_with_fallback(session, player_id)
             season = datetime.date.today().year
             arsenal = get_pitch_arsenal(session, player_id, season)
-            if not agg and not arsenal:
+            if not agg_dict and not arsenal:
                 raise HTTPException(
                     status_code=404,
                     detail=f"No data found for pitcher {player_id}",
                 )
+            # data_source is already embedded in agg_dict by the fallback function
+            data_source = agg_dict.get("data_source") if agg_dict else None
             return {
                 "player_id": player_id,
-                "aggregate": {
-                    c.name: getattr(agg, c.name)
-                    for c in agg.__table__.columns
-                    if c.name != "_sa_instance_state"
-                } if agg else None,
+                "data_source": data_source,
+                "aggregate": agg_dict,
                 "arsenal": [
                     {
                         "pitch_type": r.pitch_type,
@@ -124,11 +125,11 @@ def create_app():
     def get_batter(player_id: int) -> Dict[str, Any]:
         Session = _get_session()
         with Session() as session:
-            agg = get_batter_aggregate(session, player_id, "90d")
+            agg_dict = get_batter_aggregate_with_fallback(session, player_id)
             season = datetime.date.today().year
             split_L = get_player_split(session, player_id, season, "vsL")
             split_R = get_player_split(session, player_id, season, "vsR")
-            if not agg and not split_L and not split_R:
+            if not agg_dict and not split_L and not split_R:
                 raise HTTPException(
                     status_code=404,
                     detail=f"No data found for batter {player_id}",
@@ -144,13 +145,12 @@ def create_app():
                     "home_runs": s.home_runs,
                 }
 
+            # data_source is already embedded in agg_dict by the fallback function
+            data_source = agg_dict.get("data_source") if agg_dict else None
             return {
                 "player_id": player_id,
-                "aggregate": {
-                    c.name: getattr(agg, c.name)
-                    for c in agg.__table__.columns
-                    if c.name != "_sa_instance_state"
-                } if agg else None,
+                "data_source": data_source,
+                "aggregate": agg_dict,
                 "splits": {"vsL": _split_dict(split_L), "vsR": _split_dict(split_R)},
             }
 

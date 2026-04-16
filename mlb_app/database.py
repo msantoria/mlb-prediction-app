@@ -195,6 +195,11 @@ class PitcherAggregate(Base):
     (e.g., 90/180/270/365 days) or entire seasons.  Fields include
     average velocity, spin rate, hard‑hit rate, strikeout and walk rates,
     expected wOBA and expected batting average.
+
+    The ``data_source`` column records which window or season the row was
+    computed from (e.g. ``"90d"``, ``"2026"``, ``"2025"``, ``"2024"``).
+    This is used by the fallback query logic and surfaced in API responses
+    so the UI can indicate when historical data is being shown.
     """
 
     __tablename__ = "pitcher_aggregates"
@@ -215,6 +220,7 @@ class PitcherAggregate(Base):
     avg_release_pos_x: Optional[float] = Column(Float, nullable=True)
     avg_release_pos_z: Optional[float] = Column(Float, nullable=True)
     avg_release_extension: Optional[float] = Column(Float, nullable=True)
+    data_source: Optional[str] = Column(String(20), nullable=True)  # e.g., "90d", "2026", "2025", "2024"
 
     __table_args__ = (
         Index("ix_pitcher_aggregates_date_pitcher", "end_date", "pitcher_id"),
@@ -228,6 +234,11 @@ class BatterAggregate(Base):
     over various windows.  Metrics include average exit velocity, launch
     angle, hard‑hit rate, barrel rate, strikeout and walk rates, and
     batting average.
+
+    The ``data_source`` column records which window or season the row was
+    computed from (e.g. ``"90d"``, ``"2026"``, ``"2025"``, ``"2024"``).
+    This is used by the fallback query logic and surfaced in API responses
+    so the UI can indicate when historical data is being shown.
     """
 
     __tablename__ = "batter_aggregates"
@@ -243,6 +254,7 @@ class BatterAggregate(Base):
     k_pct: Optional[float] = Column(Float, nullable=True)
     bb_pct: Optional[float] = Column(Float, nullable=True)
     batting_avg: Optional[float] = Column(Float, nullable=True)
+    data_source: Optional[str] = Column(String(20), nullable=True)  # e.g., "90d", "2026", "2025", "2024"
 
     __table_args__ = (
         Index("ix_batter_aggregates_date_batter", "end_date", "batter_id"),
