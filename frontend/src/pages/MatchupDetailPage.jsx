@@ -253,9 +253,12 @@ export default function MatchupDetailPage() {
             {matchup.park_factor && <span style={t.parkBadge}>{parkLabel(matchup.park_factor)}</span>}
           </div>
         </div>
-        <div style={{ marginTop: '8px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+        <div style={{ marginTop: '8px', display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
           {matchup.venue && <span style={t.metaText}>📍 {matchup.venue}</span>}
           {matchup.game_date && <span style={t.metaText}>🕐 {formatTime(matchup.game_date)}</span>}
+          <Link to={`/matchup/${game_pk}/competitive`} style={{ color: '#58a6ff', textDecoration: 'none', fontSize: '13px' }}>
+            → Competitive Analysis
+          </Link>
         </div>
       </div>
 
