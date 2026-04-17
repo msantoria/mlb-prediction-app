@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 
-const API = '/api'
+const API = import.meta.env.VITE_API_BASE_URL || ''
 
 const s = {
   searchRow: { display: 'flex', gap: '12px', marginBottom: '28px' },

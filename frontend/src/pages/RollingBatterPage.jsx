@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 
-const API = '/api'
+const API = import.meta.env.VITE_API_BASE_URL || ''
 
 const RESULT_COLORS = {
   single: '#3fb950', double: '#3fb950', triple: '#3fb950', home_run: '#58a6ff',

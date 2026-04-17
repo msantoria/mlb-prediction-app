@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 
-const API = '/api'
+const API = import.meta.env.VITE_API_BASE_URL || ''
 
 const DIVISIONS = {
   201: 'AL East', 202: 'AL Central', 200: 'AL West',
