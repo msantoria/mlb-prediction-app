@@ -1,4 +1,5 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { useParams, Link } from 'react-router-dom'
 
 const API = '/api'
 
@@ -36,6 +37,7 @@ const TEAMS = [
 ]
 
 const s = {
+  back: { color: '#58a6ff', textDecoration: 'none', fontSize: '13px', display: 'inline-block', marginBottom: '20px' },
   row: { display: 'flex', gap: '12px', marginBottom: '28px', alignItems: 'center' },
   select: {
     flex: 1, background: '#161b22', border: '1px solid #30363d', color: '#e6edf3',
@@ -45,12 +47,26 @@ const s = {
     background: '#238636', color: '#fff', border: 'none', borderRadius: '6px',
     padding: '10px 20px', fontSize: '14px', fontWeight: '600', cursor: 'pointer',
   },
+  teamHeader: { marginBottom: '24px' },
+  teamName: { fontSize: '26px', fontWeight: '700', color: '#e6edf3', marginBottom: '6px' },
+  recordRow: { display: 'flex', gap: '20px', alignItems: 'center', flexWrap: 'wrap' },
+  recordBig: { fontSize: '28px', fontWeight: '700', color: '#3fb950' },
+  metaItem: { fontSize: '13px', color: '#8b949e' },
+  metaVal: { color: '#e6edf3', fontWeight: '600' },
+  streakBadge: (code) => ({
+    display: 'inline-block', fontSize: '12px', fontWeight: '700', padding: '3px 8px', borderRadius: '4px',
+    background: code?.startsWith('W') ? '#1f3a1f' : '#3a1f1f',
+    color: code?.startsWith('W') ? '#3fb950' : '#f85149',
+  }),
+  section: { marginBottom: '28px' },
+  sectionTitle: { fontSize: '16px', fontWeight: '600', color: '#e6edf3', marginBottom: '14px', borderBottom: '1px solid #21262d', paddingBottom: '8px' },
   splitGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' },
   splitCard: { background: '#161b22', border: '1px solid #30363d', borderRadius: '8px', padding: '16px' },
   splitTitle: { fontSize: '14px', fontWeight: '600', color: '#58a6ff', marginBottom: '12px' },
   splitRow: { display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #21262d', fontSize: '13px' },
   splitKey: { color: '#8b949e' },
   splitVal: { color: '#e6edf3', fontWeight: '500' },
+  standingsLink: { color: '#58a6ff', textDecoration: 'none', fontSize: '13px' },
   loader: { color: '#8b949e', padding: '48px', textAlign: 'center' },
   error: { color: '#f85149', padding: '24px', background: '#1f1116', borderRadius: '8px' },
   hint: { color: '#8b949e', textAlign: 'center', padding: '48px' },
@@ -69,7 +85,7 @@ function SplitCard({ title, split }) {
   if (!split) return (
     <div style={s.splitCard}>
       <div style={s.splitTitle}>{title}</div>
-      <div style={{ color: '#8b949e', fontSize: '13px' }}>No data in database yet. Run the ETL to populate.</div>
+      <div style={{ color: '#8b949e', fontSize: '13px' }}>No data — run ETL to populate team splits.</div>
     </div>
   )
   const rows = [
@@ -95,65 +111,92 @@ function SplitCard({ title, split }) {
 }
 
 export default function TeamPage() {
-  const currentYear = new Date().getFullYear()
-  const [teamId, setTeamId] = useState(147)
+  const { id: urlId } = useParams()
+  const [teamId, setTeamId] = useState(urlId ? Number(urlId) : 147)
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
-  function load() {
+  function load(tid) {
     setLoading(true)
     setError(null)
-    // Team splits live in /matchups context — we fetch directly from the MLB Stats API
-    // via our backend. For now fetch today's matchups and find the team.
-    const today = new Date().toISOString().slice(0, 10)
-    fetch(`${API}/matchups?date=${today}`)
-      .then(r => r.ok ? r.json() : Promise.reject(r.statusText))
-      .then(matchups => {
-        // Find a game that has this team and surface its split data
-        const game = matchups.find(m => m.home_team_id === teamId || m.away_team_id === teamId)
-        setData(game || null)
-        setLoading(false)
-      })
+    fetch(`${API}/team/${tid}`)
+      .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(e.detail || r.statusText)))
+      .then(d => { setData(d); setLoading(false) })
       .catch(e => { setError(String(e)); setLoading(false) })
   }
 
-  const teamName = TEAMS.find(t => t.id === teamId)?.name || `Team ${teamId}`
+  useEffect(() => {
+    if (urlId) load(Number(urlId))
+  }, [urlId])
+
+  const teamName = data?.standing?.team_name || TEAMS.find(t => t.id === teamId)?.name || `Team ${teamId}`
+  const standing = data?.standing
 
   return (
     <div>
-      <h1 style={{ fontSize: '24px', fontWeight: '700', marginBottom: '20px' }}>Team Splits</h1>
+      <Link to="/standings" style={s.back}>← Standings</Link>
 
-      <div style={s.row}>
-        <select style={s.select} value={teamId} onChange={e => setTeamId(Number(e.target.value))}>
-          {TEAMS.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-        </select>
-        <button style={s.btn} onClick={load}>Load</button>
-      </div>
+      <div style={{ fontSize: '24px', fontWeight: '700', marginBottom: '20px' }}>Team Profile</div>
+
+      {!urlId && (
+        <div style={s.row}>
+          <select style={s.select} value={teamId} onChange={e => setTeamId(Number(e.target.value))}>
+            {TEAMS.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+          <button style={s.btn} onClick={() => load(teamId)}>Load</button>
+        </div>
+      )}
 
       {loading && <div style={s.loader}>Loading…</div>}
       {error && <div style={s.error}>{error}</div>}
 
-      {!loading && !error && data && (
-        <div>
-          <h2 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '16px', color: '#8b949e' }}>
-            {teamName} — Today's Game Context
-          </h2>
-          <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: '8px', padding: '16px', marginBottom: '16px', fontSize: '14px', color: '#8b949e' }}>
-            Team splits are populated via the ETL pipeline. Run <code style={{ background: '#21262d', padding: '2px 6px', borderRadius: '4px', color: '#e6edf3' }}>python seed_db.py</code> to load this season's data.
-          </div>
-          <div style={s.splitGrid}>
-            <SplitCard title="vs Left-Handed Pitchers" split={null} />
-            <SplitCard title="vs Right-Handed Pitchers" split={null} />
-          </div>
-        </div>
+      {!loading && !error && !data && !urlId && (
+        <div style={s.hint}>Select a team and click Load to view their stats.</div>
       )}
 
-      {!loading && !error && !data && (
-        <div style={s.hint}>
-          Select a team and click Load to view their splits.<br />
-          <span style={{ fontSize: '13px' }}>Data requires the ETL pipeline to have run for this season.</span>
-        </div>
+      {data && (
+        <>
+          <div style={s.teamHeader}>
+            <div style={s.teamName}>{teamName}</div>
+            {standing ? (
+              <div style={s.recordRow}>
+                <div style={s.recordBig}>
+                  {standing.wins ?? '—'} – {standing.losses ?? '—'}
+                </div>
+                {standing.pct && (
+                  <div style={s.metaItem}>
+                    <span style={s.metaVal}>{standing.pct}</span> PCT
+                  </div>
+                )}
+                {standing.division && (
+                  <div style={s.metaItem}>
+                    <span style={s.metaVal}>{standing.division}</span>
+                    {standing.games_back && standing.games_back !== '0' && (
+                      <span> · {standing.games_back} GB</span>
+                    )}
+                    {standing.games_back === '0' && <span> · Division Leader</span>}
+                  </div>
+                )}
+                {standing.streak && (
+                  <span style={s.streakBadge(standing.streak)}>{standing.streak}</span>
+                )}
+              </div>
+            ) : (
+              <div style={{ color: '#8b949e', fontSize: '13px', marginTop: '6px' }}>
+                Standings data unavailable.
+              </div>
+            )}
+          </div>
+
+          <div style={s.section}>
+            <div style={s.sectionTitle}>Team Splits — {data.season}</div>
+            <div style={s.splitGrid}>
+              <SplitCard title="vs Left-Handed Pitchers" split={data.splits?.vsL} />
+              <SplitCard title="vs Right-Handed Pitchers" split={data.splits?.vsR} />
+            </div>
+          </div>
+        </>
       )}
     </div>
   )

@@ -312,8 +312,44 @@ def run_etl_for_date(date_str: str) -> None:
             _load_pitcher_aggregate(session, pitcher_id, df, end_dt)
             if not arsenal_loaded:
                 _load_pitch_arsenal_from_df(session, pitcher_id, df, season)
+            if df.empty:
+                _ensure_historical_aggregate(session, pitcher_id, season)
 
         log.info("ETL complete for %s", date_str)
+
+
+def _ensure_historical_aggregate(session, pitcher_id: int, current_season: int) -> None:
+    """Pull prior-season Statcast for pitchers with no data in the current window."""
+    existing = session.query(PitcherAggregate).filter(
+        PitcherAggregate.pitcher_id == pitcher_id
+    ).first()
+    if existing:
+        return
+
+    for year in [current_season - 1, current_season - 2]:
+        start = f"{year}-03-15"
+        end = f"{year}-11-01"
+        try:
+            df = fetch_statcast_pitcher_data(pitcher_id, start, end)
+        except Exception as e:
+            log.warning("Historical backfill failed pitcher=%s year=%s: %s", pitcher_id, year, e)
+            continue
+        if df is None or df.empty:
+            continue
+        metrics = calculate_pitcher_aggregates(df)
+        if not metrics:
+            continue
+        record = PitcherAggregate(
+            pitcher_id=pitcher_id,
+            window=str(year),
+            end_date=datetime.date(year, 11, 1),
+            **{k: v for k, v in metrics.items() if hasattr(PitcherAggregate, k)},
+        )
+        session.add(record)
+        session.commit()
+        _load_pitch_arsenal_from_df(session, pitcher_id, df, year)
+        log.info("Backfilled %s season data for pitcher=%s", year, pitcher_id)
+        return
 
 
 def run_backfill(days: int = 30) -> None:

@@ -101,6 +101,7 @@ def generate_matchups_for_date(session: Session, date_str: str) -> List[Dict]:
             # Still include games without probable pitchers — just no win probs
             matchup = {
                 "game_date": date_str,
+                "game_pk": game.get("_game_pk"),
                 "game_time": game.get("_game_date"),
                 "venue": game.get("_venue"),
                 "status": game.get("_status"),
@@ -135,6 +136,7 @@ def generate_matchups_for_date(session: Session, date_str: str) -> List[Dict]:
 
         matchup = {
             "game_date": date_str,
+            "game_pk": game.get("_game_pk"),
             "game_time": game.get("_game_date"),
             "venue": game.get("_venue"),
             "status": game.get("_status"),

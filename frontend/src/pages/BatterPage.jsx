@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 
 const API = '/api'
 
@@ -13,12 +13,25 @@ const s = {
     background: '#238636', color: '#fff', border: 'none', borderRadius: '6px',
     padding: '10px 20px', fontSize: '14px', fontWeight: '600', cursor: 'pointer',
   },
+  rollingLink: {
+    display: 'inline-block', background: '#21262d', border: '1px solid #30363d',
+    color: '#58a6ff', textDecoration: 'none', borderRadius: '6px',
+    padding: '7px 16px', fontSize: '13px', fontWeight: '500', marginBottom: '24px',
+  },
   section: { marginBottom: '28px' },
   sectionTitle: { fontSize: '16px', fontWeight: '600', color: '#e6edf3', marginBottom: '14px', borderBottom: '1px solid #21262d', paddingBottom: '8px' },
   statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px' },
   statCard: { background: '#161b22', border: '1px solid #30363d', borderRadius: '8px', padding: '14px 16px' },
   statLabel: { fontSize: '12px', color: '#8b949e', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' },
   statVal: { fontSize: '22px', fontWeight: '700', color: '#e6edf3' },
+  tableWrap: { background: '#161b22', border: '1px solid #30363d', borderRadius: '10px', overflow: 'auto' },
+  table: { width: '100%', borderCollapse: 'collapse', fontSize: '13px' },
+  th: { padding: '10px 14px', textAlign: 'left', color: '#8b949e', fontWeight: '500', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.4px', borderBottom: '1px solid #21262d', whiteSpace: 'nowrap' },
+  thRight: { textAlign: 'right' },
+  td: { padding: '10px 14px', borderBottom: '1px solid #0d1117', color: '#e6edf3', whiteSpace: 'nowrap' },
+  tdRight: { textAlign: 'right' },
+  tdMuted: { color: '#8b949e' },
+  sourceBadge: { display: 'inline-block', fontSize: '11px', padding: '2px 7px', borderRadius: '3px', background: '#21262d', color: '#8b949e', marginLeft: '10px', verticalAlign: 'middle', fontWeight: '400' },
   splitGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' },
   splitCard: { background: '#161b22', border: '1px solid #30363d', borderRadius: '8px', padding: '16px' },
   splitTitle: { fontSize: '14px', fontWeight: '600', color: '#58a6ff', marginBottom: '12px' },
@@ -100,10 +113,10 @@ export default function BatterPage() {
   function handleSearch(e) {
     e.preventDefault()
     navigate(`/batter/${inputId}`)
-    load(inputId)
   }
 
   const agg = data?.aggregate
+  const multiSeason = data?.multi_season || []
 
   return (
     <div>
@@ -125,9 +138,18 @@ export default function BatterPage() {
 
       {data && (
         <>
+          {id && (
+            <Link to={`/batter/${id}/rolling`} style={s.rollingLink}>
+              View Rolling Stats (L10–L1000 ABs) →
+            </Link>
+          )}
+
           {agg && (
             <div style={s.section}>
-              <div style={s.sectionTitle}>90-Day Rolling Metrics</div>
+              <div style={s.sectionTitle}>
+                Current Metrics
+                {data.data_source && <span style={s.sourceBadge}>{data.data_source}</span>}
+              </div>
               <div style={s.statsGrid}>
                 <StatCard label="Exit Velocity" value={`${fmt(agg.avg_exit_velocity)} mph`} />
                 <StatCard label="Launch Angle" value={`${fmt(agg.avg_launch_angle)}°`} />
@@ -136,6 +158,42 @@ export default function BatterPage() {
                 <StatCard label="K%" value={pct(agg.k_pct)} />
                 <StatCard label="BB%" value={pct(agg.bb_pct)} />
                 <StatCard label="AVG" value={fmt(agg.batting_avg, 3)} />
+              </div>
+            </div>
+          )}
+
+          {multiSeason.some(r => r.avg_exit_velocity != null || r.k_pct != null) && (
+            <div style={s.section}>
+              <div style={s.sectionTitle}>Season-by-Season</div>
+              <div style={s.tableWrap}>
+                <table style={s.table}>
+                  <thead>
+                    <tr>
+                      <th style={s.th}>Season</th>
+                      <th style={{ ...s.th, ...s.thRight }}>EV</th>
+                      <th style={{ ...s.th, ...s.thRight }}>LA</th>
+                      <th style={{ ...s.th, ...s.thRight }}>Hard Hit%</th>
+                      <th style={{ ...s.th, ...s.thRight }}>Barrel%</th>
+                      <th style={{ ...s.th, ...s.thRight }}>K%</th>
+                      <th style={{ ...s.th, ...s.thRight }}>BB%</th>
+                      <th style={{ ...s.th, ...s.thRight }}>AVG</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {multiSeason.map((row, i) => (
+                      <tr key={i}>
+                        <td style={{ ...s.td, fontWeight: '700', color: '#58a6ff' }}>{row.label}</td>
+                        <td style={{ ...s.td, ...s.tdRight }}>{fmt(row.avg_exit_velocity)}</td>
+                        <td style={{ ...s.td, ...s.tdRight }}>{fmt(row.avg_launch_angle)}°</td>
+                        <td style={{ ...s.td, ...s.tdRight }}>{pct(row.hard_hit_pct)}</td>
+                        <td style={{ ...s.td, ...s.tdRight }}>{pct(row.barrel_pct)}</td>
+                        <td style={{ ...s.td, ...s.tdRight }}>{pct(row.k_pct)}</td>
+                        <td style={{ ...s.td, ...s.tdRight }}>{pct(row.bb_pct)}</td>
+                        <td style={{ ...s.td, ...s.tdRight }}>{fmt(row.batting_avg, 3)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
