@@ -7,13 +7,17 @@ Endpoints:
     GET  /matchup/{game_pk}              Full detail: pitchers, lineup, splits, game log
     GET  /matchup/{game_pk}/competitive  Lineup-level competitive matchup matrix
     GET  /pitcher/{id}                   Aggregate + arsenal
-    GET  /pitcher/{id}/rolling           L15G–L150G rolling stats
+    GET  /pitcher/{id}/rolling           L15G-L150G rolling stats
     GET  /pitcher/{id}/game-log          Recent game-by-game appearances
-    GET  /batter/{id}                    Aggregate + platoon splits
-    GET  /batter/{id}/rolling            L10–L1000 AB rolling stats
+    GET  /batter/{id}                    Aggregate + platoon splits (multi-season)
+    GET  /batter/{id}/rolling            L10-L1000 AB rolling stats
+    GET  /batter/{id}/splits             Multi-season vsL/vsR splits
     GET  /batter/{id}/at-bats            Chronological at-bat session
     GET  /standings                      MLB AL/NL standings
     GET  /lineup/{team_id}               Day-of lineup from MLB Stats API
+    GET  /players/search                 Search players by name
+    GET  /players/all                    All active MLB players for a season
+    GET  /team/{team_id}/roster          Full roster for a team
     POST /predict                        Score a specific pitcher vs batter
 """
 
@@ -47,6 +51,7 @@ from .db_utils import (
     get_pitch_arsenal,
     get_pitch_arsenal_with_fallback,
     get_player_split,
+    get_player_splits_multi_season,
     get_team_split,
     get_pitcher_rolling_by_games,
     get_batter_rolling_by_games,
@@ -551,6 +556,7 @@ def create_app():
             split_L = get_player_split(session, player_id, season, "vsL")
             split_R = get_player_split(session, player_id, season, "vsR")
             multi = get_batter_multi_season(session, player_id, [season, season - 1, season - 2, season - 3])
+            split_seasons = get_player_splits_multi_season(session, player_id, [season, season - 1, season - 2, season - 3])
             if not agg and not split_L and not split_R:
                 raise HTTPException(status_code=404, detail=f"No data for batter {player_id}")
 
@@ -573,6 +579,7 @@ def create_app():
                 } if agg else None,
                 "splits": {"vsL": _sd(split_L), "vsR": _sd(split_R)},
                 "multi_season": multi,
+                "split_seasons": split_seasons,
             }
 
     @app.get("/batter/{player_id}/rolling")
@@ -611,6 +618,87 @@ def create_app():
                 "offset": offset,
                 "at_bats": rows,
             }
+
+    @app.get("/batter/{player_id}/splits")
+    def batter_splits(player_id: int) -> Dict[str, Any]:
+        season = datetime.date.today().year
+        Session = _get_session()
+        with Session() as session:
+            seasons = [season, season - 1, season - 2, season - 3]
+            return {
+                "player_id": player_id,
+                "seasons": get_player_splits_multi_season(session, player_id, seasons),
+            }
+
+    @app.get("/players/search")
+    def search_players(name: str) -> List[Dict[str, Any]]:
+        url = f"{MLB_STATS_BASE}/people/search"
+        try:
+            resp = _req.get(url, params={"sportId": 1, "names": name}, timeout=20)
+            resp.raise_for_status()
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"MLB API error: {exc}")
+        people = resp.json().get("people", [])
+        results = []
+        for p in people:
+            pos = (p.get("primaryPosition") or {}).get("type") or ""
+            pos_type = "Pitcher" if pos.lower() == "pitcher" else "Batter"
+            results.append({
+                "id": p.get("id"),
+                "name": p.get("fullName"),
+                "team": (p.get("currentTeam") or {}).get("name"),
+                "position_type": pos_type,
+            })
+        return results
+
+    @app.get("/players/all")
+    def get_all_players(season: Optional[int] = None) -> List[Dict[str, Any]]:
+        if not season:
+            season = datetime.date.today().year
+        url = f"{MLB_STATS_BASE}/sports/1/players"
+        try:
+            resp = _req.get(url, params={"season": season}, timeout=30)
+            resp.raise_for_status()
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"MLB API error: {exc}")
+        people = resp.json().get("people", [])
+        out = []
+        for p in people:
+            pos = (p.get("primaryPosition") or {}).get("type") or ""
+            out.append({
+                "id": p.get("id"),
+                "name": p.get("fullName"),
+                "position_type": "Pitcher" if pos.lower() == "pitcher" else "Batter",
+                "position": (p.get("primaryPosition") or {}).get("abbreviation"),
+                "team": (p.get("currentTeam") or {}).get("name"),
+                "active": p.get("active"),
+            })
+        return out
+
+    @app.get("/team/{team_id}/roster")
+    def get_team_roster(team_id: int, season: Optional[int] = None) -> Dict[str, Any]:
+        if not season:
+            season = datetime.date.today().year
+        url = f"{MLB_STATS_BASE}/teams/{team_id}/roster"
+        try:
+            resp = _req.get(url, params={"rosterType": "active", "season": season}, timeout=20)
+            resp.raise_for_status()
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"MLB API error: {exc}")
+        roster = resp.json().get("roster", [])
+        return {
+            "team_id": team_id,
+            "season": season,
+            "roster": [
+                {
+                    "id": r.get("person", {}).get("id"),
+                    "name": r.get("person", {}).get("fullName"),
+                    "position": (r.get("position") or {}).get("abbreviation"),
+                    "status": (r.get("status") or {}).get("description"),
+                }
+                for r in roster
+            ],
+        }
 
     @app.get("/standings")
     def get_standings(season: Optional[int] = None) -> List[Dict[str, Any]]:
