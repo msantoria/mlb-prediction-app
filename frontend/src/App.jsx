@@ -8,6 +8,7 @@ import BatterPage from './pages/BatterPage'
 import RollingBatterPage from './pages/RollingBatterPage'
 import TeamPage from './pages/TeamPage'
 import StandingsPage from './pages/StandingsPage'
+import CompetitiveAnalysisPage from './pages/CompetitiveAnalysisPage'
 
 const styles = {
   nav: {
@@ -65,6 +66,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/matchup/:game_pk" element={<MatchupDetailPage />} />
+          <Route path="/matchup/:game_pk/competitive" element={<CompetitiveAnalysisPage />} />
           <Route path="/standings" element={<StandingsPage />} />
           <Route path="/pitcher" element={<PitcherPage />} />
           <Route path="/pitcher/:id" element={<PitcherPage />} />
