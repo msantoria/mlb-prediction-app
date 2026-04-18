@@ -1,6 +1,9 @@
 [phases.setup]
 nixPkgs = ["nodejs_20"]
 
+[phases.install]
+cmds = ["pip install -r requirements.txt"]
+
 [phases.build]
 cmds = [
   "npm --prefix frontend install",
