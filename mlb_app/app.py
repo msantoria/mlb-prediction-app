@@ -173,29 +173,34 @@ def _confidence_from_sample(pa: int, usage_pct: Optional[float]) -> float:
 def _player_vs_pitch_type_summary(
     session,
     batter_id: int,
-    pitcher_id: int,
     pitch_type: Optional[str],
-    season: int,
+    since_year: int = 2024,
 ):
-    q = (
+    """How a batter performs vs a pitch type (across all pitchers) since since_year."""
+    events = (
         session.query(StatcastEvent)
         .filter(
             StatcastEvent.batter_id == batter_id,
-            StatcastEvent.pitcher_id == pitcher_id,
             StatcastEvent.pitch_type == pitch_type,
-            StatcastEvent.game_date >= datetime.date(season, 1, 1),
+            StatcastEvent.game_date >= datetime.date(since_year, 1, 1),
         )
+        .all()
     )
-    events = q.all()
     terminal = [e for e in events if e.events and e.events in OUTCOME_EVENTS]
+    pa = len(terminal)
+    if pa == 0:
+        return {"pa": 0, "batting_avg": None, "avg_exit_velocity": None,
+                "avg_launch_angle": None, "hard_hit_pct": None}
+    hits = sum(1 for e in terminal if e.events in HIT_EVENTS)
+    ev_vals = [e.launch_speed for e in terminal if e.launch_speed is not None]
+    la_vals = [e.launch_angle for e in terminal if e.launch_angle is not None]
+    hard_hits = sum(1 for v in ev_vals if v >= 95)
     return {
-        "pa": len(terminal),
-        "batting_avg": _statcast_batting_avg(terminal),
-        "xwoba": None,
-        "avg_exit_velocity": _average([e.launch_speed for e in terminal], 1),
-        "avg_launch_angle": _average([e.launch_angle for e in terminal], 1),
-        "hard_hit_pct": round(sum(1 for e in terminal if (e.launch_speed or 0) >= 95) / len([e for e in terminal if e.launch_speed is not None]), 3)
-        if any(e.launch_speed is not None for e in terminal) else None,
+        "pa": pa,
+        "batting_avg": round(hits / pa, 3),
+        "avg_exit_velocity": round(sum(ev_vals) / len(ev_vals), 1) if ev_vals else None,
+        "avg_launch_angle": round(sum(la_vals) / len(la_vals), 1) if la_vals else None,
+        "hard_hit_pct": round(hard_hits / len(ev_vals), 3) if ev_vals else None,
     }
 
 
@@ -233,7 +238,7 @@ def _build_competitive_matchup(
     pitch_type_matrix = []
     for pitch in arsenal:
         batter_vs_type = _player_vs_pitch_type_summary(
-            session, batter_id, opposing_pitcher_id, pitch.pitch_type, season
+            session, batter_id, pitch.pitch_type, since_year=max(2024, season - 1)
         )
         pa = batter_vs_type["pa"] or 0
         edge_score = _edge_score_from_components(
