@@ -97,7 +97,8 @@ def _extract_team_ids(games: List[dict]) -> List[int]:
 
 def _fetch_team_split(team_id: int, season: int, split_code: str) -> Optional[dict]:
     url = f"{MLB_STATS_BASE}/teams/{team_id}/stats"
-    params = {"stats": "season", "group": "hitting", "season": season, "split": split_code}
+    # statSplits returns proper vsLHP/vsRHP breakdowns; "season" returns overall only
+    params = {"stats": "statSplits", "group": "hitting", "season": season, "sitCodes": split_code}
     try:
         resp = requests.get(url, params=params, timeout=20)
         resp.raise_for_status()
@@ -111,34 +112,35 @@ def _fetch_team_split(team_id: int, season: int, split_code: str) -> Optional[di
 
 def _load_team_splits(session, team_ids: List[int], season: int) -> None:
     for team_id in team_ids:
-        for split_code, split_label in [("vsLHP", "vsL"), ("vsRHP", "vsR")]:
+        for split_code, split_label in [("vl", "vsL"), ("vr", "vsR")]:
             stat = _fetch_team_split(team_id, season, split_code)
             if not stat:
                 continue
             existing = session.query(TeamSplit).filter_by(
                 team_id=team_id, season=season, split=split_label
             ).first()
+            # Update existing record so stale identical data gets corrected
             if existing:
-                continue
-            record = TeamSplit(
-                season=season,
-                team_id=team_id,
-                split=split_label,
-                pa=stat.get("plateAppearances"),
-                hits=stat.get("hits"),
-                doubles=stat.get("doubles"),
-                triples=stat.get("triples"),
-                home_runs=stat.get("homeRuns"),
-                walks=stat.get("baseOnBalls"),
-                strikeouts=stat.get("strikeOuts"),
-                batting_avg=_safe_float(stat.get("avg")),
-                on_base_pct=_safe_float(stat.get("obp")),
-                slugging_pct=_safe_float(stat.get("slg")),
-                iso=_safe_float(stat.get("ops")),
-                k_pct=_safe_float(stat.get("strikeoutRate")),
-                bb_pct=_safe_float(stat.get("walkRate")),
-            )
-            session.add(record)
+                target = existing
+            else:
+                target = TeamSplit(season=season, team_id=team_id, split=split_label)
+                session.add(target)
+            pa = stat.get("plateAppearances") or 0
+            k = stat.get("strikeOuts") or 0
+            bb = stat.get("baseOnBalls") or 0
+            target.pa = pa
+            target.hits = stat.get("hits")
+            target.doubles = stat.get("doubles")
+            target.triples = stat.get("triples")
+            target.home_runs = stat.get("homeRuns")
+            target.walks = bb
+            target.strikeouts = k
+            target.batting_avg = _safe_float(stat.get("avg"))
+            target.on_base_pct = _safe_float(stat.get("obp"))
+            target.slugging_pct = _safe_float(stat.get("slg"))
+            target.iso = _safe_float(stat.get("ops"))
+            target.k_pct = round(k / pa, 3) if pa > 0 else None
+            target.bb_pct = round(bb / pa, 3) if pa > 0 else None
     session.commit()
     log.info("Team splits loaded for %d teams", len(team_ids))
 

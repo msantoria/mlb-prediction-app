@@ -84,6 +84,46 @@ def _get_session():
     return get_session(engine)
 
 
+def _fetch_team_splits_live(team_id: int, season: int) -> Dict[str, Any]:
+    """Fetch vsL/vsR team hitting splits directly from MLB Stats API (statSplits)."""
+    result = {"vsL": None, "vsR": None}
+    for sit_code, key in [("vl", "vsL"), ("vr", "vsR")]:
+        try:
+            resp = _req.get(
+                f"{MLB_STATS_BASE}/teams/{team_id}/stats",
+                params={"stats": "statSplits", "group": "hitting", "season": season, "sitCodes": sit_code},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            stats = resp.json().get("stats", [])
+            splits = stats[0].get("splits", []) if stats else []
+            if not splits:
+                continue
+            s = splits[0].get("stat", {})
+            pa = s.get("plateAppearances") or 0
+            k = s.get("strikeOuts") or 0
+            bb = s.get("baseOnBalls") or 0
+            result[key] = {
+                "pa": pa,
+                "batting_avg": _safe_float(s.get("avg")),
+                "on_base_pct": _safe_float(s.get("obp")),
+                "slugging_pct": _safe_float(s.get("slg")),
+                "home_runs": s.get("homeRuns"),
+                "k_pct": round(k / pa, 3) if pa > 0 else None,
+                "bb_pct": round(bb / pa, 3) if pa > 0 else None,
+            }
+        except Exception:
+            pass
+    return result
+
+
+def _safe_float(val) -> Optional[float]:
+    try:
+        return float(val) if val is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _statcast_batting_avg(events: List[StatcastEvent]) -> Optional[float]:
     if not events:
         return None
@@ -368,7 +408,20 @@ def create_app():
                         "on_base_pct": s.on_base_pct, "slugging_pct": s.slugging_pct,
                         "k_pct": s.k_pct, "bb_pct": s.bb_pct, "home_runs": s.home_runs,
                     }
-                return {"vsL": sd(vsL), "vsR": sd(vsR)}
+
+                db_result = {"vsL": sd(vsL), "vsR": sd(vsR)}
+                # If DB is missing both splits or both are identical, use live MLB API data
+                both_missing = not db_result["vsL"] and not db_result["vsR"]
+                identical = (
+                    db_result["vsL"] and db_result["vsR"] and
+                    db_result["vsL"].get("batting_avg") == db_result["vsR"].get("batting_avg") and
+                    db_result["vsL"].get("pa") == db_result["vsR"].get("pa")
+                )
+                if both_missing or identical:
+                    live = _fetch_team_splits_live(tid, season)
+                    if live["vsL"] or live["vsR"]:
+                        return live
+                return db_result
 
             home_win_prob, away_win_prob = None, None
             if home_pitcher_id and away_pitcher_id and home_team_id and away_team_id:
@@ -498,7 +551,32 @@ def create_app():
             multi = get_pitcher_multi_season(session, player_id, [season, season - 1, season - 2, season - 3])
             game_log = get_pitcher_game_log(session, player_id, 10)
             if not agg and not arsenal:
-                raise HTTPException(status_code=404, detail=f"No data for pitcher {player_id}")
+                # Fallback: fetch basic player info from MLB Stats API so the page
+                # can at least show the player's name rather than a hard 404
+                player_name = None
+                try:
+                    p_resp = _req.get(
+                        f"{MLB_STATS_BASE}/people/{player_id}",
+                        params={"hydrate": "currentTeam"},
+                        timeout=10,
+                    )
+                    if p_resp.ok:
+                        people = p_resp.json().get("people", [])
+                        if people:
+                            player_name = people[0].get("fullName")
+                except Exception:
+                    pass
+                return {
+                    "player_id": player_id,
+                    "player_name": player_name,
+                    "data_source": None,
+                    "aggregate": None,
+                    "arsenal": [],
+                    "arsenal_season": None,
+                    "multi_season": [],
+                    "game_log": [],
+                    "no_data": True,
+                }
             return {
                 "player_id": player_id,
                 "data_source": data_source,
@@ -773,9 +851,22 @@ def create_app():
                 if not sp:
                     return None
                 return {
-                    c.name: getattr(sp, c.name)
-                    for c in sp.__table__.columns
+                    "pa": sp.pa, "batting_avg": sp.batting_avg,
+                    "on_base_pct": sp.on_base_pct, "slugging_pct": sp.slugging_pct,
+                    "k_pct": sp.k_pct, "bb_pct": sp.bb_pct, "home_runs": sp.home_runs,
                 }
+
+            db_vsL, db_vsR = _sd(vsL), _sd(vsR)
+            both_missing = not db_vsL and not db_vsR
+            identical = (
+                db_vsL and db_vsR and
+                db_vsL.get("batting_avg") == db_vsR.get("batting_avg") and
+                db_vsL.get("pa") == db_vsR.get("pa")
+            )
+            if both_missing or identical:
+                splits = _fetch_team_splits_live(team_id, season)
+            else:
+                splits = {"vsL": db_vsL, "vsR": db_vsR}
 
         standings_url = f"{MLB_STATS_BASE}/standings"
         standings_params = {
@@ -810,7 +901,7 @@ def create_app():
             "team_id": team_id,
             "season": season,
             "standing": team_standing,
-            "splits": {"vsL": _sd(vsL), "vsR": _sd(vsR)},
+            "splits": splits,
         }
 
     @app.post("/predict")

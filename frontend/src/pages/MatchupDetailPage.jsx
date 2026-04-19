@@ -391,33 +391,35 @@ export default function MatchupDetailPage() {
             </div>
           </div>
 
-          {(away.lineup?.length > 0 || home.lineup?.length > 0) && (
-            <div style={t.section}>
+          <div style={t.section}>
               <div style={t.sectionTitle}>Starting Lineups</div>
               <div style={t.lineupGrid}>
                 <div>
                   <div style={{ fontSize: '13px', color: '#58a6ff', fontWeight: '600', marginBottom: '10px' }}>{away.name}</div>
-                  {away.lineup.map((p, i) => (
+                  {away.lineup?.length > 0 ? away.lineup.map((p, i) => (
                     <div key={i} style={t.lineupItem}>
                       <span style={t.orderNum}>{i + 1}</span>
                       <Link to={`/batter/${p.id}`} style={{ color: '#e6edf3', textDecoration: 'none', flex: 1 }}>{p.name}</Link>
                       {p.position && <span style={{ color: '#8b949e', fontSize: '12px' }}>{p.position}</span>}
                     </div>
-                  ))}
+                  )) : (
+                    <div style={{ color: '#8b949e', fontSize: '13px', fontStyle: 'italic', paddingTop: '6px' }}>Lineup not yet posted</div>
+                  )}
                 </div>
                 <div>
                   <div style={{ fontSize: '13px', color: '#3fb950', fontWeight: '600', marginBottom: '10px' }}>{home.name}</div>
-                  {home.lineup.map((p, i) => (
+                  {home.lineup?.length > 0 ? home.lineup.map((p, i) => (
                     <div key={i} style={t.lineupItem}>
                       <span style={t.orderNum}>{i + 1}</span>
                       <Link to={`/batter/${p.id}`} style={{ color: '#e6edf3', textDecoration: 'none', flex: 1 }}>{p.name}</Link>
                       {p.position && <span style={{ color: '#8b949e', fontSize: '12px' }}>{p.position}</span>}
                     </div>
-                  ))}
+                  )) : (
+                    <div style={{ color: '#8b949e', fontSize: '13px', fontStyle: 'italic', paddingTop: '6px' }}>Lineup not yet posted</div>
+                  )}
                 </div>
               </div>
             </div>
-          )}
 
           <div style={t.section}>
             <div style={t.sectionTitle}>Team Hitting Splits</div>

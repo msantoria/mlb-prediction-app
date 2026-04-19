@@ -155,7 +155,13 @@ export default function PitcherPage() {
       {error && <div style={s.error}>{error}</div>}
       {!loading && !error && !data && <div style={s.hint}>Search for a pitcher by name to view their stats.</div>}
 
-      {data && (
+      {data?.no_data && (
+        <div style={s.error}>
+          No Statcast data on file for {data.player_name || `pitcher ${id}`}. This player may be inactive or data hasn't been ingested yet.
+        </div>
+      )}
+
+      {data && !data.no_data && (
         <>
           {id && (
             <Link to={`/pitcher/${id}/rolling`} style={s.rollingLink}>
