@@ -323,6 +323,8 @@ export default function MatchupDetailPage() {
 
   const awayLineupMatchups = competitive?.away_lineup_matchups || []
   const homeLineupMatchups = competitive?.home_lineup_matchups || []
+  const awayLineupSource = competitive?.away_lineup_source
+  const homeLineupSource = competitive?.home_lineup_source
 
   function toggleBatter(key) {
     setExpandedBatters(prev => ({ ...prev, [key]: !prev[key] }))
@@ -446,9 +448,12 @@ export default function MatchupDetailPage() {
           <div style={t.sectionTitle}>Batter vs Pitcher Arsenal Matchups</div>
 
           <div style={{ marginBottom: '24px' }}>
-            <div style={{ fontSize: '14px', color: '#58a6ff', fontWeight: '600', marginBottom: '12px' }}>{away.name} hitters vs {home.pitcher_name || 'Home Starter'}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+              <div style={{ fontSize: '14px', color: '#58a6ff', fontWeight: '600' }}>{away.name} hitters vs {home.pitcher_name || 'Home Starter'}</div>
+              {awayLineupSource === 'roster' && <span style={{ fontSize: '11px', color: '#8b949e', background: '#21262d', padding: '2px 7px', borderRadius: '3px' }}>Lineup TBD — showing full roster</span>}
+            </div>
             {awayLineupMatchups.length === 0 ? (
-              <div style={t.noData}>No competitive matchup data available for away lineup</div>
+              <div style={t.noData}>No data available</div>
             ) : awayLineupMatchups.map((b) => (
               <CompetitiveBatterRow
                 key={`away-${b.batter_id}`}
@@ -460,9 +465,12 @@ export default function MatchupDetailPage() {
           </div>
 
           <div>
-            <div style={{ fontSize: '14px', color: '#3fb950', fontWeight: '600', marginBottom: '12px' }}>{home.name} hitters vs {away.pitcher_name || 'Away Starter'}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+              <div style={{ fontSize: '14px', color: '#3fb950', fontWeight: '600' }}>{home.name} hitters vs {away.pitcher_name || 'Away Starter'}</div>
+              {homeLineupSource === 'roster' && <span style={{ fontSize: '11px', color: '#8b949e', background: '#21262d', padding: '2px 7px', borderRadius: '3px' }}>Lineup TBD — showing full roster</span>}
+            </div>
             {homeLineupMatchups.length === 0 ? (
-              <div style={t.noData}>No competitive matchup data available for home lineup</div>
+              <div style={t.noData}>No data available</div>
             ) : homeLineupMatchups.map((b) => (
               <CompetitiveBatterRow
                 key={`home-${b.batter_id}`}

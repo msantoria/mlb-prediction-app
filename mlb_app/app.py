@@ -286,7 +286,26 @@ def _build_competitive_matchup(
     }
 
 
-class PredictRequest(BaseModel):  # type: ignore[misc]
+def _fetch_roster_as_lineup(team_id: int, season: int) -> List[Dict[str, Any]]:
+    """Return active non-pitcher roster when official lineup hasn't been submitted yet."""
+    try:
+        resp = _req.get(
+            f"{MLB_STATS_BASE}/teams/{team_id}/roster",
+            params={"rosterType": "active", "season": season},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return [
+            {"id": r["person"]["id"], "fullName": r["person"]["fullName"]}
+            for r in resp.json().get("roster", [])
+            if (r.get("position") or {}).get("type", "").lower() != "pitcher"
+            and r.get("person", {}).get("id")
+        ]
+    except Exception:
+        return []
+
+
+
     pitcher_id: int
     batter_id: int
     season: Optional[int] = None
@@ -499,6 +518,8 @@ def create_app():
         game_date_iso = game.get("gameDate", "")
         season = int(game_date_iso[:4]) if game_date_iso else datetime.date.today().year
 
+        home_team_id = home.get("team", {}).get("id")
+        away_team_id = away.get("team", {}).get("id")
         home_team_name = home.get("team", {}).get("name")
         away_team_name = away.get("team", {}).get("name")
         home_pitcher_id = home.get("probablePitcher", {}).get("id")
@@ -507,6 +528,17 @@ def create_app():
         lineups = game.get("lineups", {})
         home_lineup_raw = lineups.get("homePlayers", []) or []
         away_lineup_raw = lineups.get("awayPlayers", []) or []
+
+        # Official lineups aren't posted until ~1-2 hrs before game time.
+        # Fall back to active non-pitcher roster so the matrix always renders.
+        away_lineup_source = "official"
+        home_lineup_source = "official"
+        if not away_lineup_raw and away_team_id:
+            away_lineup_raw = _fetch_roster_as_lineup(away_team_id, season)
+            away_lineup_source = "roster"
+        if not home_lineup_raw and home_team_id:
+            home_lineup_raw = _fetch_roster_as_lineup(home_team_id, season)
+            home_lineup_source = "roster"
 
         Session = _get_session()
         with Session() as session:
@@ -542,6 +574,8 @@ def create_app():
             "home_team": home_team_name,
             "away_pitcher_id": away_pitcher_id,
             "home_pitcher_id": home_pitcher_id,
+            "away_lineup_source": away_lineup_source,
+            "home_lineup_source": home_lineup_source,
             "away_lineup_matchups": away_lineup_matchups,
             "home_lineup_matchups": home_lineup_matchups,
         }
