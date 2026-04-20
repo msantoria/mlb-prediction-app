@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { fmtPct, fmtDec } from '../utils/formatters'
 import { useParams, Link } from 'react-router-dom'
 
 const API = import.meta.env.VITE_API_BASE_URL || ''
@@ -21,10 +22,10 @@ const s = {
   note: { background: '#161b22', border: '1px solid #30363d', borderRadius: '8px', padding: '14px 18px', fontSize: '13px', color: '#8b949e', marginBottom: '16px' },
 }
 
-const pct = (v, d = 1) => v != null ? `${(v * 100).toFixed(d)}%` : '—'
+const pct = (v, d = 1) => fmtPct(v, d)
 const mph = v => v != null ? `${Number(v).toFixed(1)}` : '—'
 const rpm = v => v != null ? `${Math.round(v)}` : '—'
-const dec = (v, d = 3) => v != null ? Number(v).toFixed(d) : '—'
+const dec = (v, d = 3) => fmtDec(v, d)
 
 function kColor(v) {
   if (v == null) return '#e6edf3'
@@ -90,6 +91,9 @@ export default function RollingPitcherPage() {
       {!hasAny && (
         <div style={{ color: '#8b949e', textAlign: 'center', padding: '48px' }}>
           No event-level data available for pitcher #{id}. Run the ETL to populate Statcast events.
+          <div style={{ fontSize: '12px', marginTop: '10px' }}>
+            This means the UI is healthy, but the database has no pitch-by-pitch rows for this pitcher yet.
+          </div>
         </div>
       )}
 

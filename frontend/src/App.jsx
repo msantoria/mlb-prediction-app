@@ -9,6 +9,8 @@ import RollingBatterPage from './pages/RollingBatterPage'
 import TeamPage from './pages/TeamPage'
 import StandingsPage from './pages/StandingsPage'
 import CompetitiveAnalysisPage from './pages/CompetitiveAnalysisPage'
+import YesterdayTodayPage from './pages/YesterdayTodayPage'
+import AIPage from './pages/AIPage'
 
 const styles = {
   nav: {
@@ -61,6 +63,8 @@ export default function App() {
         <NavLink to="/pitcher" style={link}>Pitcher</NavLink>
         <NavLink to="/batter" style={link}>Batter</NavLink>
         <NavLink to="/team" style={link}>Team</NavLink>
+        <NavLink to="/calendar" style={link}>Calendar</NavLink>
+        <NavLink to="/ai" style={link}>AI</NavLink>
       </nav>
       <main style={styles.main}>
         <Routes>
@@ -76,6 +80,8 @@ export default function App() {
           <Route path="/batter/:id/rolling" element={<RollingBatterPage />} />
           <Route path="/team" element={<TeamPage />} />
           <Route path="/team/:id" element={<TeamPage />} />
+          <Route path="/calendar" element={<YesterdayTodayPage />} />
+          <Route path="/ai" element={<AIPage />} />
         </Routes>
       </main>
     </BrowserRouter>

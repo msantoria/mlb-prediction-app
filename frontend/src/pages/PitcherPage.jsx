@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { fmtPct } from '../utils/formatters'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 
 const API = import.meta.env.VITE_API_BASE_URL || ''
@@ -53,8 +54,7 @@ function fmt(val, decimals = 1) {
   return typeof val === 'number' ? val.toFixed(decimals) : val
 }
 function pct(val) {
-  if (val == null) return '—'
-  return `${(val * 100).toFixed(1)}%`
+  return fmtPct(val, 1)
 }
 
 function StatCard({ label, value }) {

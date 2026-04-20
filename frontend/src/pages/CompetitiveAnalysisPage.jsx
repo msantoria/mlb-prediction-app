@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { fmtPct, fmtDec, normalizeRate } from '../utils/formatters'
 import { useParams, Link } from 'react-router-dom'
 
 const API = import.meta.env.VITE_API_BASE_URL || ''
@@ -131,11 +132,11 @@ export default function CompetitiveAnalysisPage() {
                 </div>
                 <div style={s.h2hRow}>
                   <span style={s.h2hLabel}>BA</span>
-                  <span style={s.h2hValue}>{matchup.head_to_head.batting_avg}</span>
+                  <span style={s.h2hValue}>{fmtDec(matchup.head_to_head.batting_avg, 3)}</span>
                 </div>
                 <div style={s.h2hRow}>
                   <span style={s.h2hLabel}>xwOBA</span>
-                  <span style={s.h2hValue}>{matchup.head_to_head.xwoba || '—'}</span>
+                  <span style={s.h2hValue}>{fmtDec(matchup.head_to_head.xwoba, 3)}</span>
                 </div>
               </div>
 
@@ -160,16 +161,16 @@ export default function CompetitiveAnalysisPage() {
                         <tr key={pt.pitch_type}>
                           <td style={s.td}>{pt.pitch_type}</td>
                           <td style={{ ...s.td, ...s.tdRight, ...s.tdMuted }}>
-                            {(pt.pitcher_usage_pct * 100).toFixed(0)}%
+                            {fmtPct(normalizeRate(pt.pitcher_usage_pct), 1)}
                           </td>
                           <td style={{ ...s.td, ...s.tdRight }}>
-                            {pt.batter_vs_type.batting_avg}
+                            {fmtDec(pt.batter_vs_type.batting_avg, 3)}
                           </td>
                           <td style={{ ...s.td, ...s.tdRight }}>
-                            {pt.batter_vs_type.xwoba || '—'}
+                            {fmtDec(pt.batter_vs_type.xwoba, 3)}
                           </td>
                           <td style={{ ...s.td, ...s.tdRight, ...s.edgeScore(pt.edge_score) }}>
-                            {pt.edge_score > 0 ? '+' : ''}{pt.edge_score}
+                            {pt.edge_score > 0 ? '+' : ''}{Number(pt.edge_score || 0).toFixed(2)}
                           </td>
                           <td style={{ ...s.td, ...s.tdRight }}>
                             <span style={s.confidenceBadge(pt.confidence)}>

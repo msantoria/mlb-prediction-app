@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { fmtPct, fmtDec } from '../utils/formatters'
 import { useParams, Link } from 'react-router-dom'
 
 const API = import.meta.env.VITE_API_BASE_URL || ''
@@ -65,8 +66,8 @@ const t = {
   noData: { color: '#8b949e', fontSize: '13px', textAlign: 'center', padding: '24px' },
 }
 
-const pct = (v, d = 1) => v != null ? `${(v * 100).toFixed(d)}%` : '—'
-const dec = (v, d = 3) => v != null ? Number(v).toFixed(d) : '—'
+const pct = (v, d = 1) => fmtPct(v, d)
+const dec = (v, d = 3) => fmtDec(v, d)
 const mph = v => v != null ? `${Number(v).toFixed(1)}` : '—'
 
 function probColor(p) {
