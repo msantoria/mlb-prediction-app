@@ -498,7 +498,7 @@ def _fetch_roster_as_lineup(team_id: int, season: int) -> List[Dict[str, Any]]:
         return []
 
 
-
+class PredictRequest(BaseModel):
     pitcher_id: int
     batter_id: int
     season: Optional[int] = None
