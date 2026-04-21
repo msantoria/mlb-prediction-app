@@ -293,6 +293,24 @@ def _head_to_head_summary(session, batter_id: int, pitcher_id: int, season: int)
     }
 
 
+def _normalize_arsenal_to_dicts(raw_arsenal) -> List[Dict[str, Any]]:
+    """Convert PitchArsenal ORM objects to normalized dicts for consistent access."""
+    return [
+        {
+            "pitch_type": r.pitch_type,
+            "pitch_name": r.pitch_name,
+            "pitch_count": r.pitch_count,
+            "usage_pct": _normalize_rate(r.usage_pct),
+            "whiff_pct": _normalize_rate(r.whiff_pct),
+            "strikeout_pct": _normalize_rate(r.strikeout_pct),
+            "rv_per_100": r.rv_per_100,
+            "xwoba": r.xwoba,
+            "hard_hit_pct": _normalize_rate(r.hard_hit_pct),
+        }
+        for r in raw_arsenal
+    ]
+
+
 def _build_competitive_matchup(
     session,
     batter_id: int,
@@ -300,35 +318,47 @@ def _build_competitive_matchup(
     batting_order: int,
     opposing_pitcher_id: int,
     season: int,
+    _preloaded_arsenal: Optional[List[Dict[str, Any]]] = None,
+    _preloaded_arsenal_season: Optional[int] = None,
 ) -> Dict[str, Any]:
-    arsenal, arsenal_season = get_pitch_arsenal_with_fallback(session, opposing_pitcher_id, season)
+    if _preloaded_arsenal is not None:
+        arsenal_list = _preloaded_arsenal
+        arsenal_season = _preloaded_arsenal_season
+    else:
+        raw_arsenal, arsenal_season = get_pitch_arsenal_with_fallback(session, opposing_pitcher_id, season)
+        arsenal_list = _normalize_arsenal_to_dicts(raw_arsenal)
+        if not arsenal_list:
+            live_arsenal, live_season = _fetch_live_pitch_arsenal(opposing_pitcher_id, season)
+            arsenal_list = live_arsenal
+            arsenal_season = live_season
+
     head_to_head = _head_to_head_summary(session, batter_id, opposing_pitcher_id, season)
 
     pitch_type_matrix = []
-    for pitch in arsenal:
+    for pitch in arsenal_list:
         batter_vs_type = _player_vs_pitch_type_summary(
-            session, batter_id, pitch.pitch_type, since_year=max(2024, season - 1)
+            session, batter_id, pitch.get("pitch_type"), since_year=max(2024, season - 1)
         )
         pa = batter_vs_type["pa"] or 0
         edge_score = _edge_score_from_components(
             batter_ba=batter_vs_type["batting_avg"],
-            batter_xwoba=batter_vs_type["xwoba"],
-            pitcher_xwoba=pitch.xwoba,
-            pitcher_hard_hit_pct=pitch.hard_hit_pct,
-            usage_pct=pitch.usage_pct,
+            batter_xwoba=batter_vs_type.get("xwoba"),
+            pitcher_xwoba=pitch.get("xwoba"),
+            pitcher_hard_hit_pct=pitch.get("hard_hit_pct"),
+            usage_pct=pitch.get("usage_pct"),
         )
-        confidence = _confidence_from_sample(pa, pitch.usage_pct)
+        confidence = _confidence_from_sample(pa, pitch.get("usage_pct"))
 
         pitch_type_matrix.append(
             {
-                "pitch_type": _normalize_pitch_label(pitch.pitch_type, pitch.pitch_name),
-                "raw_pitch_type": pitch.pitch_type,
-                "pitcher_usage_pct": pitch.usage_pct or 0.0,
-                "pitcher_pitch_count": pitch.pitch_count,
-                "pitcher_whiff_pct": pitch.whiff_pct,
-                "pitcher_strikeout_pct": pitch.strikeout_pct,
-                "pitcher_xwoba": pitch.xwoba,
-                "pitcher_hard_hit_pct": pitch.hard_hit_pct,
+                "pitch_type": _normalize_pitch_label(pitch.get("pitch_type"), pitch.get("pitch_name")),
+                "raw_pitch_type": pitch.get("pitch_type"),
+                "pitcher_usage_pct": pitch.get("usage_pct") or 0.0,
+                "pitcher_pitch_count": pitch.get("pitch_count"),
+                "pitcher_whiff_pct": pitch.get("whiff_pct"),
+                "pitcher_strikeout_pct": pitch.get("strikeout_pct"),
+                "pitcher_xwoba": pitch.get("xwoba"),
+                "pitcher_hard_hit_pct": pitch.get("hard_hit_pct"),
                 "batter_vs_type": batter_vs_type,
                 "edge_score": edge_score,
                 "confidence": confidence,
@@ -498,6 +528,34 @@ def _fetch_roster_as_lineup(team_id: int, season: int) -> List[Dict[str, Any]]:
         return []
 
 
+def _fetch_previous_day_lineup(team_id: int, game_date_iso: str) -> List[Dict[str, Any]]:
+    """Fetch yesterday's official lineup for the team as a projected lineup.
+
+    Falls back to an empty list if no previous game exists (e.g. first day of season).
+    """
+    try:
+        game_date = datetime.date.fromisoformat(game_date_iso[:10])
+        yesterday = (game_date - datetime.timedelta(days=1)).isoformat()
+        resp = _req.get(
+            f"{MLB_STATS_BASE}/schedule",
+            params={"date": yesterday, "teamId": team_id, "hydrate": "lineups", "sportId": 1},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        for dated in resp.json().get("dates", []):
+            for game in dated.get("games", []):
+                teams = game.get("teams", {})
+                for side in ("home", "away"):
+                    if teams.get(side, {}).get("team", {}).get("id") == team_id:
+                        key = "homePlayers" if side == "home" else "awayPlayers"
+                        players = game.get("lineups", {}).get(key) or []
+                        if players:
+                            return players
+    except Exception:
+        pass
+    return []
+
+
 class PredictRequest(BaseModel):
     pitcher_id: int
     batter_id: int
@@ -648,8 +706,28 @@ def create_app():
         away_record = away.get("leagueRecord", {})
 
         lineups = game.get("lineups", {})
-        home_lineup_raw = lineups.get("homePlayers", [])
-        away_lineup_raw = lineups.get("awayPlayers", [])
+        home_lineup_raw = lineups.get("homePlayers", []) or []
+        away_lineup_raw = lineups.get("awayPlayers", []) or []
+
+        # 3-tier lineup fallback: official → yesterday's lineup → active roster
+        home_lineup_source = "official" if home_lineup_raw else None
+        away_lineup_source = "official" if away_lineup_raw else None
+        if not home_lineup_raw and home_team_id:
+            prev = _fetch_previous_day_lineup(home_team_id, game_date_iso)
+            if prev:
+                home_lineup_raw = prev
+                home_lineup_source = "projected"
+            else:
+                home_lineup_raw = _fetch_roster_as_lineup(home_team_id, season)
+                home_lineup_source = "roster" if home_lineup_raw else None
+        if not away_lineup_raw and away_team_id:
+            prev = _fetch_previous_day_lineup(away_team_id, game_date_iso)
+            if prev:
+                away_lineup_raw = prev
+                away_lineup_source = "projected"
+            else:
+                away_lineup_raw = _fetch_roster_as_lineup(away_team_id, season)
+                away_lineup_source = "roster" if away_lineup_raw else None
 
         Session = _get_session()
         with Session() as session:
@@ -751,6 +829,7 @@ def create_app():
                     "pitcher_name": home.get("probablePitcher", {}).get("fullName"),
                     **pitcher_detail(home_pitcher_id),
                     "splits": team_splits(home_team_id),
+                    "lineup_source": home_lineup_source,
                     "lineup": [
                         {"id": p.get("id"), "name": p.get("fullName"), "position": p.get("primaryPosition", {}).get("abbreviation")}
                         for p in home_lineup_raw
@@ -764,6 +843,7 @@ def create_app():
                     "pitcher_name": away.get("probablePitcher", {}).get("fullName"),
                     **pitcher_detail(away_pitcher_id),
                     "splits": team_splits(away_team_id),
+                    "lineup_source": away_lineup_source,
                     "lineup": [
                         {"id": p.get("id"), "name": p.get("fullName"), "position": p.get("primaryPosition", {}).get("abbreviation")}
                         for p in away_lineup_raw
@@ -806,19 +886,42 @@ def create_app():
         home_lineup_raw = lineups.get("homePlayers", []) or []
         away_lineup_raw = lineups.get("awayPlayers", []) or []
 
-        # Official lineups aren't posted until ~1-2 hrs before game time.
-        # Fall back to active non-pitcher roster so the matrix always renders.
+        # 3-tier lineup fallback: official → yesterday's lineup → active roster
         away_lineup_source = "official"
         home_lineup_source = "official"
         if not away_lineup_raw and away_team_id:
-            away_lineup_raw = _fetch_roster_as_lineup(away_team_id, season)
-            away_lineup_source = "roster"
+            prev = _fetch_previous_day_lineup(away_team_id, game_date_iso)
+            if prev:
+                away_lineup_raw = prev
+                away_lineup_source = "projected"
+            else:
+                away_lineup_raw = _fetch_roster_as_lineup(away_team_id, season)
+                away_lineup_source = "roster"
         if not home_lineup_raw and home_team_id:
-            home_lineup_raw = _fetch_roster_as_lineup(home_team_id, season)
-            home_lineup_source = "roster"
+            prev = _fetch_previous_day_lineup(home_team_id, game_date_iso)
+            if prev:
+                home_lineup_raw = prev
+                home_lineup_source = "projected"
+            else:
+                home_lineup_raw = _fetch_roster_as_lineup(home_team_id, season)
+                home_lineup_source = "roster"
 
         Session = _get_session()
         with Session() as session:
+            # Pre-fetch each pitcher's arsenal once to avoid N+1 queries per batter
+            def _load_pitcher_arsenal(pitcher_id):
+                if not pitcher_id:
+                    return [], None
+                raw, s = get_pitch_arsenal_with_fallback(session, pitcher_id, season)
+                lst = _normalize_arsenal_to_dicts(raw)
+                if not lst:
+                    live, ls = _fetch_live_pitch_arsenal(pitcher_id, season)
+                    return live, ls
+                return lst, s
+
+            home_arsenal, home_arsenal_season = _load_pitcher_arsenal(home_pitcher_id)
+            away_arsenal, away_arsenal_season = _load_pitcher_arsenal(away_pitcher_id)
+
             away_lineup_matchups = [
                 _build_competitive_matchup(
                     session=session,
@@ -827,6 +930,8 @@ def create_app():
                     batting_order=i + 1,
                     opposing_pitcher_id=home_pitcher_id,
                     season=season,
+                    _preloaded_arsenal=home_arsenal,
+                    _preloaded_arsenal_season=home_arsenal_season,
                 )
                 for i, p in enumerate(away_lineup_raw)
                 if p.get("id") and home_pitcher_id
@@ -839,6 +944,8 @@ def create_app():
                     batting_order=i + 1,
                     opposing_pitcher_id=away_pitcher_id,
                     season=season,
+                    _preloaded_arsenal=away_arsenal,
+                    _preloaded_arsenal_season=away_arsenal_season,
                 )
                 for i, p in enumerate(home_lineup_raw)
                 if p.get("id") and away_pitcher_id

@@ -265,7 +265,18 @@ export default function PitcherPage() {
             <div style={s.section}>
               <div style={s.sectionTitle}>
                 Pitch Arsenal
-                {data.arsenal_season && <span style={s.sourceBadge}>{data.arsenal_season}</span>}
+                {data.arsenal_season != null && (() => {
+                  const currentYear = new Date().getFullYear()
+                  const isPrior = data.arsenal_season < currentYear
+                  return (
+                    <span style={{
+                      ...s.sourceBadge,
+                      ...(isPrior ? { background: '#3a2a0f', color: '#d29922' } : {}),
+                    }}>
+                      {isPrior ? `${data.arsenal_season} Season — Prior Year` : `${data.arsenal_season} Season`}
+                    </span>
+                  )
+                })()}
               </div>
               <div style={s.tableWrap}>
                 <table style={s.table}>

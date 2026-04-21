@@ -336,6 +336,12 @@ export default function MatchupDetailPage() {
   const awayLineupSource = competitive?.away_lineup_source
   const homeLineupSource = competitive?.home_lineup_source
 
+  function lineupSourceBadge(source) {
+    if (source === 'projected') return 'Projected (yesterday\'s lineup)'
+    if (source === 'roster') return 'Lineup TBD — showing full roster'
+    return null
+  }
+
   function toggleBatter(key) {
     setExpandedBatters(prev => ({ ...prev, [key]: !prev[key] }))
   }
@@ -408,7 +414,14 @@ export default function MatchupDetailPage() {
               <div style={t.sectionTitle}>Starting Lineups</div>
               <div style={t.lineupGrid}>
                 <div>
-                  <div style={{ fontSize: '13px', color: '#58a6ff', fontWeight: '600', marginBottom: '10px' }}>{away.name}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                    <div style={{ fontSize: '13px', color: '#58a6ff', fontWeight: '600' }}>{away.name}</div>
+                    {away.lineup_source && away.lineup_source !== 'official' && (
+                      <span style={{ fontSize: '11px', color: '#8b949e', background: '#21262d', padding: '2px 7px', borderRadius: '3px' }}>
+                        {lineupSourceBadge(away.lineup_source)}
+                      </span>
+                    )}
+                  </div>
                   {away.lineup?.length > 0 ? away.lineup.map((p, i) => (
                     <div key={i} style={t.lineupItem}>
                       <span style={t.orderNum}>{i + 1}</span>
@@ -420,7 +433,14 @@ export default function MatchupDetailPage() {
                   )}
                 </div>
                 <div>
-                  <div style={{ fontSize: '13px', color: '#3fb950', fontWeight: '600', marginBottom: '10px' }}>{home.name}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                    <div style={{ fontSize: '13px', color: '#3fb950', fontWeight: '600' }}>{home.name}</div>
+                    {home.lineup_source && home.lineup_source !== 'official' && (
+                      <span style={{ fontSize: '11px', color: '#8b949e', background: '#21262d', padding: '2px 7px', borderRadius: '3px' }}>
+                        {lineupSourceBadge(home.lineup_source)}
+                      </span>
+                    )}
+                  </div>
                   {home.lineup?.length > 0 ? home.lineup.map((p, i) => (
                     <div key={i} style={t.lineupItem}>
                       <span style={t.orderNum}>{i + 1}</span>
@@ -461,7 +481,7 @@ export default function MatchupDetailPage() {
           <div style={{ marginBottom: '24px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
               <div style={{ fontSize: '14px', color: '#58a6ff', fontWeight: '600' }}>{away.name} hitters vs {home.pitcher_name || 'Home Starter'}</div>
-              {awayLineupSource === 'roster' && <span style={{ fontSize: '11px', color: '#8b949e', background: '#21262d', padding: '2px 7px', borderRadius: '3px' }}>Lineup TBD — showing full roster</span>}
+              {awayLineupSource && awayLineupSource !== 'official' && <span style={{ fontSize: '11px', color: '#8b949e', background: '#21262d', padding: '2px 7px', borderRadius: '3px' }}>{lineupSourceBadge(awayLineupSource)}</span>}
             </div>
             {awayLineupMatchups.length === 0 ? (
               <div style={t.noData}>No data available</div>
@@ -478,7 +498,7 @@ export default function MatchupDetailPage() {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
               <div style={{ fontSize: '14px', color: '#3fb950', fontWeight: '600' }}>{home.name} hitters vs {away.pitcher_name || 'Away Starter'}</div>
-              {homeLineupSource === 'roster' && <span style={{ fontSize: '11px', color: '#8b949e', background: '#21262d', padding: '2px 7px', borderRadius: '3px' }}>Lineup TBD — showing full roster</span>}
+              {homeLineupSource && homeLineupSource !== 'official' && <span style={{ fontSize: '11px', color: '#8b949e', background: '#21262d', padding: '2px 7px', borderRadius: '3px' }}>{lineupSourceBadge(homeLineupSource)}</span>}
             </div>
             {homeLineupMatchups.length === 0 ? (
               <div style={t.noData}>No data available</div>
