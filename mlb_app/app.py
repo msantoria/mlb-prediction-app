@@ -259,7 +259,7 @@ def _player_vs_pitch_type_summary(
     pa = len(terminal)
     if pa == 0:
         return {"pa": 0, "batting_avg": None, "avg_exit_velocity": None,
-                "avg_launch_angle": None, "hard_hit_pct": None}
+                "avg_launch_angle": None, "hard_hit_pct": None, "xwoba": None}
     hits = sum(1 for e in terminal if e.events in HIT_EVENTS)
     ev_vals = [e.launch_speed for e in terminal if e.launch_speed is not None]
     la_vals = [e.launch_angle for e in terminal if e.launch_angle is not None]
@@ -270,6 +270,7 @@ def _player_vs_pitch_type_summary(
         "avg_exit_velocity": round(sum(ev_vals) / len(ev_vals), 1) if ev_vals else None,
         "avg_launch_angle": round(sum(la_vals) / len(la_vals), 1) if la_vals else None,
         "hard_hit_pct": round(hard_hits / len(ev_vals), 3) if ev_vals else None,
+        "xwoba": None,
     }
 
 
@@ -293,6 +294,23 @@ def _head_to_head_summary(session, batter_id: int, pitcher_id: int, season: int)
     }
 
 
+def _normalize_arsenal_to_dicts(raw_arsenal) -> List[Dict[str, Any]]:
+    return [
+        {
+            "pitch_type": r.pitch_type,
+            "pitch_name": r.pitch_name,
+            "pitch_count": r.pitch_count,
+            "usage_pct": _normalize_rate(r.usage_pct),
+            "whiff_pct": _normalize_rate(r.whiff_pct),
+            "strikeout_pct": _normalize_rate(r.strikeout_pct),
+            "rv_per_100": r.rv_per_100,
+            "xwoba": r.xwoba,
+            "hard_hit_pct": _normalize_rate(r.hard_hit_pct),
+        }
+        for r in raw_arsenal
+    ]
+
+
 def _build_competitive_matchup(
     session,
     batter_id: int,
@@ -300,35 +318,47 @@ def _build_competitive_matchup(
     batting_order: int,
     opposing_pitcher_id: int,
     season: int,
+    _preloaded_arsenal: Optional[List[Dict[str, Any]]] = None,
+    _preloaded_arsenal_season: Optional[int] = None,
 ) -> Dict[str, Any]:
-    arsenal, arsenal_season = get_pitch_arsenal_with_fallback(session, opposing_pitcher_id, season)
+    if _preloaded_arsenal is not None:
+        arsenal_list = _preloaded_arsenal
+        arsenal_season = _preloaded_arsenal_season
+    else:
+        raw_arsenal, arsenal_season = get_pitch_arsenal_with_fallback(session, opposing_pitcher_id, season)
+        arsenal_list = _normalize_arsenal_to_dicts(raw_arsenal)
+        if not arsenal_list:
+            live_arsenal, live_season = _fetch_live_pitch_arsenal(opposing_pitcher_id, season)
+            arsenal_list = live_arsenal
+            arsenal_season = live_season
+
     head_to_head = _head_to_head_summary(session, batter_id, opposing_pitcher_id, season)
 
     pitch_type_matrix = []
-    for pitch in arsenal:
+    for pitch in arsenal_list:
         batter_vs_type = _player_vs_pitch_type_summary(
-            session, batter_id, pitch.pitch_type, since_year=max(2024, season - 1)
+            session, batter_id, pitch.get("pitch_type"), since_year=max(2024, season - 1)
         )
         pa = batter_vs_type["pa"] or 0
         edge_score = _edge_score_from_components(
             batter_ba=batter_vs_type["batting_avg"],
-            batter_xwoba=batter_vs_type["xwoba"],
-            pitcher_xwoba=pitch.xwoba,
-            pitcher_hard_hit_pct=pitch.hard_hit_pct,
-            usage_pct=pitch.usage_pct,
+            batter_xwoba=batter_vs_type.get("xwoba"),
+            pitcher_xwoba=pitch.get("xwoba"),
+            pitcher_hard_hit_pct=pitch.get("hard_hit_pct"),
+            usage_pct=pitch.get("usage_pct"),
         )
-        confidence = _confidence_from_sample(pa, pitch.usage_pct)
+        confidence = _confidence_from_sample(pa, pitch.get("usage_pct"))
 
         pitch_type_matrix.append(
             {
-                "pitch_type": _normalize_pitch_label(pitch.pitch_type, pitch.pitch_name),
-                "raw_pitch_type": pitch.pitch_type,
-                "pitcher_usage_pct": pitch.usage_pct or 0.0,
-                "pitcher_pitch_count": pitch.pitch_count,
-                "pitcher_whiff_pct": pitch.whiff_pct,
-                "pitcher_strikeout_pct": pitch.strikeout_pct,
-                "pitcher_xwoba": pitch.xwoba,
-                "pitcher_hard_hit_pct": pitch.hard_hit_pct,
+                "pitch_type": _normalize_pitch_label(pitch.get("pitch_type"), pitch.get("pitch_name")),
+                "raw_pitch_type": pitch.get("pitch_type"),
+                "pitcher_usage_pct": pitch.get("usage_pct") or 0.0,
+                "pitcher_pitch_count": pitch.get("pitch_count"),
+                "pitcher_whiff_pct": pitch.get("whiff_pct"),
+                "pitcher_strikeout_pct": pitch.get("strikeout_pct"),
+                "pitcher_xwoba": pitch.get("xwoba"),
+                "pitcher_hard_hit_pct": pitch.get("hard_hit_pct"),
                 "batter_vs_type": batter_vs_type,
                 "edge_score": edge_score,
                 "confidence": confidence,
@@ -360,7 +390,6 @@ def _fetch_batter_live_data(player_id: int, season: int) -> Dict[str, Any]:
     out: Dict[str, Any] = {"player_info": None, "season_stats": None,
                            "splits": {"vsL": None, "vsR": None}, "year_by_year": []}
 
-    # Player info
     try:
         r = _req.get(f"{MLB_STATS_BASE}/people/{player_id}",
                      params={"hydrate": "currentTeam"}, timeout=10)
@@ -397,7 +426,6 @@ def _fetch_batter_live_data(player_id: int, season: int) -> Dict[str, Any]:
             "home_runs": s.get("homeRuns"),
         }
 
-    # Current season stats
     try:
         r = _req.get(f"{MLB_STATS_BASE}/people/{player_id}/stats",
                      params={"stats": "season", "group": "hitting", "season": season}, timeout=10)
@@ -408,7 +436,6 @@ def _fetch_batter_live_data(player_id: int, season: int) -> Dict[str, Any]:
     except Exception:
         pass
 
-    # vsL / vsR splits
     for sit, key in [("vl", "vsL"), ("vr", "vsR")]:
         try:
             r = _req.get(f"{MLB_STATS_BASE}/people/{player_id}/stats",
@@ -421,7 +448,6 @@ def _fetch_batter_live_data(player_id: int, season: int) -> Dict[str, Any]:
         except Exception:
             pass
 
-    # Year-by-year
     try:
         r = _req.get(f"{MLB_STATS_BASE}/people/{player_id}/stats",
                      params={"stats": "yearByYear", "group": "hitting"}, timeout=15)
@@ -440,7 +466,6 @@ def _fetch_batter_live_data(player_id: int, season: int) -> Dict[str, Any]:
 
 
 def _compute_batter_statcast(session, batter_id: int, since_year: int = 2024) -> Optional[Dict[str, Any]]:
-    """Derive Statcast metrics from raw StatcastEvent rows already in the DB."""
     events = (
         session.query(StatcastEvent)
         .filter(StatcastEvent.batter_id == batter_id,
@@ -480,7 +505,6 @@ def _compute_batter_statcast(session, batter_id: int, since_year: int = 2024) ->
 
 
 def _fetch_roster_as_lineup(team_id: int, season: int) -> List[Dict[str, Any]]:
-    """Return active non-pitcher roster when official lineup hasn't been submitted yet."""
     try:
         resp = _req.get(
             f"{MLB_STATS_BASE}/teams/{team_id}/roster",
@@ -498,6 +522,61 @@ def _fetch_roster_as_lineup(team_id: int, season: int) -> List[Dict[str, Any]]:
         return []
 
 
+def _game_date_candidates(game_date_iso: str) -> List[str]:
+    candidates: List[str] = []
+    if game_date_iso:
+        try:
+            utc_dt = datetime.datetime.fromisoformat(game_date_iso.replace("Z", "+00:00"))
+            for offset_hours in (0, -4, -5, -6, -7, -8):
+                candidate = (utc_dt + datetime.timedelta(hours=offset_hours)).date().isoformat()
+                if candidate not in candidates:
+                    candidates.append(candidate)
+        except Exception:
+            pass
+    today = datetime.date.today().isoformat()
+    if today not in candidates:
+        candidates.append(today)
+    return candidates
+
+
+def _fetch_previous_completed_game_lineup(team_id: int, game_date_iso: str) -> List[Dict[str, Any]]:
+    for candidate_date in _game_date_candidates(game_date_iso):
+        try:
+            resp = _req.get(
+                f"{MLB_STATS_BASE}/schedule",
+                params={
+                    "startDate": (datetime.date.fromisoformat(candidate_date) - datetime.timedelta(days=7)).isoformat(),
+                    "endDate": candidate_date,
+                    "teamId": team_id,
+                    "hydrate": "lineups",
+                    "sportId": 1,
+                },
+                timeout=15,
+            )
+            resp.raise_for_status()
+            dates = resp.json().get("dates", []) or []
+            games: List[Dict[str, Any]] = []
+            for dated in dates:
+                for game in dated.get("games", []) or []:
+                    status = (game.get("status") or {}).get("codedGameState")
+                    if status != "F":
+                        continue
+                    games.append(game)
+            games.sort(key=lambda g: g.get("gameDate") or "", reverse=True)
+            for game in games:
+                teams = game.get("teams", {})
+                for side in ("home", "away"):
+                    if teams.get(side, {}).get("team", {}).get("id") != team_id:
+                        continue
+                    key = "homePlayers" if side == "home" else "awayPlayers"
+                    players = game.get("lineups", {}).get(key) or []
+                    if players:
+                        return players
+        except Exception:
+            continue
+    return []
+
+
 class PredictRequest(BaseModel):
     pitcher_id: int
     batter_id: int
@@ -511,7 +590,7 @@ def create_app():
 
     app = FastAPI(
         title="MLB Prediction API",
-        version="0.5.1",
+        version="0.5.2",
         description="Statcast-powered daily matchup predictions",
     )
 
@@ -525,7 +604,7 @@ def create_app():
 
     @app.get("/health")
     def health():
-        return {"status": "ok", "version": "0.5.1"}
+        return {"status": "ok", "version": "0.5.2"}
 
     @app.get("/matchups")
     def list_matchups(date: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -540,7 +619,6 @@ def create_app():
 
     @app.get("/matchups/calendar")
     def matchup_calendar() -> Dict[str, Any]:
-        """Return yesterday/today/tomorrow with cached snapshots for consistency."""
         dates = _build_date_window()
         Session = _get_session()
         with Session() as session:
@@ -557,7 +635,6 @@ def create_app():
 
     @app.post("/matchups/snapshot/{date_str}")
     def snapshot_matchups(date_str: str) -> Dict[str, Any]:
-        """Persist the latest schedule pull for a specific date into in-memory cache."""
         Session = _get_session()
         with Session() as session:
             try:
@@ -568,7 +645,6 @@ def create_app():
 
     @app.post("/ai/ask")
     def ai_ask(payload: Dict[str, Any]) -> Dict[str, Any]:
-        """Lightweight MLB data assistant powered by current API data."""
         question = str(payload.get("question", "")).strip()
         if not question:
             raise HTTPException(status_code=400, detail="Question is required")
@@ -648,8 +724,27 @@ def create_app():
         away_record = away.get("leagueRecord", {})
 
         lineups = game.get("lineups", {})
-        home_lineup_raw = lineups.get("homePlayers", [])
-        away_lineup_raw = lineups.get("awayPlayers", [])
+        home_lineup_raw = lineups.get("homePlayers", []) or []
+        away_lineup_raw = lineups.get("awayPlayers", []) or []
+
+        home_lineup_source = "official" if home_lineup_raw else None
+        away_lineup_source = "official" if away_lineup_raw else None
+        if not home_lineup_raw and home_team_id:
+            prev = _fetch_previous_completed_game_lineup(home_team_id, game_date_iso)
+            if prev:
+                home_lineup_raw = prev
+                home_lineup_source = "projected"
+            else:
+                home_lineup_raw = _fetch_roster_as_lineup(home_team_id, season)
+                home_lineup_source = "roster" if home_lineup_raw else None
+        if not away_lineup_raw and away_team_id:
+            prev = _fetch_previous_completed_game_lineup(away_team_id, game_date_iso)
+            if prev:
+                away_lineup_raw = prev
+                away_lineup_source = "projected"
+            else:
+                away_lineup_raw = _fetch_roster_as_lineup(away_team_id, season)
+                away_lineup_source = "roster" if away_lineup_raw else None
 
         Session = _get_session()
         with Session() as session:
@@ -710,7 +805,6 @@ def create_app():
                     }
 
                 db_result = {"vsL": sd(vsL), "vsR": sd(vsR)}
-                # If DB is missing both splits or both are identical, use live MLB API data
                 both_missing = not db_result["vsL"] and not db_result["vsR"]
                 identical = (
                     db_result["vsL"] and db_result["vsR"] and
@@ -751,6 +845,7 @@ def create_app():
                     "pitcher_name": home.get("probablePitcher", {}).get("fullName"),
                     **pitcher_detail(home_pitcher_id),
                     "splits": team_splits(home_team_id),
+                    "lineup_source": home_lineup_source,
                     "lineup": [
                         {"id": p.get("id"), "name": p.get("fullName"), "position": p.get("primaryPosition", {}).get("abbreviation")}
                         for p in home_lineup_raw
@@ -764,6 +859,7 @@ def create_app():
                     "pitcher_name": away.get("probablePitcher", {}).get("fullName"),
                     **pitcher_detail(away_pitcher_id),
                     "splits": team_splits(away_team_id),
+                    "lineup_source": away_lineup_source,
                     "lineup": [
                         {"id": p.get("id"), "name": p.get("fullName"), "position": p.get("primaryPosition", {}).get("abbreviation")}
                         for p in away_lineup_raw
@@ -806,19 +902,40 @@ def create_app():
         home_lineup_raw = lineups.get("homePlayers", []) or []
         away_lineup_raw = lineups.get("awayPlayers", []) or []
 
-        # Official lineups aren't posted until ~1-2 hrs before game time.
-        # Fall back to active non-pitcher roster so the matrix always renders.
-        away_lineup_source = "official"
-        home_lineup_source = "official"
+        away_lineup_source = "official" if away_lineup_raw else None
+        home_lineup_source = "official" if home_lineup_raw else None
         if not away_lineup_raw and away_team_id:
-            away_lineup_raw = _fetch_roster_as_lineup(away_team_id, season)
-            away_lineup_source = "roster"
+            prev = _fetch_previous_completed_game_lineup(away_team_id, game_date_iso)
+            if prev:
+                away_lineup_raw = prev
+                away_lineup_source = "projected"
+            else:
+                away_lineup_raw = _fetch_roster_as_lineup(away_team_id, season)
+                away_lineup_source = "roster" if away_lineup_raw else None
         if not home_lineup_raw and home_team_id:
-            home_lineup_raw = _fetch_roster_as_lineup(home_team_id, season)
-            home_lineup_source = "roster"
+            prev = _fetch_previous_completed_game_lineup(home_team_id, game_date_iso)
+            if prev:
+                home_lineup_raw = prev
+                home_lineup_source = "projected"
+            else:
+                home_lineup_raw = _fetch_roster_as_lineup(home_team_id, season)
+                home_lineup_source = "roster" if home_lineup_raw else None
 
         Session = _get_session()
         with Session() as session:
+            def _load_pitcher_arsenal(pitcher_id):
+                if not pitcher_id:
+                    return [], None
+                raw, s = get_pitch_arsenal_with_fallback(session, pitcher_id, season)
+                lst = _normalize_arsenal_to_dicts(raw)
+                if not lst:
+                    live, ls = _fetch_live_pitch_arsenal(pitcher_id, season)
+                    return live, ls
+                return lst, s
+
+            home_arsenal, home_arsenal_season = _load_pitcher_arsenal(home_pitcher_id)
+            away_arsenal, away_arsenal_season = _load_pitcher_arsenal(away_pitcher_id)
+
             away_lineup_matchups = [
                 _build_competitive_matchup(
                     session=session,
@@ -827,6 +944,8 @@ def create_app():
                     batting_order=i + 1,
                     opposing_pitcher_id=home_pitcher_id,
                     season=season,
+                    _preloaded_arsenal=home_arsenal,
+                    _preloaded_arsenal_season=home_arsenal_season,
                 )
                 for i, p in enumerate(away_lineup_raw)
                 if p.get("id") and home_pitcher_id
@@ -839,6 +958,8 @@ def create_app():
                     batting_order=i + 1,
                     opposing_pitcher_id=away_pitcher_id,
                     season=season,
+                    _preloaded_arsenal=away_arsenal,
+                    _preloaded_arsenal_season=away_arsenal_season,
                 )
                 for i, p in enumerate(home_lineup_raw)
                 if p.get("id") and away_pitcher_id
@@ -885,8 +1006,6 @@ def create_app():
             multi = get_pitcher_multi_season(session, player_id, [season, season - 1, season - 2, season - 3])
             game_log = get_pitcher_game_log(session, player_id, 10)
             if not agg and not arsenal_rows:
-                # Fallback: fetch basic player info from MLB Stats API so the page
-                # can at least show the player's name rather than a hard 404
                 player_name = None
                 try:
                     p_resp = _req.get(
@@ -960,7 +1079,6 @@ def create_app():
             split_seasons = get_player_splits_multi_season(session, player_id, [season, season - 1, season - 2, season - 3])
             statcast = _compute_batter_statcast(session, player_id, since_year=2024)
 
-        # Always fetch live MLB data regardless of DB state
         live = _fetch_batter_live_data(player_id, season)
 
         def _sd(s):
@@ -973,7 +1091,6 @@ def create_app():
                 "home_runs": s.home_runs,
             }
 
-        # Prefer DB splits; fall back to live API splits
         db_vsL, db_vsR = _sd(split_L), _sd(split_R)
         if db_vsL or db_vsR:
             splits = {"vsL": db_vsL, "vsR": db_vsR}
@@ -1250,7 +1367,6 @@ def create_app():
             )
         return {"pitcher_id": req.pitcher_id, "batter_id": req.batter_id, **result}
 
-    # Serve the built React frontend — must be mounted last so API routes take priority
     _dist = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'frontend', 'dist')
     if os.path.isdir(_dist):
         app.mount("/", StaticFiles(directory=_dist, html=True), name="frontend")
