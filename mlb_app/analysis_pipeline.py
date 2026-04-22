@@ -33,6 +33,8 @@ from .hitter_profile import compute_hitter_profile
 from .pitcher_profile import compute_pitcher_profile
 from .environment_profile import compute_environment_profile
 from .environment_data import build_environment_context
+from .lineup_data import resolve_team_lineup
+from .offense_profile_aggregation import build_projected_lineup_offense_profile
 
 
 def _determine_hand(player_id: int) -> str | None:
@@ -133,6 +135,32 @@ def generate_daily_matchups(date_str: str) -> List[Dict]:
             away_vs_pitcher_hand = {}
             away_split_source = "unknown"
 
+        home_lineup, home_lineup_source = resolve_team_lineup(
+            game=game,
+            team_id=home_team_id,
+            side="home",
+            season=season,
+        )
+        away_lineup, away_lineup_source = resolve_team_lineup(
+            game=game,
+            team_id=away_team_id,
+            side="away",
+            season=season,
+        )
+
+        home_projected_lineup_offense_profile = build_projected_lineup_offense_profile(
+            lineup=home_lineup,
+            season=season,
+            pitcher_hand=away_hand,
+            lineup_source=home_lineup_source,
+        )
+        away_projected_lineup_offense_profile = build_projected_lineup_offense_profile(
+            lineup=away_lineup,
+            season=season,
+            pitcher_hand=home_hand,
+            lineup_source=away_lineup_source,
+        )
+
         matchup_features.update(
             {
                 "homeTeamSplit": home_vs_pitcher_hand,
@@ -223,6 +251,8 @@ def generate_daily_matchups(date_str: str) -> List[Dict]:
                 "awayPitcherProfile": away_pitcher_profile,
                 "homeTeamOffenseProfile": home_team_offense_profile,
                 "awayTeamOffenseProfile": away_team_offense_profile,
+                "homeProjectedLineupOffenseProfile": home_projected_lineup_offense_profile,
+                "awayProjectedLineupOffenseProfile": away_projected_lineup_offense_profile,
                 "environmentProfile": environment_profile,
             }
         )
