@@ -32,6 +32,7 @@ from .batter_analysis import get_batter_metrics
 from .hitter_profile import compute_hitter_profile
 from .pitcher_profile import compute_pitcher_profile
 from .environment_profile import compute_environment_profile
+from .environment_data import build_environment_context
 
 
 def _determine_hand(player_id: int) -> str | None:
@@ -213,44 +214,7 @@ def generate_daily_matchups(date_str: str) -> List[Dict]:
         )
 
         venue = game.get("venue", {}) or {}
-        environment_context = {
-            "venue_name": venue.get("name"),
-            "roof_status": None,
-            "home_team": game_info.get("homeTeam"),
-            "away_team": game_info.get("awayTeam"),
-            "game_time_local": game_info.get("gameDate"),
-            "temperature_f": None,
-            "wind_speed_mph": None,
-            "wind_direction": None,
-            "humidity_pct": None,
-            "precipitation_probability": None,
-            "run_factor": None,
-            "home_run_factor": None,
-            "hit_factor": None,
-            "scoring_environment_label": None,
-            "weather_run_impact": None,
-            "park_run_impact": None,
-            "rain_delay_risk": None,
-            "postponement_risk": None,
-            "extreme_wind_flag": None,
-            "extreme_temperature_flag": None,
-            "source_type": "schedule_venue_stub",
-            "source_fields_used": ["venue_name", "home_team", "away_team", "game_time_local"],
-            "data_confidence": "low",
-            "generated_from": "game schedule + venue stub",
-            "is_stub": True,
-            "readiness": "stub",
-            "missing_inputs": [
-                "temperature_f",
-                "wind_speed_mph",
-                "wind_direction",
-                "humidity_pct",
-                "precipitation_probability",
-                "run_factor",
-                "home_run_factor",
-                "hit_factor",
-            ],
-        }
+        environment_context = build_environment_context(game)
         environment_profile = compute_environment_profile(environment_context)
 
         matchup_features.update(
