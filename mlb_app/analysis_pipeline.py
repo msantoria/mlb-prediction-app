@@ -19,6 +19,7 @@ combine available data sources.
 from __future__ import annotations
 
 import datetime
+import requests
 from typing import Dict, List
 
 from .data_ingestion import (
@@ -38,14 +39,25 @@ from .offense_profile_aggregation import build_projected_lineup_offense_profile
 
 
 def _determine_hand(player_id: int) -> str | None:
-    """Placeholder to determine a pitcher's throwing hand ('L' or 'R').
+    """Determine a pitcher's throwing hand ('L' or 'R') from MLB Stats API.
 
-    This is intentionally unresolved until a real MLB Stats API or roster lookup
-    is implemented. Returning None is safer than silently defaulting to 'R',
-    because split selection should not pretend certainty when hand is unknown.
+    If the API request fails or the hand is unavailable, return None so the
+    pipeline can preserve honest fallback behavior rather than assume certainty.
     """
-    # TODO: implement real pitcher hand lookup.
-    return None
+    if not player_id:
+        return None
+
+    url = f"https://statsapi.mlb.com/api/v1/people/{player_id}"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        people = response.json().get("people", [])
+        if not people:
+            return None
+        hand = (people[0].get("pitchHand") or {}).get("code")
+        return hand if hand in {"L", "R"} else None
+    except requests.RequestException:
+        return None
 
 
 def generate_daily_matchups(date_str: str) -> List[Dict]:
