@@ -22,7 +22,15 @@ def compute_environment_profile(raw_context: dict) -> dict:
         A structured game-level environment profile using raw metrics grouped
         by category. Missing fields are returned as None.
     """
+    raw_context = raw_context or {}
+
     return {
+        "metadata": {
+            "source_type": raw_context.get("source_type", "unknown"),
+            "source_fields_used": raw_context.get("source_fields_used", []),
+            "data_confidence": raw_context.get("data_confidence", "unknown"),
+            "generated_from": raw_context.get("generated_from", "compute_environment_profile"),
+        },
         "weather": {
             "temperature_f": raw_context.get("temperature_f"),
             "wind_speed_mph": raw_context.get("wind_speed_mph"),
@@ -52,5 +60,10 @@ def compute_environment_profile(raw_context: dict) -> dict:
             "postponement_risk": raw_context.get("postponement_risk"),
             "extreme_wind_flag": raw_context.get("extreme_wind_flag"),
             "extreme_temperature_flag": raw_context.get("extreme_temperature_flag"),
+        },
+        "status": {
+            "is_stub": raw_context.get("is_stub", True),
+            "readiness": raw_context.get("readiness", "stub"),
+            "missing_inputs": raw_context.get("missing_inputs", []),
         },
     }

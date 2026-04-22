@@ -56,6 +56,14 @@ def compute_hitter_profile(raw_stats: dict) -> dict:
         iso = _safe_difference(slg, avg)
 
     return {
+        "metadata": {
+            "source_type": raw_stats.get("source_type", "unknown"),
+            "source_fields_used": raw_stats.get("source_fields_used", []),
+            "data_confidence": raw_stats.get("data_confidence", "unknown"),
+            "generated_from": raw_stats.get("generated_from", "compute_hitter_profile"),
+            "profile_granularity": raw_stats.get("profile_granularity", "player"),
+            "is_projected_lineup_derived": raw_stats.get("is_projected_lineup_derived", False),
+        },
         "contact_skill": {
             "k_rate": k_rate,
             "whiff_rate": raw_stats.get("whiff_rate"),

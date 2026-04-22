@@ -24,6 +24,12 @@ def compute_pitcher_profile(raw_stats: dict) -> dict:
     raw_stats = raw_stats or {}
 
     return {
+        "metadata": {
+            "source_type": raw_stats.get("source_type", "unknown"),
+            "source_fields_used": raw_stats.get("source_fields_used", []),
+            "data_confidence": raw_stats.get("data_confidence", "unknown"),
+            "generated_from": raw_stats.get("generated_from", "compute_pitcher_profile"),
+        },
         "arsenal": {
             "pitch_mix": raw_stats.get("pitch_mix"),
             "avg_velocity": raw_stats.get("avg_velocity"),
