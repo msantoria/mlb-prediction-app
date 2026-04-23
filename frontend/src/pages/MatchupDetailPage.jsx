@@ -406,7 +406,12 @@ function InsightCards({ items }) {
       ))}
     </div>
   )
+<<<<<<< HEAD
+}
+
+=======
   }
+>>>>>>> upstream/sandbox/contributor-analysis
 function displayKey(key) {
   if (!key) return '—'
   const map = {
