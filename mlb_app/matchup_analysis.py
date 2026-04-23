@@ -13,6 +13,7 @@ overwriting existing overview, pitcher, batter, or environment views.
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
+from .sample_windows import build_sample_metadata
 
 
 def _edge_score_from_components(
@@ -193,6 +194,12 @@ def build_matchup_analysis(
             "pitcher_hand": pitcher_hand if pitcher_hand in {"L", "R"} else "unknown",
             "lineup_source": lineup_source,
             "lineup_player_count": lineup_player_count,
+            **build_sample_metadata(
+                window_name="current_season",
+                sample_size=lineup_player_count,
+                sample_blend_policy="single_window_v1",
+                stabilizer_window=None,
+            ),
         },
         "pitchTypeMatchups": pitch_type_matchups,
         "biggestEdge": biggest_edge,

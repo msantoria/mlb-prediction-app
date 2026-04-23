@@ -29,6 +29,12 @@ def compute_pitcher_profile(raw_stats: dict) -> dict:
             "source_fields_used": raw_stats.get("source_fields_used", []),
             "data_confidence": raw_stats.get("data_confidence", "unknown"),
             "generated_from": raw_stats.get("generated_from", "compute_pitcher_profile"),
+            **build_sample_metadata(
+                window_name=raw_stats.get("sample_window", "last_365_days"),
+                sample_size=raw_stats.get("sample_size"),
+                sample_blend_policy=raw_stats.get("sample_blend_policy", "single_window_v1"),
+                stabilizer_window=raw_stats.get("stabilizer_window"),
+            ),
         },
         "arsenal": {
             "pitch_mix": raw_stats.get("pitch_mix"),

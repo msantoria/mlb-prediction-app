@@ -230,6 +230,10 @@ def generate_daily_matchups(date_str: str) -> List[Dict]:
                 "source_fields_used": sorted(list((home_pitcher_metrics or {}).keys())),
                 "data_confidence": "medium" if home_pitcher_metrics else "low",
                 "generated_from": "get_pitcher_metrics",
+                "sample_window": "last_365_days",
+                "sample_blend_policy": "single_window_v1",
+                "sample_size": None,
+                "stabilizer_window": None,
             }
         )
         away_pitcher_profile = compute_pitcher_profile(
@@ -239,6 +243,10 @@ def generate_daily_matchups(date_str: str) -> List[Dict]:
                 "source_fields_used": sorted(list((away_pitcher_metrics or {}).keys())),
                 "data_confidence": "medium" if away_pitcher_metrics else "low",
                 "generated_from": "get_pitcher_metrics",
+                "sample_window": "last_365_days",
+                "sample_blend_policy": "single_window_v1",
+                "sample_size": None,
+                "stabilizer_window": None,
             }
         )
 
@@ -254,6 +262,9 @@ def generate_daily_matchups(date_str: str) -> List[Dict]:
                 "profile_granularity": "team",
                 "is_projected_lineup_derived": False,
                 "split_source": home_split_source,
+                "sample_window": "current_season",
+                "sample_blend_policy": "single_window_v1",
+                "stabilizer_window": None,
             }
         )
         away_team_offense_profile = compute_hitter_profile(
@@ -266,6 +277,9 @@ def generate_daily_matchups(date_str: str) -> List[Dict]:
                 "profile_granularity": "team",
                 "is_projected_lineup_derived": False,
                 "split_source": away_split_source,
+                "sample_window": "current_season",
+                "sample_blend_policy": "single_window_v1",
+                "stabilizer_window": None,
             }
         )
 

@@ -63,6 +63,12 @@ def compute_hitter_profile(raw_stats: dict) -> dict:
             "generated_from": raw_stats.get("generated_from", "compute_hitter_profile"),
             "profile_granularity": raw_stats.get("profile_granularity", "player"),
             "is_projected_lineup_derived": raw_stats.get("is_projected_lineup_derived", False),
+            **build_sample_metadata(
+                window_name=raw_stats.get("sample_window", "current_season"),
+                sample_size=raw_stats.get("plateAppearances"),
+                sample_blend_policy=raw_stats.get("sample_blend_policy", "single_window_v1"),
+                stabilizer_window=raw_stats.get("stabilizer_window"),
+            ),
         },
         "contact_skill": {
             "k_rate": k_rate,
