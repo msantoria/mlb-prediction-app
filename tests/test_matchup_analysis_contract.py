@@ -18,7 +18,7 @@ def test_matchup_analysis_contract_with_missing_lineup():
     assert "summary" in result
 
     metadata = result["metadata"]
-    assert metadata["source_type"] == "matchup_analysis_scaffold"
+    assert metadata["source_type"] == "matchup_analysis_v1"
     assert metadata["pitcher_hand"] == "unknown"
     assert metadata["lineup_source"] == "missing"
     assert metadata["lineup_player_count"] == 0
@@ -43,8 +43,16 @@ def test_matchup_analysis_contract_with_lineup_players():
     )
 
     metadata = result["metadata"]
+    assert metadata["source_type"] == "matchup_analysis_v1"
     assert metadata["pitcher_id"] == 123
     assert metadata["pitcher_name"] == "Pitcher Example"
     assert metadata["pitcher_hand"] == "R"
     assert metadata["lineup_source"] == "official"
     assert metadata["lineup_player_count"] == 2
+
+    assert isinstance(result["pitchTypeMatchups"], list)
+    assert len(result["pitchTypeMatchups"]) > 0
+    assert result["biggestEdge"] is not None
+    assert result["biggestWeakness"] is not None
+    assert result["confidence"] > 0.0
+    assert result["summary"]["status"] == "partial"
