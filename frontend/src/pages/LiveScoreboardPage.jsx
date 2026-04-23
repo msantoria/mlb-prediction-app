@@ -26,6 +26,13 @@ function statusLabel(abstract, detail, inning, inningState) {
   return detail || abstract || '—'
 }
 
+function isUpcomingStatus(game) {
+  const abstract = game?.status_abstract
+  if (!abstract) return false
+  if (abstract === 'Live' || abstract === 'Final') return false
+  return true
+}
+
 function WeatherBadge({ weather }) {
   if (!weather) return null
   const parts = [weather.condition, weather.temp_f ? `${weather.temp_f}°F` : null, weather.wind].filter(Boolean)
@@ -66,6 +73,7 @@ function GameCard({ game }) {
   const label = statusLabel(game.status_abstract, game.status_detail, game.inning, game.inning_state)
   const isLive = game.status_abstract === 'Live'
   const isFinal = game.status_abstract === 'Final'
+  const showProbables = !isFinal && !isLive
 
   return (
     <Link to={`/live/${game.game_pk}`} style={{ textDecoration: 'none' }}>
@@ -77,7 +85,6 @@ function GameCard({ game }) {
         cursor: 'pointer',
         transition: 'border-color 0.15s',
       }}>
-        {/* Status badge */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
           <span style={{
             fontSize: '11px',
@@ -94,11 +101,10 @@ function GameCard({ game }) {
           <span style={{ fontSize: '11px', color: '#8b949e' }}>{game.venue || ''}</span>
         </div>
 
-        {/* Score row */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {[
-            { side: game.away, label: 'Away' },
-            { side: game.home, label: 'Home' },
+            { side: game.away },
+            { side: game.home },
           ].map(({ side }) => (
             <div key={side.team_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: '15px', fontWeight: '600', color: '#e6edf3' }}>
@@ -117,7 +123,6 @@ function GameCard({ game }) {
           ))}
         </div>
 
-        {/* Outs indicator for live games */}
         {isLive && game.outs != null && (
           <div style={{ marginTop: '8px', display: 'flex', gap: '4px', alignItems: 'center' }}>
             <span style={{ fontSize: '11px', color: '#8b949e', marginRight: '4px' }}>Outs:</span>
@@ -132,18 +137,15 @@ function GameCard({ game }) {
           </div>
         )}
 
-        {/* Probable pitchers for preview games */}
-        {!isFinal && (
+        {showProbables && (
           <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
             <ProbablePitcher label={game.away.abbreviation} pitcher={game.away.probable_pitcher} />
             <ProbablePitcher label={game.home.abbreviation} pitcher={game.home.probable_pitcher} />
           </div>
         )}
 
-        {/* Decisions for final games */}
         {isFinal && <DecisionLine decisions={game.decisions} />}
 
-        {/* Weather */}
         {game.weather && (
           <div style={{ marginTop: '8px' }}>
             <WeatherBadge weather={game.weather} />
@@ -179,7 +181,11 @@ export default function LiveScoreboardPage() {
   useEffect(() => {
     fetchScoreboard()
     timerRef.current = setInterval(fetchScoreboard, REFRESH_INTERVAL_MS)
-    return () => clearInterval(timerRef.current)
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current)
+      }
+    }
   }, [])
 
   if (loading) return <div style={{ color: '#8b949e', padding: '40px' }}>Loading scoreboard…</div>
@@ -187,7 +193,7 @@ export default function LiveScoreboardPage() {
 
   const games = data?.games || []
   const liveGames = games.filter(g => g.status_abstract === 'Live')
-  const previewGames = games.filter(g => g.status_abstract === 'Preview')
+  const upcomingGames = games.filter(isUpcomingStatus)
   const finalGames = games.filter(g => g.status_abstract === 'Final')
 
   return (
@@ -239,13 +245,13 @@ export default function LiveScoreboardPage() {
         </section>
       )}
 
-      {previewGames.length > 0 && (
+      {upcomingGames.length > 0 && (
         <section style={{ marginBottom: '32px' }}>
           <h2 style={{ fontSize: '13px', fontWeight: '600', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '12px' }}>
             Upcoming
           </h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '12px' }}>
-            {previewGames.map(g => <GameCard key={g.game_pk} game={g} />)}
+            {upcomingGames.map(g => <GameCard key={g.game_pk} game={g} />)}
           </div>
         </section>
       )}
