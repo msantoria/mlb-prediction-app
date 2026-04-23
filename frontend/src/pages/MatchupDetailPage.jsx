@@ -64,6 +64,10 @@ const t = {
   mtd: { padding: '7px 10px', borderBottom: '1px solid #161b22', color: '#e6edf3' },
   mtdR: { textAlign: 'right' },
   noData: { color: '#8b949e', fontSize: '13px', textAlign: 'center', padding: '24px' },
+  insightGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' },
+  insightCard: { background: '#0d1117', border: '1px solid #21262d', borderRadius: '8px', padding: '12px 14px' },
+  insightLabel: { fontSize: '11px', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' },
+  insightValue: { fontSize: '14px', color: '#e6edf3', fontWeight: '600' },
 }
 
 const pct = (v, d = 1) => fmtPct(v, d)
@@ -291,6 +295,119 @@ function CompetitiveBatterRow({ batter, expanded, onToggle }) {
 }
 
 
+
+function buildPitcherInsights(profile) {
+  const kRate = profile?.bat_missing?.k_rate
+  const bbRate = profile?.command_control?.bb_rate
+  const hhAllowed = profile?.contact_management?.hard_hit_rate_allowed
+  return [
+    {
+      label: 'Swing & Miss',
+      value: kRate != null
+        ? (kRate >= 0.27 ? 'Strong strikeout profile' : kRate >= 0.22 ? 'Average strikeout profile' : 'Limited strikeout profile')
+        : 'No strikeout insight yet',
+    },
+    {
+      label: 'Command',
+      value: bbRate != null
+        ? (bbRate <= 0.07 ? 'Strong command baseline' : bbRate <= 0.10 ? 'Manageable walk risk' : 'Elevated walk risk')
+        : 'No command insight yet',
+    },
+    {
+      label: 'Contact Quality',
+      value: hhAllowed != null
+        ? (hhAllowed <= 0.35 ? 'Suppressing hard contact' : hhAllowed <= 0.40 ? 'Neutral contact quality' : 'Hard contact risk elevated')
+        : 'No contact-quality insight yet',
+    },
+  ]
+}
+
+function buildBatterInsights(profile) {
+  const iso = profile?.power?.iso
+  const kRate = profile?.contact_skill?.k_rate
+  const bbRate = profile?.plate_discipline?.bb_rate
+  return [
+    {
+      label: 'Power',
+      value: iso != null
+        ? (iso >= 0.20 ? 'Above-average game power' : iso >= 0.15 ? 'Playable power baseline' : 'Limited over-the-fence power')
+        : 'No power insight yet',
+    },
+    {
+      label: 'Contact Risk',
+      value: kRate != null
+        ? (kRate <= 0.20 ? 'Low strikeout risk' : kRate <= 0.27 ? 'Moderate strikeout risk' : 'Elevated strikeout risk')
+        : 'No contact-risk insight yet',
+    },
+    {
+      label: 'Discipline',
+      value: bbRate != null
+        ? (bbRate >= 0.10 ? 'Plate discipline advantage' : bbRate >= 0.07 ? 'Average plate discipline' : 'Aggressive approach profile')
+        : 'No discipline insight yet',
+    },
+  ]
+}
+
+function buildEnvironmentInsights(profile) {
+  const runBoost = profile?.run_environment?.run_scoring_index
+  const wind = profile?.weather?.wind_speed_mph
+  const readiness = profile?.status?.readiness || profile?.metadata?.readiness
+  return [
+    {
+      label: 'Run Environment',
+      value: runBoost != null
+        ? (runBoost >= 1.05 ? 'Run environment favors offense' : runBoost <= 0.95 ? 'Run environment suppresses scoring' : 'Run environment looks neutral')
+        : 'No run-environment signal yet',
+    },
+    {
+      label: 'Weather',
+      value: wind != null
+        ? (wind >= 12 ? 'Weather could meaningfully affect carry' : wind >= 7 ? 'Weather has mild impact potential' : 'Weather impact looks limited')
+        : 'No weather insight yet',
+    },
+    {
+      label: 'Readiness',
+      value: readiness ? String(readiness).replace(/_/g, ' ') : 'Environment profile still maturing',
+    },
+  ]
+}
+
+function buildMatchupInsights(analysis) {
+  const confidence = analysis?.confidence
+  const best = analysis?.biggestEdge?.pitch_type
+  const weakness = analysis?.biggestWeakness?.pitch_type
+  return [
+    {
+      label: 'Best Edge',
+      value: best ? `Best current edge vs ${best}` : 'No best-edge signal yet',
+    },
+    {
+      label: 'Biggest Risk',
+      value: weakness ? `Most vulnerable vs ${weakness}` : 'No weakness signal yet',
+    },
+    {
+      label: 'Confidence',
+      value: confidence != null
+        ? (confidence >= 0.7 ? 'High-confidence read' : confidence >= 0.4 ? 'Moderate-confidence read' : 'Low-confidence read')
+        : 'No confidence signal yet',
+    },
+  ]
+}
+
+function InsightCards({ items }) {
+  if (!items || items.length === 0) return null
+  return (
+    <div style={t.insightGrid}>
+      {items.map((item, idx) => (
+        <div key={idx} style={t.insightCard}>
+          <div style={t.insightLabel}>{item.label}</div>
+          <div style={t.insightValue}>{item.value}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function metricValue(v) {
   if (v == null) return '—'
   if (typeof v === 'number') {
@@ -344,6 +461,7 @@ function PitcherProfilePanel({ sideLabel, teamName, profile }) {
       <div style={{ fontSize: '12px', color: '#8b949e', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{sideLabel}</div>
       <div style={t.pitcherName}>{teamName}</div>
       <div style={t.dataSource}>{profile.metadata?.generated_from || 'No source info'}</div>
+      <InsightCards items={buildPitcherInsights(profile)} />
       <div style={t.splitsGrid}>
         <ProfileMetadataCard title="Metadata" metadata={profile.metadata} />
         <ProfileSectionCard title="Arsenal" data={profile.arsenal} />
@@ -363,6 +481,7 @@ function BatterProfilePanel({ sideLabel, teamName, profile }) {
       <div style={{ fontSize: '12px', color: '#8b949e', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{sideLabel}</div>
       <div style={t.pitcherName}>{teamName}</div>
       <div style={t.dataSource}>{profile.metadata?.generated_from || 'No source info'}</div>
+      <InsightCards items={buildBatterInsights(profile)} />
       <div style={t.splitsGrid}>
         <ProfileMetadataCard title="Metadata" metadata={profile.metadata} />
         <ProfileSectionCard title="Contact Skill" data={profile.contact_skill} />
@@ -380,6 +499,7 @@ function EnvironmentPanel({ profile }) {
   return (
     <div style={t.section}>
       <div style={t.sectionTitle}>Environment Profile</div>
+      <InsightCards items={buildEnvironmentInsights(profile)} />
       <div style={t.splitsGrid}>
         <ProfileMetadataCard title="Metadata" metadata={profile.metadata} />
         <ProfileSectionCard title="Weather" data={profile.weather} />
@@ -401,6 +521,7 @@ function MatchupAnalysisPanel({ sideLabel, teamName, analysis }) {
       <div style={{ fontSize: '12px', color: '#8b949e', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{sideLabel}</div>
       <div style={t.pitcherName}>{teamName}</div>
       <div style={t.dataSource}>{analysis.metadata?.generated_from || 'No source info'}</div>
+      <InsightCards items={buildMatchupInsights(analysis)} />
 
       <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '14px', fontSize: '12px' }}>
         <span style={{ color: '#8b949e' }}>Confidence: <span style={{ color: '#e6edf3' }}>{metricValue(analysis.confidence)}</span></span>
