@@ -19,6 +19,11 @@ Endpoints:
     GET  /players/all                    All active MLB players for a season
     GET  /team/{team_id}/roster          Full roster for a team
     POST /predict                        Score a specific pitcher vs batter
+    GET  /live/scoreboard                Today's games: scores, status, weather, probable pitchers
+    GET  /live/game/{pk}                 Current play state: batter, pitcher, count, runners, pitch sequence
+    GET  /live/game/{pk}/boxscore        In-game pitcher lines + batter lines (AB/H/R/RBI/K)
+    GET  /live/game/{pk}/plays           Recent play-by-play with hit data (exit velo, distance)
+    GET  /live/game/{pk}/linescore       Inning-by-inning runs/hits/errors + game decisions
 """
 
 from __future__ import annotations
@@ -26,6 +31,7 @@ from __future__ import annotations
 import datetime
 import os
 import re
+import time
 from typing import Any, Dict, List, Optional
 
 import requests as _req
@@ -68,6 +74,7 @@ from .statcast_utils import fetch_pitch_arsenal_leaderboard
 
 MLB_STATS_BASE = "https://statsapi.mlb.com/api/v1"
 MATCHUP_SNAPSHOT_CACHE: Dict[str, List[Dict[str, Any]]] = {}
+LIVE_CACHE: Dict[str, Dict[str, Any]] = {}
 
 HIT_EVENTS = {"single", "double", "triple", "home_run"}
 OUTCOME_EVENTS = {
@@ -575,6 +582,36 @@ def _fetch_previous_completed_game_lineup(team_id: int, game_date_iso: str) -> L
         except Exception:
             continue
     return []
+
+
+def _live_cache_get(key: str) -> Optional[Any]:
+    entry = LIVE_CACHE.get(key)
+    if entry and time.time() < entry["expires_at"]:
+        return entry["data"]
+    return None
+
+
+def _live_cache_set(key: str, data: Any, ttl: int = 30) -> None:
+    LIVE_CACHE[key] = {"data": data, "expires_at": time.time() + ttl}
+
+
+def _fetch_live_feed(game_pk: int) -> Optional[Dict[str, Any]]:
+    """Fetch and TTL-cache the full MLB live feed for a single game."""
+    cache_key = f"feed:{game_pk}"
+    cached = _live_cache_get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        resp = _req.get(
+            f"https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live",
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        _live_cache_set(cache_key, data, ttl=20)
+        return data
+    except Exception:
+        return None
 
 
 class PredictRequest(BaseModel):
@@ -1366,6 +1403,335 @@ def create_app():
                 pitcher_throws=req.pitcher_throws,
             )
         return {"pitcher_id": req.pitcher_id, "batter_id": req.batter_id, **result}
+
+    # ------------------------------------------------------------------
+    # LIVE DATA — 5 endpoints, all backed by MLB Stats API + TTL cache
+    # ------------------------------------------------------------------
+
+    @app.get("/live/scoreboard")
+    def live_scoreboard(date: Optional[str] = None) -> Dict[str, Any]:
+        """Today's games: scores, status, inning, weather, probable pitchers, decisions."""
+        target_date = date or datetime.date.today().isoformat()
+        cache_key = f"scoreboard:{target_date}"
+        cached = _live_cache_get(cache_key)
+        if cached is not None:
+            return cached
+        try:
+            resp = _req.get(
+                f"{MLB_STATS_BASE}/schedule",
+                params={
+                    "sportId": 1,
+                    "date": target_date,
+                    "hydrate": "linescore,decisions,probablePitcher,weather,flags",
+                },
+                timeout=15,
+            )
+            resp.raise_for_status()
+            raw = resp.json()
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"MLB API error: {exc}")
+
+        games = []
+        for date_entry in raw.get("dates", []):
+            for g in date_entry.get("games", []):
+                status = g.get("status", {})
+                teams = g.get("teams", {})
+                away = teams.get("away", {})
+                home = teams.get("home", {})
+                away_team = away.get("team", {})
+                home_team = home.get("team", {})
+                linescore = g.get("linescore", {})
+                away_prob = away.get("probablePitcher") or {}
+                home_prob = home.get("probablePitcher") or {}
+                decisions = g.get("decisions") or {}
+                winner = decisions.get("winner") or {}
+                loser = decisions.get("loser") or {}
+                save = decisions.get("save") or {}
+                games.append({
+                    "game_pk": g.get("gamePk"),
+                    "game_datetime": g.get("gameDate"),
+                    "venue": (g.get("venue") or {}).get("name"),
+                    "status_code": status.get("statusCode"),
+                    "status_abstract": status.get("abstractGameState"),
+                    "status_detail": status.get("detailedState"),
+                    "inning": linescore.get("currentInning"),
+                    "inning_state": linescore.get("inningState"),
+                    "outs": linescore.get("outs"),
+                    "away": {
+                        "team_id": away_team.get("id"),
+                        "name": away_team.get("name"),
+                        "abbreviation": away_team.get("abbreviation"),
+                        "score": away.get("score"),
+                        "probable_pitcher": {"id": away_prob.get("id"), "name": away_prob.get("fullName")} if away_prob.get("id") else None,
+                    },
+                    "home": {
+                        "team_id": home_team.get("id"),
+                        "name": home_team.get("name"),
+                        "abbreviation": home_team.get("abbreviation"),
+                        "score": home.get("score"),
+                        "probable_pitcher": {"id": home_prob.get("id"), "name": home_prob.get("fullName")} if home_prob.get("id") else None,
+                    },
+                    "weather": _extract_weather(g),
+                    "decisions": {
+                        "winner": {"id": winner.get("id"), "name": winner.get("fullName")} if winner.get("id") else None,
+                        "loser": {"id": loser.get("id"), "name": loser.get("fullName")} if loser.get("id") else None,
+                        "save": {"id": save.get("id"), "name": save.get("fullName")} if save.get("id") else None,
+                    },
+                })
+        result = {"date": target_date, "game_count": len(games), "games": games}
+        is_live = any(g["status_abstract"] == "Live" for g in games)
+        _live_cache_set(cache_key, result, ttl=20 if is_live else 60)
+        return result
+
+    @app.get("/live/game/{game_pk}")
+    def live_game_state(game_pk: int) -> Dict[str, Any]:
+        """Current play: batter, pitcher, count, outs, runners on base, pitch sequence."""
+        feed = _fetch_live_feed(game_pk)
+        if feed is None:
+            raise HTTPException(status_code=502, detail="Could not fetch live game feed")
+        game_data = feed.get("gameData", {})
+        live_data = feed.get("liveData", {})
+        status = game_data.get("status", {})
+        teams = game_data.get("teams", {})
+        linescore = live_data.get("linescore", {})
+        current_play = live_data.get("plays", {}).get("currentPlay") or {}
+        matchup = current_play.get("matchup", {})
+        batter = matchup.get("batter") or {}
+        pitcher = matchup.get("pitcher") or {}
+        count = current_play.get("count") or {}
+        offense = linescore.get("offense") or {}
+        ls_teams = linescore.get("teams") or {}
+
+        pitch_sequence = []
+        for event in current_play.get("playEvents", []):
+            if not event.get("isPitch"):
+                continue
+            pd = event.get("pitchData") or {}
+            details = event.get("details") or {}
+            pitch_sequence.append({
+                "pitch_type": (details.get("type") or {}).get("description"),
+                "call": (details.get("call") or {}).get("description"),
+                "speed_mph": pd.get("startSpeed"),
+                "zone": pd.get("zone"),
+                "spin_rate": (pd.get("breaks") or {}).get("spinRate"),
+                "induced_vert_break": (pd.get("breaks") or {}).get("breakVerticalInduced"),
+                "horiz_break": (pd.get("breaks") or {}).get("breakHorizontal"),
+            })
+
+        return {
+            "game_pk": game_pk,
+            "status": status.get("abstractGameState"),
+            "status_detail": status.get("detailedState"),
+            "inning": linescore.get("currentInning"),
+            "inning_state": linescore.get("inningState"),
+            "outs": linescore.get("outs"),
+            "away": {
+                "team_id": (teams.get("away") or {}).get("id"),
+                "name": (teams.get("away") or {}).get("name"),
+                "abbreviation": (teams.get("away") or {}).get("abbreviation"),
+                "score": ls_teams.get("away", {}).get("runs"),
+            },
+            "home": {
+                "team_id": (teams.get("home") or {}).get("id"),
+                "name": (teams.get("home") or {}).get("name"),
+                "abbreviation": (teams.get("home") or {}).get("abbreviation"),
+                "score": ls_teams.get("home", {}).get("runs"),
+            },
+            "current_batter": {
+                "id": batter.get("id"),
+                "name": batter.get("fullName"),
+                "bat_side": (matchup.get("batSide") or {}).get("code"),
+            },
+            "current_pitcher": {
+                "id": pitcher.get("id"),
+                "name": pitcher.get("fullName"),
+                "pitch_hand": (matchup.get("pitchHand") or {}).get("code"),
+            },
+            "count": {
+                "balls": count.get("balls"),
+                "strikes": count.get("strikes"),
+                "outs": count.get("outs"),
+            },
+            "runners": {
+                "first": (offense.get("first") or {}).get("fullName"),
+                "second": (offense.get("second") or {}).get("fullName"),
+                "third": (offense.get("third") or {}).get("fullName"),
+            },
+            "pitch_sequence": pitch_sequence,
+        }
+
+    @app.get("/live/game/{game_pk}/boxscore")
+    def live_boxscore(game_pk: int) -> Dict[str, Any]:
+        """All pitcher lines (IP/H/ER/BB/K/ERA) and batter lines (AB/H/R/RBI/HR/OPS) for the game."""
+        feed = _fetch_live_feed(game_pk)
+        if feed is None:
+            raise HTTPException(status_code=502, detail="Could not fetch live game feed")
+        boxscore = feed.get("liveData", {}).get("boxscore", {})
+        bs_teams = boxscore.get("teams", {})
+
+        def parse_pitchers(side: Dict) -> List[Dict]:
+            players = side.get("players") or {}
+            result = []
+            for pid in side.get("pitchers", []):
+                p = players.get(f"ID{pid}") or {}
+                gs = p.get("gameStatus") or {}
+                stats = (p.get("stats") or {}).get("pitching") or {}
+                season = (p.get("seasonStats") or {}).get("pitching") or {}
+                result.append({
+                    "id": pid,
+                    "name": (p.get("person") or {}).get("fullName"),
+                    "innings_pitched": stats.get("inningsPitched"),
+                    "hits": stats.get("hits"),
+                    "runs": stats.get("runs"),
+                    "earned_runs": stats.get("earnedRuns"),
+                    "walks": stats.get("baseOnBalls"),
+                    "strikeouts": stats.get("strikeOuts"),
+                    "home_runs": stats.get("homeRuns"),
+                    "pitch_count": stats.get("pitchesThrown"),
+                    "strikes_thrown": stats.get("strikes"),
+                    "era": season.get("era"),
+                    "is_current_pitcher": gs.get("isCurrentPitcher", False),
+                })
+            return result
+
+        def parse_batters(side: Dict) -> List[Dict]:
+            players = side.get("players") or {}
+            result = []
+            for bid in side.get("batters", []):
+                p = players.get(f"ID{bid}") or {}
+                stats = (p.get("stats") or {}).get("batting") or {}
+                season = (p.get("seasonStats") or {}).get("batting") or {}
+                pos = (p.get("position") or {}).get("abbreviation")
+                result.append({
+                    "id": bid,
+                    "name": (p.get("person") or {}).get("fullName"),
+                    "position": pos,
+                    "batting_order": p.get("battingOrder"),
+                    "at_bats": stats.get("atBats"),
+                    "runs": stats.get("runs"),
+                    "hits": stats.get("hits"),
+                    "rbi": stats.get("rbi"),
+                    "home_runs": stats.get("homeRuns"),
+                    "walks": stats.get("baseOnBalls"),
+                    "strikeouts": stats.get("strikeOuts"),
+                    "left_on_base": stats.get("leftOnBase"),
+                    "season_avg": season.get("avg"),
+                    "season_ops": season.get("ops"),
+                })
+            return result
+
+        return {
+            "game_pk": game_pk,
+            "away": {
+                "pitchers": parse_pitchers(bs_teams.get("away") or {}),
+                "batters": parse_batters(bs_teams.get("away") or {}),
+            },
+            "home": {
+                "pitchers": parse_pitchers(bs_teams.get("home") or {}),
+                "batters": parse_batters(bs_teams.get("home") or {}),
+            },
+        }
+
+    @app.get("/live/game/{game_pk}/plays")
+    def live_plays(game_pk: int, limit: int = Query(default=25, le=100)) -> Dict[str, Any]:
+        """Recent play-by-play: event, description, RBI, score change, hit data (exit velo/distance)."""
+        feed = _fetch_live_feed(game_pk)
+        if feed is None:
+            raise HTTPException(status_code=502, detail="Could not fetch live game feed")
+        plays_data = feed.get("liveData", {}).get("plays", {})
+        all_plays = plays_data.get("allPlays") or []
+        completed = [p for p in all_plays if (p.get("about") or {}).get("isComplete")]
+        recent = list(reversed(completed[-limit:]))
+
+        result = []
+        for play in recent:
+            about = play.get("about") or {}
+            res = play.get("result") or {}
+            matchup = play.get("matchup") or {}
+            hit_data = None
+            for event in reversed(play.get("playEvents") or []):
+                hd = event.get("hitData")
+                if hd:
+                    hit_data = {
+                        "exit_velocity": hd.get("launchSpeed"),
+                        "launch_angle": hd.get("launchAngle"),
+                        "distance": hd.get("totalDistance"),
+                        "hardness": hd.get("hardness"),
+                    }
+                    break
+            result.append({
+                "play_index": about.get("atBatIndex"),
+                "inning": about.get("inning"),
+                "half_inning": about.get("halfInning"),
+                "is_scoring_play": about.get("isScoringPlay", False),
+                "batter": {"id": (matchup.get("batter") or {}).get("id"), "name": (matchup.get("batter") or {}).get("fullName")},
+                "pitcher": {"id": (matchup.get("pitcher") or {}).get("id"), "name": (matchup.get("pitcher") or {}).get("fullName")},
+                "event": res.get("event"),
+                "event_type": res.get("eventType"),
+                "description": res.get("description"),
+                "rbi": res.get("rbi"),
+                "away_score": res.get("awayScore"),
+                "home_score": res.get("homeScore"),
+                "hit_data": hit_data,
+            })
+        return {"game_pk": game_pk, "total_plays": len(all_plays), "plays": result}
+
+    @app.get("/live/game/{game_pk}/linescore")
+    def live_linescore(game_pk: int) -> Dict[str, Any]:
+        """Inning-by-inning runs/hits/errors, totals, outs, and game decisions (W/L/S pitcher)."""
+        feed = _fetch_live_feed(game_pk)
+        if feed is None:
+            raise HTTPException(status_code=502, detail="Could not fetch live game feed")
+        live_data = feed.get("liveData", {})
+        game_data = feed.get("gameData", {})
+        linescore = live_data.get("linescore", {})
+        ls_teams = linescore.get("teams") or {}
+        gd_teams = game_data.get("teams") or {}
+        decisions = live_data.get("decisions") or {}
+        winner = decisions.get("winner") or {}
+        loser = decisions.get("loser") or {}
+        save = decisions.get("save") or {}
+
+        innings = []
+        for inn in linescore.get("innings", []):
+            innings.append({
+                "num": inn.get("num"),
+                "away_runs": (inn.get("away") or {}).get("runs"),
+                "away_hits": (inn.get("away") or {}).get("hits"),
+                "away_errors": (inn.get("away") or {}).get("errors"),
+                "home_runs": (inn.get("home") or {}).get("runs"),
+                "home_hits": (inn.get("home") or {}).get("hits"),
+                "home_errors": (inn.get("home") or {}).get("errors"),
+            })
+
+        return {
+            "game_pk": game_pk,
+            "away_team": (gd_teams.get("away") or {}).get("abbreviation"),
+            "home_team": (gd_teams.get("home") or {}).get("abbreviation"),
+            "innings": innings,
+            "totals": {
+                "away": {
+                    "runs": ls_teams.get("away", {}).get("runs"),
+                    "hits": ls_teams.get("away", {}).get("hits"),
+                    "errors": ls_teams.get("away", {}).get("errors"),
+                    "left_on_base": ls_teams.get("away", {}).get("leftOnBase"),
+                },
+                "home": {
+                    "runs": ls_teams.get("home", {}).get("runs"),
+                    "hits": ls_teams.get("home", {}).get("hits"),
+                    "errors": ls_teams.get("home", {}).get("errors"),
+                    "left_on_base": ls_teams.get("home", {}).get("leftOnBase"),
+                },
+            },
+            "current_inning": linescore.get("currentInning"),
+            "inning_state": linescore.get("inningState"),
+            "outs": linescore.get("outs"),
+            "decisions": {
+                "winner": {"id": winner.get("id"), "name": winner.get("fullName")} if winner.get("id") else None,
+                "loser": {"id": loser.get("id"), "name": loser.get("fullName")} if loser.get("id") else None,
+                "save": {"id": save.get("id"), "name": save.get("fullName")} if save.get("id") else None,
+            },
+        }
 
     _dist = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'frontend', 'dist')
     if os.path.isdir(_dist):
