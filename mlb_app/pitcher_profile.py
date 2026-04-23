@@ -60,8 +60,14 @@ def compute_pitcher_profile(raw_stats: dict) -> dict:
             "barrel_rate_allowed": raw_stats.get(
                 "barrel_rate_allowed", raw_stats.get("barrel_pct_allowed")
             ),
-            "avg_exit_velocity_allowed": raw_stats.get("avg_exit_velocity_allowed"),
-            "avg_launch_angle_allowed": raw_stats.get("avg_launch_angle_allowed"),
+            "avg_exit_velocity_allowed": raw_stats.get(
+                "avg_exit_velocity_allowed", raw_stats.get("avg_exit_velocity")
+            ),
+            "avg_launch_angle_allowed": raw_stats.get(
+                "avg_launch_angle_allowed", raw_stats.get("avg_launch_angle")
+            ),
+            "xwoba_allowed": raw_stats.get("xwoba_allowed", raw_stats.get("xwoba")),
+            "xba_allowed": raw_stats.get("xba_allowed", raw_stats.get("xba")),
         },
         "platoon_profile": {
             "vs_lhb_woba_allowed": raw_stats.get("vs_lhb_woba_allowed"),

@@ -452,6 +452,8 @@ function displayKey(key) {
     barrel_rate_allowed: 'Barrel Allowed',
     avg_exit_velocity_allowed: 'Avg EV Allowed',
     avg_launch_angle_allowed: 'Avg LA Allowed',
+    xwoba_allowed: 'xwOBA Allowed',
+    xba_allowed: 'xBA Allowed',
     vs_lhb_woba_allowed: 'vs LHB wOBA Allowed',
     vs_rhb_woba_allowed: 'vs RHB wOBA Allowed',
     vs_lhb_k_rate: 'vs LHB K Rate',
