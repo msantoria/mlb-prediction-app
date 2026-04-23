@@ -49,8 +49,8 @@ const t = {
   orderNum: { color: '#8b949e', width: '20px', flexShrink: 0 },
   loader: { color: '#8b949e', padding: '48px', textAlign: 'center' },
   error: { color: '#f85149', padding: '24px', background: '#1f1116', borderRadius: '8px' },
-  compTabs: { display: 'flex', gap: '0', marginBottom: '16px', background: '#0d1117', border: '1px solid #21262d', borderRadius: '6px', overflow: 'hidden', width: 'fit-content' },
-  compTab: (active) => ({ padding: '7px 16px', fontSize: '13px', fontWeight: '500', cursor: 'pointer', background: active ? '#58a6ff' : 'transparent', color: active ? '#0d1117' : '#8b949e', border: 'none', outline: 'none' }),
+  compTabs: { display: 'flex', gap: '0', marginBottom: '16px', background: '#0d1117', border: '1px solid #21262d', borderRadius: '6px', overflow: 'hidden', width: 'fit-content', flexWrap: 'wrap' },
+  compTab: (active) => ({ padding: '8px 16px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', background: active ? '#58a6ff' : 'transparent', color: active ? '#0d1117' : '#8b949e', border: 'none', outline: 'none' }),
   batterRow: { background: '#0d1117', border: '1px solid #21262d', borderRadius: '8px', marginBottom: '10px', overflow: 'hidden' },
   batterHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', cursor: 'pointer', userSelect: 'none' },
   batterName: { fontSize: '14px', fontWeight: '600', color: '#e6edf3' },
@@ -131,7 +131,7 @@ function PitcherCard({ side, pitcherName, pitcherId, detail }) {
         ['Vert Break', agg.avg_vert_break != null ? `${Number(agg.avg_vert_break).toFixed(2)}"` : '—'],
       ].map(([k, v]) => (
         <div key={k} style={t.statRow}>
-          <span style={t.statKey}>{k}</span>
+          <span style={t.statKey}>{displayKey(k)}</span>
           <span style={t.statVal}>{v}</span>
         </div>
       ))}
@@ -213,7 +213,7 @@ function SplitTable({ title, split }) {
             ['BB%', pct(split.bb_pct)],
           ].map(([k, v]) => (
             <div key={k} style={t.statRow}>
-              <span style={t.statKey}>{k}</span>
+              <span style={t.statKey}>{displayKey(k)}</span>
               <span style={t.statVal}>{v ?? '—'}</span>
             </div>
           ))}
@@ -291,6 +291,73 @@ function CompetitiveBatterRow({ batter, expanded, onToggle }) {
 }
 
 
+
+function displayKey(key) {
+  if (!key) return '—'
+  const map = {
+    k_rate: 'K Rate',
+    bb_rate: 'BB Rate',
+    whiff_rate: 'Whiff Rate',
+    contact_rate: 'Contact Rate',
+    chase_rate: 'Chase Rate',
+    swing_rate: 'Swing Rate',
+    iso: 'ISO',
+    barrel_rate: 'Barrel Rate',
+    hard_hit_rate: 'Hard Hit Rate',
+    avg_exit_velocity: 'Avg Exit Velo',
+    avg_launch_angle: 'Avg Launch Angle',
+    vs_lhp_woba: 'vs LHP wOBA',
+    vs_rhp_woba: 'vs RHP wOBA',
+    vs_lhp_iso: 'vs LHP ISO',
+    vs_rhp_iso: 'vs RHP ISO',
+    source_type: 'Source Type',
+    source_fields_used: 'Source Fields',
+    data_confidence: 'Data Confidence',
+    generated_from: 'Generated From',
+    profile_granularity: 'Granularity',
+    is_projected_lineup_derived: 'Lineup Derived',
+    lineup_source: 'Lineup Source',
+    opposing_pitcher_hand: 'Opposing Pitcher Hand',
+    player_count_used: 'Players Used',
+    sample_window: 'Sample Window',
+    sample_family: 'Sample Family',
+    sample_description: 'Sample Description',
+    sample_days: 'Sample Days',
+    sample_size: 'Sample Size',
+    sample_blend_policy: 'Blend Policy',
+    stabilizer_window: 'Stabilizer Window',
+    pitch_mix: 'Pitch Mix',
+    avg_velocity: 'Avg Velocity',
+    avg_spin_rate: 'Avg Spin Rate',
+    csw_rate: 'CSW Rate',
+    zone_rate: 'Zone Rate',
+    first_pitch_strike_rate: 'First Pitch Strike Rate',
+    hard_hit_rate_allowed: 'Hard Hit Allowed',
+    barrel_rate_allowed: 'Barrel Allowed',
+    avg_exit_velocity_allowed: 'Avg EV Allowed',
+    avg_launch_angle_allowed: 'Avg LA Allowed',
+    vs_lhb_woba_allowed: 'vs LHB wOBA Allowed',
+    vs_rhb_woba_allowed: 'vs RHB wOBA Allowed',
+    vs_lhb_k_rate: 'vs LHB K Rate',
+    vs_rhb_k_rate: 'vs RHB K Rate',
+    vs_lhb_bb_rate: 'vs LHB BB Rate',
+    vs_rhb_bb_rate: 'vs RHB BB Rate',
+    readiness: 'Readiness',
+    is_stub: 'Stub',
+    missing_inputs: 'Missing Inputs',
+    status: 'Status',
+    note: 'Note',
+  }
+  return map[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
+function confidenceColor(v) {
+  if (v == null) return '#8b949e'
+  if (v >= 0.7) return '#3fb950'
+  if (v >= 0.4) return '#d29922'
+  return '#f85149'
+}
+
 function metricValue(v) {
   if (v == null) return '—'
   if (typeof v === 'number') {
@@ -310,7 +377,7 @@ function ProfileSectionCard({ title, data }) {
       ) : (
         entries.map(([k, v]) => (
           <div key={k} style={t.statRow}>
-            <span style={t.statKey}>{k}</span>
+            <span style={t.statKey}>{displayKey(k)}</span>
             <span style={t.statVal}>{metricValue(v)}</span>
           </div>
         ))
@@ -328,7 +395,7 @@ function ProfileMetadataCard({ title, metadata }) {
       ) : (
         Object.entries(metadata).map(([k, v]) => (
           <div key={k} style={t.statRow}>
-            <span style={t.statKey}>{k}</span>
+            <span style={t.statKey}>{displayKey(k)}</span>
             <span style={t.statVal}>{Array.isArray(v) ? v.join(', ') : metricValue(v)}</span>
           </div>
         ))
@@ -338,7 +405,7 @@ function ProfileMetadataCard({ title, metadata }) {
 }
 
 function PitcherProfilePanel({ sideLabel, teamName, profile }) {
-  if (!profile) return <div style={t.noData}>No pitcher profile available</div>
+  if (!profile) return <div style={t.noData}>No pitcher profile available for this matchup yet.</div>
   return (
     <div style={t.pitcherCard}>
       <div style={{ fontSize: '12px', color: '#8b949e', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{sideLabel}</div>
@@ -357,7 +424,7 @@ function PitcherProfilePanel({ sideLabel, teamName, profile }) {
 }
 
 function BatterProfilePanel({ sideLabel, teamName, profile }) {
-  if (!profile) return <div style={t.noData}>No batter profile available</div>
+  if (!profile) return <div style={t.noData}>No projected lineup offense profile available yet.</div>
   return (
     <div style={t.pitcherCard}>
       <div style={{ fontSize: '12px', color: '#8b949e', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{sideLabel}</div>
@@ -376,7 +443,7 @@ function BatterProfilePanel({ sideLabel, teamName, profile }) {
 }
 
 function EnvironmentPanel({ profile }) {
-  if (!profile) return <div style={t.noData}>No environment profile available</div>
+  if (!profile) return <div style={t.noData}>No environment profile available for this game yet.</div>
   return (
     <div style={t.section}>
       <div style={t.sectionTitle}>Environment Profile</div>
@@ -394,7 +461,7 @@ function EnvironmentPanel({ profile }) {
 }
 
 function MatchupAnalysisPanel({ sideLabel, teamName, analysis }) {
-  if (!analysis) return <div style={t.noData}>No matchup analysis available</div>
+  if (!analysis) return <div style={t.noData}>No matchup analysis is available for this side yet.</div>
   const pitchRows = analysis.pitchTypeMatchups || []
   return (
     <div style={t.pitcherCard}>
@@ -403,7 +470,7 @@ function MatchupAnalysisPanel({ sideLabel, teamName, analysis }) {
       <div style={t.dataSource}>{analysis.metadata?.generated_from || 'No source info'}</div>
 
       <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '14px', fontSize: '12px' }}>
-        <span style={{ color: '#8b949e' }}>Confidence: <span style={{ color: '#e6edf3' }}>{metricValue(analysis.confidence)}</span></span>
+        <span style={{ color: '#8b949e' }}>Confidence: <span style={{ color: confidenceColor(analysis.confidence), fontWeight: '700' }}>{metricValue(analysis.confidence)}</span></span>
         <span style={{ color: '#8b949e' }}>Biggest Edge: <span style={{ color: '#e6edf3' }}>{analysis.biggestEdge?.pitch_type || '—'}</span></span>
         <span style={{ color: '#8b949e' }}>Biggest Weakness: <span style={{ color: '#e6edf3' }}>{analysis.biggestWeakness?.pitch_type || '—'}</span></span>
       </div>
@@ -416,7 +483,7 @@ function MatchupAnalysisPanel({ sideLabel, teamName, analysis }) {
       <div style={{ marginTop: '16px' }}>
         <div style={{ fontSize: '12px', color: '#8b949e', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Pitch Type Matchups</div>
         {pitchRows.length === 0 ? (
-          <div style={t.noData}>No pitch matchup rows available</div>
+          <div style={t.noData}>No pitch-type matchup rows are available yet.</div>
         ) : (
           <table style={t.matchupTable}>
             <thead>
