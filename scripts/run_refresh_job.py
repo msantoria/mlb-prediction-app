@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
-"""Safe Railway cron entrypoint for incremental refreshes.
+"""Railway cron entrypoint for incremental refreshes across production and sandbox.
 
-This script is intentionally conservative. It is designed for a separate
-Railway cron/worker service and should never start the web server.
+This script is designed for a separate Railway cron/worker service and should
+never start the web server.
 
-Current behavior:
+Behavior:
 - verifies the app imports cleanly
-- fetches current matchup payloads for today and tomorrow so live lineup paths run
-- warms matchup snapshots for today and tomorrow after lineup-aware refreshes
-- exits cleanly
-
-The implementation avoids destructive writes and should be extended only with
-incremental, non-clobbering refresh steps.
+- refreshes live matchup payloads for today and tomorrow
+- warms matchup snapshots for today and tomorrow
+- does this for both production and sandbox targets
+- exits non-zero if any configured target fails
 """
 
 from __future__ import annotations
@@ -30,7 +28,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-DEFAULT_BASE_URL = os.environ.get("REFRESH_BASE_URL", "http://127.0.0.1:8000")
 REQUEST_TIMEOUT_SECONDS = int(os.environ.get("REFRESH_TIMEOUT_SECONDS", "60"))
 WARM_SNAPSHOTS = os.environ.get("WARM_MATCHUP_SNAPSHOTS", "1") == "1"
 REFRESH_MATCHUPS_FIRST = os.environ.get("REFRESH_MATCHUPS_FIRST", "1") == "1"
@@ -53,29 +50,74 @@ def _request_json(url: str, method: str = "GET") -> dict | list | str | None:
             return body
 
 
-def _refresh_matchups_for_date(base_url: str, target_date: dt.date) -> None:
+def _refresh_matchups_for_date(label: str, base_url: str, target_date: dt.date) -> None:
     query = urllib.parse.urlencode({"date": target_date.isoformat()})
     url = f"{base_url}/matchups?{query}"
-    _log(f"Refreshing live matchup payload for {target_date.isoformat()} via {url}")
+    _log(f"[{label}] Refreshing live matchup payload for {target_date.isoformat()} via {url}")
     result = _request_json(url, method="GET")
     if isinstance(result, list):
         projected_counts = {
-            "home": sum(1 for game in result if game.get("home_lineup_source") == "projected"),
-            "away": sum(1 for game in result if game.get("away_lineup_source") == "projected"),
+            "home": sum(
+                1
+                for game in result
+                if isinstance(game, dict) and game.get("home_lineup_source") == "projected"
+            ),
+            "away": sum(
+                1
+                for game in result
+                if isinstance(game, dict) and game.get("away_lineup_source") == "projected"
+            ),
         }
         _log(
-            "Live matchup refresh result for "
-            f"{target_date.isoformat()}: {len(result)} games, projected counts={projected_counts}"
+            f"[{label}] Live matchup refresh result for {target_date.isoformat()}: "
+            f"{len(result)} games, projected counts={projected_counts}"
         )
     else:
-        _log(f"Live matchup refresh response for {target_date.isoformat()}: {result}")
+        _log(f"[{label}] Live matchup refresh response for {target_date.isoformat()}: {result}")
 
 
-def _warm_snapshot_for_date(base_url: str, target_date: dt.date) -> None:
+def _warm_snapshot_for_date(label: str, base_url: str, target_date: dt.date) -> None:
     url = f"{base_url}/matchups/snapshot/{target_date.isoformat()}"
-    _log(f"Warming matchup snapshot for {target_date.isoformat()} via {url}")
+    _log(f"[{label}] Warming matchup snapshot for {target_date.isoformat()} via {url}")
     result = _request_json(url, method="POST")
-    _log(f"Snapshot response for {target_date.isoformat()}: {result}")
+    _log(f"[{label}] Snapshot response for {target_date.isoformat()}: {result}")
+
+
+def _load_targets() -> list[tuple[str, str]]:
+    targets: list[tuple[str, str]] = []
+
+    production_url = os.environ.get("PRODUCTION_REFRESH_BASE_URL", "").strip().rstrip("/")
+    sandbox_url = os.environ.get("SANDBOX_REFRESH_BASE_URL", "").strip().rstrip("/")
+
+    if production_url:
+        targets.append(("production", production_url))
+    if sandbox_url:
+        targets.append(("sandbox", sandbox_url))
+
+    if not targets:
+        legacy_url = os.environ.get("REFRESH_BASE_URL", "").strip().rstrip("/")
+        if legacy_url:
+            targets.append(("legacy", legacy_url))
+
+    if not targets:
+        raise RuntimeError(
+            "No refresh targets configured. Set PRODUCTION_REFRESH_BASE_URL and "
+            "SANDBOX_REFRESH_BASE_URL in the Railway cron service."
+        )
+
+    return targets
+
+
+def _run_target(label: str, base_url: str) -> None:
+    today = dt.date.today()
+    tomorrow = today + dt.timedelta(days=1)
+
+    for target_date in (today, tomorrow):
+        if REFRESH_MATCHUPS_FIRST:
+            _refresh_matchups_for_date(label, base_url, target_date)
+
+        if WARM_SNAPSHOTS:
+            _warm_snapshot_for_date(label, base_url, target_date)
 
 
 def main() -> int:
@@ -83,42 +125,41 @@ def main() -> int:
 
     try:
         import mlb_app.app  # noqa: F401
-    except Exception as exc:  # pragma: no cover
+    except Exception as exc:
         _log(f"Failed to import app module: {exc}")
         return 1
 
-    base_url = DEFAULT_BASE_URL.rstrip("/")
-    today = dt.date.today()
-    tomorrow = today + dt.timedelta(days=1)
+    try:
+        targets = _load_targets()
+    except Exception as exc:
+        _log(str(exc))
+        return 1
 
-    for target_date in (today, tomorrow):
-        if REFRESH_MATCHUPS_FIRST:
-            try:
-                _refresh_matchups_for_date(base_url, target_date)
-            except urllib.error.HTTPError as exc:
-                _log(f"HTTP error while refreshing {target_date.isoformat()}: {exc.code} {exc.reason}")
-                return 1
-            except urllib.error.URLError as exc:
-                _log(f"Network error while refreshing {target_date.isoformat()}: {exc}")
-                return 1
-            except Exception as exc:  # pragma: no cover
-                _log(f"Unexpected error while refreshing {target_date.isoformat()}: {exc}")
-                return 1
+    failures: list[str] = []
 
-        if not WARM_SNAPSHOTS:
-            continue
-
+    for label, base_url in targets:
+        _log(f"[{label}] Starting target refresh against {base_url}")
         try:
-            _warm_snapshot_for_date(base_url, target_date)
+            _run_target(label, base_url)
+            _log(f"[{label}] Target refresh completed successfully")
         except urllib.error.HTTPError as exc:
-            _log(f"HTTP error while warming {target_date.isoformat()}: {exc.code} {exc.reason}")
-            return 1
+            message = f"[{label}] HTTP error: {exc.code} {exc.reason}"
+            _log(message)
+            failures.append(message)
         except urllib.error.URLError as exc:
-            _log(f"Network error while warming {target_date.isoformat()}: {exc}")
-            return 1
-        except Exception as exc:  # pragma: no cover
-            _log(f"Unexpected error while warming {target_date.isoformat()}: {exc}")
-            return 1
+            message = f"[{label}] Network error: {exc}"
+            _log(message)
+            failures.append(message)
+        except Exception as exc:
+            message = f"[{label}] Unexpected error: {exc}"
+            _log(message)
+            failures.append(message)
+
+    if failures:
+        _log("Refresh job completed with failures:")
+        for failure in failures:
+            _log(f" - {failure}")
+        return 1
 
     _log("Refresh job completed successfully")
     return 0
