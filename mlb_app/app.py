@@ -65,6 +65,10 @@ from .db_utils import (
 )
 from .scoring import compute_win_probability, score_individual_matchup, get_park_factor
 from .statcast_utils import fetch_pitch_arsenal_leaderboard
+from .pitcher_profile import compute_pitcher_profile
+from .offense_profile_aggregation import build_projected_lineup_offense_profile
+from .environment_profile import compute_environment_profile
+from .matchup_analysis import build_matchup_analysis
 
 MLB_STATS_BASE = "https://statsapi.mlb.com/api/v1"
 MATCHUP_SNAPSHOT_CACHE: Dict[str, List[Dict[str, Any]]] = {}
@@ -734,6 +738,102 @@ def create_app():
                     season=season,
                 )
 
+            home_pitcher_detail = pitcher_detail(home_pitcher_id)
+            away_pitcher_detail = pitcher_detail(away_pitcher_id)
+
+            home_team_splits = team_splits(home_team_id)
+            away_team_splits = team_splits(away_team_id)
+
+            home_lineup = [
+                {"id": p.get("id"), "name": p.get("fullName"), "position": p.get("primaryPosition", {}).get("abbreviation")}
+                for p in home_lineup_raw
+            ]
+            away_lineup = [
+                {"id": p.get("id"), "name": p.get("fullName"), "position": p.get("primaryPosition", {}).get("abbreviation")}
+                for p in away_lineup_raw
+            ]
+
+            def _determine_hand_from_name(name: Optional[str]) -> Optional[str]:
+                if not name:
+                    return None
+                if "(L)" in name:
+                    return "L"
+                if "(R)" in name:
+                    return "R"
+                return None
+
+            home_pitcher_hand = _determine_hand_from_name(home.get("probablePitcher", {}).get("fullName"))
+            away_pitcher_hand = _determine_hand_from_name(away.get("probablePitcher", {}).get("fullName"))
+
+            home_pitcher_profile = compute_pitcher_profile(
+                {
+                    **(home_pitcher_detail.get("aggregate") or {}),
+                    "source_type": "statcast_aggregate_blended" if home_pitcher_detail.get("aggregate") else "missing",
+                    "source_fields_used": sorted(list((home_pitcher_detail.get("aggregate") or {}).keys())),
+                    "data_confidence": "medium" if home_pitcher_detail.get("aggregate") else "low",
+                    "generated_from": "matchup_detail.pitcher_detail",
+                    "sample_window": "blended",
+                    "sample_blend_policy": "pitcher_v1_weighted_blend",
+                    "sample_size": None,
+                    "stabilizer_window": "last_365_days",
+                }
+            )
+            away_pitcher_profile = compute_pitcher_profile(
+                {
+                    **(away_pitcher_detail.get("aggregate") or {}),
+                    "source_type": "statcast_aggregate_blended" if away_pitcher_detail.get("aggregate") else "missing",
+                    "source_fields_used": sorted(list((away_pitcher_detail.get("aggregate") or {}).keys())),
+                    "data_confidence": "medium" if away_pitcher_detail.get("aggregate") else "low",
+                    "generated_from": "matchup_detail.pitcher_detail",
+                    "sample_window": "blended",
+                    "sample_blend_policy": "pitcher_v1_weighted_blend",
+                    "sample_size": None,
+                    "stabilizer_window": "last_365_days",
+                }
+            )
+
+            home_projected_lineup_offense_profile = build_projected_lineup_offense_profile(
+                lineup=home_lineup,
+                season=season,
+                pitcher_hand=away_pitcher_hand,
+                lineup_source="official" if home_lineup else "missing",
+                target_date=datetime.date.fromisoformat(game_date_iso[:10]) if game_date_iso else datetime.date.today(),
+            )
+            away_projected_lineup_offense_profile = build_projected_lineup_offense_profile(
+                lineup=away_lineup,
+                season=season,
+                pitcher_hand=home_pitcher_hand,
+                lineup_source="official" if away_lineup else "missing",
+                target_date=datetime.date.fromisoformat(game_date_iso[:10]) if game_date_iso else datetime.date.today(),
+            )
+
+            environment_profile = compute_environment_profile(
+                {
+                    "game_pk": game_pk,
+                    "game_date": game_date_iso,
+                    "venue_name": venue_name,
+                    "weather": _extract_weather(game),
+                    "park_factor": get_park_factor(venue_name),
+                    "home_team": home.get("team", {}).get("name"),
+                    "away_team": away.get("team", {}).get("name"),
+                }
+            )
+
+            home_matchup_analysis = build_matchup_analysis(
+                pitcher_id=away_pitcher_id,
+                pitcher_name=away.get("probablePitcher", {}).get("fullName"),
+                pitcher_hand=away_pitcher_hand,
+                lineup=home_lineup,
+                lineup_source="official" if home_lineup else "missing",
+            )
+            away_matchup_analysis = build_matchup_analysis(
+                pitcher_id=home_pitcher_id,
+                pitcher_name=home.get("probablePitcher", {}).get("fullName"),
+                pitcher_hand=home_pitcher_hand,
+                lineup=away_lineup,
+                lineup_source="official" if away_lineup else "missing",
+            )
+
             return {
                 "game_pk": game_pk,
                 "game_date": game_date_iso,
@@ -743,18 +843,22 @@ def create_app():
                 "park_factor": get_park_factor(venue_name),
                 "home_win_prob": home_win_prob,
                 "away_win_prob": away_win_prob,
+                "homePitcherProfile": home_pitcher_profile,
+                "awayPitcherProfile": away_pitcher_profile,
+                "homeProjectedLineupOffenseProfile": home_projected_lineup_offense_profile,
+                "awayProjectedLineupOffenseProfile": away_projected_lineup_offense_profile,
+                "environmentProfile": environment_profile,
+                "homeMatchupAnalysis": home_matchup_analysis,
+                "awayMatchupAnalysis": away_matchup_analysis,
                 "home_team": {
                     "id": home_team_id,
                     "name": home.get("team", {}).get("name"),
                     "record": f"{home_record.get('wins',0)}-{home_record.get('losses',0)}" if home_record else None,
                     "pitcher_id": home_pitcher_id,
                     "pitcher_name": home.get("probablePitcher", {}).get("fullName"),
-                    **pitcher_detail(home_pitcher_id),
-                    "splits": team_splits(home_team_id),
-                    "lineup": [
-                        {"id": p.get("id"), "name": p.get("fullName"), "position": p.get("primaryPosition", {}).get("abbreviation")}
-                        for p in home_lineup_raw
-                    ],
+                    **home_pitcher_detail,
+                    "splits": home_team_splits,
+                    "lineup": home_lineup,
                 },
                 "away_team": {
                     "id": away_team_id,
@@ -762,12 +866,9 @@ def create_app():
                     "record": f"{away_record.get('wins',0)}-{away_record.get('losses',0)}" if away_record else None,
                     "pitcher_id": away_pitcher_id,
                     "pitcher_name": away.get("probablePitcher", {}).get("fullName"),
-                    **pitcher_detail(away_pitcher_id),
-                    "splits": team_splits(away_team_id),
-                    "lineup": [
-                        {"id": p.get("id"), "name": p.get("fullName"), "position": p.get("primaryPosition", {}).get("abbreviation")}
-                        for p in away_lineup_raw
-                    ],
+                    **away_pitcher_detail,
+                    "splits": away_team_splits,
+                    "lineup": away_lineup,
                 },
             }
 
