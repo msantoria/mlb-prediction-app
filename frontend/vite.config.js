@@ -13,4 +13,9 @@ export default defineConfig({
       },
     },
   },
+  preview: {
+    allowedHosts: [
+      'frontend-sandbox-production.up.railway.app',
+    ],
+  },
 })
