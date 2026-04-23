@@ -36,6 +36,7 @@ from .environment_profile import compute_environment_profile
 from .environment_data import build_environment_context
 from .lineup_data import resolve_team_lineup
 from .offense_profile_aggregation import build_projected_lineup_offense_profile
+from .matchup_analysis import build_matchup_analysis
 
 
 def _determine_hand(player_id: int) -> str | None:
@@ -173,6 +174,21 @@ def generate_daily_matchups(date_str: str) -> List[Dict]:
             lineup_source=away_lineup_source,
         )
 
+        home_matchup_analysis = build_matchup_analysis(
+            pitcher_id=away_pitcher_id,
+            pitcher_name=away_pitcher.get("fullName") if isinstance(away_pitcher, dict) else None,
+            pitcher_hand=away_hand,
+            lineup=home_lineup,
+            lineup_source=home_lineup_source,
+        )
+        away_matchup_analysis = build_matchup_analysis(
+            pitcher_id=home_pitcher_id,
+            pitcher_name=home_pitcher.get("fullName") if isinstance(home_pitcher, dict) else None,
+            pitcher_hand=home_hand,
+            lineup=away_lineup,
+            lineup_source=away_lineup_source,
+        )
+
         matchup_features.update(
             {
                 "homeTeamSplit": home_vs_pitcher_hand,
@@ -265,6 +281,8 @@ def generate_daily_matchups(date_str: str) -> List[Dict]:
                 "awayTeamOffenseProfile": away_team_offense_profile,
                 "homeProjectedLineupOffenseProfile": home_projected_lineup_offense_profile,
                 "awayProjectedLineupOffenseProfile": away_projected_lineup_offense_profile,
+                "homeMatchupAnalysis": home_matchup_analysis,
+                "awayMatchupAnalysis": away_matchup_analysis,
                 "environmentProfile": environment_profile,
             }
         )
