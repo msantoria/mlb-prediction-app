@@ -296,7 +296,6 @@ function CompetitiveBatterRow({ batter, expanded, onToggle }) {
 
 
 
-<<<<<<< HEAD
 function buildPitcherInsights(profile) {
   const kRate = profile?.bat_missing?.k_rate
   const bbRate = profile?.command_control?.bb_rate
@@ -407,7 +406,6 @@ function InsightCards({ items }) {
       ))}
     </div>
   )
-=======
 function displayKey(key) {
   if (!key) return '—'
   const map = {
@@ -472,7 +470,6 @@ function confidenceColor(v) {
   if (v >= 0.7) return '#3fb950'
   if (v >= 0.4) return '#d29922'
   return '#f85149'
->>>>>>> upstream/sandbox/contributor-analysis
 }
 
 function metricValue(v) {
