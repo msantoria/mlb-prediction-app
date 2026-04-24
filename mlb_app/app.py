@@ -1,4 +1,4 @@
-"""
+f"""
 FastAPI application for the MLB prediction engine.
 
 Endpoints:
@@ -71,6 +71,7 @@ from .db_utils import (
 )
 from .scoring import compute_win_probability, score_individual_matchup, get_park_factor
 from .statcast_utils import fetch_pitch_arsenal_leaderboard
+from .odds_provider import fetch_draftkings_odds
 
 MLB_STATS_BASE = "https://statsapi.mlb.com/api/v1"
 MATCHUP_SNAPSHOT_CACHE: Dict[str, List[Dict[str, Any]]] = {}
