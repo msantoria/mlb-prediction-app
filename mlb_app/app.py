@@ -1,4 +1,4 @@
-f"""
+"""
 FastAPI application for the MLB prediction engine.
 
 Endpoints:
