@@ -4,6 +4,117 @@ A production full-stack MLB matchup and prediction engine. Data is ingested from
 
 ---
 
+## Current Known-Good Sandbox Checkpoint
+
+The sandbox environment is confirmed working on branch `sandbox/contributor-analysis`.
+
+Use this branch for enhancement work unless a change is explicitly approved for `main`.
+
+### Sandbox services
+
+| Service | Purpose | Expected behavior |
+|---------|---------|-------------------|
+| `backend-sandbox-production` | FastAPI backend/API | API endpoints return raw JSON |
+| `frontend-sandbox-production` | React/Vite frontend | Browser routes render the UI |
+
+Backend sandbox example:
+
+```text
+https://backend-sandbox-production.up.railway.app/matchup/824770
+```
+
+This endpoint should return raw JSON. That is correct.
+
+Frontend sandbox example:
+
+```text
+https://frontend-sandbox-production.up.railway.app/matchup/824770
+```
+
+This route should render the React matchup detail page.
+
+### Sandbox deployment configuration
+
+The backend sandbox uses the root Railway config:
+
+```text
+railway.json
+```
+
+The frontend sandbox uses the frontend-specific Railway config:
+
+```text
+railway.frontend.json
+```
+
+The frontend sandbox service must use:
+
+```text
+Branch: sandbox/contributor-analysis
+Root Directory: /frontend
+Railway Config File: /railway.frontend.json
+Build Command: npm install && npm run build
+Start Command: npm run preview -- --host 0.0.0.0 --port $PORT
+```
+
+The frontend sandbox must also have this environment variable:
+
+```text
+VITE_API_BASE_URL=https://backend-sandbox-production.up.railway.app
+```
+
+The Vite preview host allowlist must include:
+
+```text
+frontend-sandbox-production.up.railway.app
+```
+
+That setting lives in:
+
+```text
+frontend/vite.config.js
+```
+
+### Sandbox rules
+
+- Do not use the backend URL for visual UI testing. Backend routes are API routes and return JSON.
+- Use the frontend sandbox URL for browser/UI testing.
+- Do not touch `main` unless explicitly approved.
+- Make small commits to `sandbox/contributor-analysis` and visually verify the frontend sandbox after deploy.
+- If changing frontend routes or components, verify `npm run build` still passes.
+- If changing backend routes, preserve existing endpoint names and JSON contracts unless a breaking change is explicitly approved.
+
+### New-session starting prompt
+
+Use this prompt when starting a fresh AI/code session:
+
+```text
+We are working on my repo: msantoria/mlb-prediction-app.
+
+Current setup:
+- Main branch is production. Do not touch main unless I explicitly say so.
+- Sandbox branch is sandbox/contributor-analysis.
+- Backend sandbox service is backend-sandbox-production on Railway. It returns raw JSON from API endpoints.
+- Frontend sandbox service is frontend-sandbox-production on Railway. It renders the React UI.
+- Frontend sandbox uses root directory /frontend.
+- Frontend sandbox uses railway.frontend.json.
+- Frontend sandbox VITE_API_BASE_URL points to https://backend-sandbox-production.up.railway.app.
+- Vite preview allowedHosts includes frontend-sandbox-production.up.railway.app.
+- MatchupDetailPage.jsx had a merge conflict and missing brace issue, but it is fixed now.
+- The sandbox frontend and backend are both working.
+
+Rules:
+- Work only on sandbox/contributor-analysis unless I explicitly approve main.
+- Do not rewrite working backend or frontend logic unless needed.
+- Make small safe commits.
+- After any frontend change, make sure npm build would pass.
+- After any backend/API change, preserve existing endpoints and JSON contracts.
+- Prefer incremental enhancements over big rewrites.
+- Before editing, inspect the current files in the repo and summarize the planned change.
+```
+
+---
+
 ## Architecture — Two Separate Railway Services
 
 This project deploys as **two independent Railway services**. Understanding this is mandatory before contributing.
@@ -11,9 +122,9 @@ This project deploys as **two independent Railway services**. Understanding this
 | Service | Builder | Role | Domain |
 |---------|---------|------|--------|
 | `mlb-prediction-app` | Dockerfile | FastAPI backend + API | `*.up.railway.app` |
-| Frontend | Railpack (Node) | React SPA | `mlbgpt.com` |
+| Frontend | Railpack/Node/Vite | React SPA | `mlbgpt.com` / frontend Railway domain |
 
-The frontend calls the backend via `VITE_API_BASE_URL` (set in Railway env vars at build time). If `VITE_API_BASE_URL` is unset, API calls fall back to relative URLs — which **breaks** because the frontend service has no API routes.
+The frontend calls the backend via `VITE_API_BASE_URL` (set in Railway env vars at build time). If `VITE_API_BASE_URL` is unset, API calls fall back to relative URLs, which **breaks** when the frontend service has no API routes.
 
 ### CORS Policy
 
@@ -33,7 +144,7 @@ The backend (`mlb_app/app.py`) allows:
 | ORM / DB | SQLAlchemy 2.x, PostgreSQL (SQLite fallback for local) |
 | Data | pybaseball (Statcast), MLB Stats API (`statsapi.mlb.com`) |
 | Frontend | React 18, Vite, React Router 6 |
-| Deployment | Docker (backend), Railpack/Node (frontend), Railway, GitHub Actions |
+| Deployment | Docker (backend), Railpack/Node/Vite (frontend), Railway, GitHub Actions |
 
 ---
 
@@ -74,12 +185,14 @@ mlb-prediction-app/
 │   │   └── utils/
 │   │       └── formatters.js   # Shared number/percent/date formatters
 │   ├── index.html
+│   ├── vite.config.js          # Vite dev/preview config, including Railway preview allowed hosts
 │   └── package.json
 ├── main.py                     # Uvicorn entry point for Railway
 ├── seed_db.py                  # Bootstrap: loads last N days of Statcast into DB
 ├── generate_matchups.py        # CLI: prints matchups JSON for a given date
 ├── Dockerfile                  # Multi-stage build (Python 3.11 + Node 20)
-├── railway.json                # Railway deploy config (healthcheck, restart policy)
+├── railway.json                # Railway backend deploy config
+├── railway.frontend.json       # Railway frontend deploy config for sandbox/frontend service
 ├── CLAUDE.md                   # Architecture notes for AI-assisted development
 └── requirements.txt            # Python dependencies
 ```
@@ -184,16 +297,44 @@ npm run dev
 
 The frontend dev server runs at `http://localhost:5173`.
 
+To test the production-style Vite preview server locally:
+
+```bash
+cd frontend
+npm run build
+npm run preview -- --host 0.0.0.0 --port 4173
+```
+
 ---
 
 ## Deployment
 
-Pushing to `main` triggers two automatic deploys:
+Pushing to `main` triggers production deploys. Sandbox work should happen on `sandbox/contributor-analysis` first.
+
+### Production
 
 1. **Backend** — GitHub Actions runs `railway up --detach --service mlb-prediction-app`, which builds and deploys the Dockerfile.
-2. **Frontend** — Railway's Railpack detects Node and deploys the React SPA automatically.
+2. **Frontend** — Railway's frontend service detects Node/Vite and deploys the React SPA automatically.
 
 The `VITE_API_BASE_URL` environment variable **must** be set in the Railway frontend service's env vars before deploying, or the frontend will break.
+
+### Sandbox
+
+The sandbox has separate backend and frontend Railway services.
+
+Backend sandbox:
+
+```text
+backend-sandbox-production
+```
+
+Frontend sandbox:
+
+```text
+frontend-sandbox-production
+```
+
+For visual testing, use the frontend sandbox URL. For API verification, use the backend sandbox URL.
 
 ---
 
@@ -227,7 +368,7 @@ refactor/<short-description>
 - [ ] No overly verbose docstrings on scaffold/placeholder code
 - [ ] A test file exists for every new module (`tests/test_<module>.py`)
 - [ ] If touching `mlb_app/app.py` CORS config, review `CLAUDE.md` first
-- [ ] If touching the frontend build or `VITE_API_BASE_URL`, verify the two-service deploy still works
+- [ ] If touching the frontend build, `railway.frontend.json`, `vite.config.js`, or `VITE_API_BASE_URL`, verify the two-service deploy still works
 
 ---
 
