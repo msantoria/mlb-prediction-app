@@ -34,10 +34,39 @@ def _edge_score_from_components(
     return round(score, 3)
 
 
-def _confidence_from_sample(player_count: int, usage_pct: Optional[float]) -> float:
-    lineup_component = min(1.0, player_count / 9.0)
-    usage_component = min(1.0, max(0.25, usage_pct or 0.0))
-    return round(min(1.0, lineup_component * usage_component + (0.2 if player_count >= 5 else 0.0)), 3)
+def _confidence_from_sample(
+    player_count: int,
+    usage_pct: Optional[float],
+    arsenal_source: str = "placeholder_arsenal",
+) -> float:
+    """
+    Estimate confidence for a pitch-type matchup row.
+
+    Real arsenal rows should not collapse to 0.0 just because lineup-level
+    batter-vs-pitch samples are not available yet. Until hitter-vs-pitch-type
+    samples are wired in, confidence is primarily a usage/data-source signal.
+    """
+    usage = usage_pct or 0.0
+
+    if arsenal_source == "real_arsenal_rows":
+        if usage >= 0.30:
+            base = 0.78
+        elif usage >= 0.15:
+            base = 0.64
+        elif usage >= 0.05:
+            base = 0.50
+        else:
+            base = 0.38
+    else:
+        if usage >= 0.30:
+            base = 0.48
+        elif usage >= 0.15:
+            base = 0.38
+        else:
+            base = 0.28
+
+    lineup_bonus = 0.07 if player_count >= 9 else 0.04 if player_count >= 5 else 0.0
+    return round(min(0.9, base + lineup_bonus), 3)
 
 
 def _placeholder_pitch_arsenal(
@@ -171,6 +200,7 @@ def build_matchup_analysis(
         confidence = _confidence_from_sample(
             player_count=lineup_player_count,
             usage_pct=pitch.get("pitcher_usage_pct"),
+            arsenal_source=arsenal_source,
         )
 
         pitch_type_matchups.append(
