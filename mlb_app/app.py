@@ -645,21 +645,107 @@ def create_app():
         return {"status": "ok", "version": "0.5.2"}
 
     @app.get("/odds/draftkings/pregame")
-    def draftkings_pregame_odds(date: Optional[str] = None) -> Dict[str, Any]:
-        return fetch_draftkings_odds(scope="pregame")
+    def draftkings_pregame_odds(
+        date: Optional[str] = None,
+        raw: bool = False,
+        league: Optional[str] = None,
+        market_types: Optional[str] = None,
+        state: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        parsed_market_types = (
+            [m.strip() for m in market_types.split(",") if m.strip()]
+            if market_types
+            else None
+        )
+        return fetch_draftkings_odds(
+            scope="pregame",
+            date=date,
+            raw=raw,
+            league=league,
+            market_types=parsed_market_types,
+            state=state,
+        )
 
     @app.get("/odds/draftkings/live")
-    def draftkings_live_odds() -> Dict[str, Any]:
-        return fetch_draftkings_odds(scope="live")
+    def draftkings_live_odds(
+        raw: bool = False,
+        league: Optional[str] = None,
+        market_types: Optional[str] = None,
+        state: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        parsed_market_types = (
+            [m.strip() for m in market_types.split(",") if m.strip()]
+            if market_types
+            else None
+        )
+        return fetch_draftkings_odds(
+            scope="live",
+            raw=raw,
+            league=league,
+            market_types=parsed_market_types,
+            state=state,
+        )
 
     @app.get("/odds/draftkings/game/{game_pk}")
-    def draftkings_game_odds(game_pk: int) -> Dict[str, Any]:
-        return fetch_draftkings_odds(scope="pregame", game_pk=game_pk)
+    def draftkings_game_odds(
+        game_pk: int,
+        date: Optional[str] = None,
+        raw: bool = False,
+    ) -> Dict[str, Any]:
+        return fetch_draftkings_odds(
+            scope="pregame",
+            game_pk=game_pk,
+            date=date,
+            raw=raw,
+        )
 
     @app.get("/odds/draftkings/props/{game_pk}")
-    def draftkings_game_props(game_pk: int) -> Dict[str, Any]:
-        return fetch_draftkings_odds(scope="pregame", game_pk=game_pk, props_only=True)
+    def draftkings_game_props(
+        game_pk: int,
+        date: Optional[str] = None,
+        raw: bool = False,
+    ) -> Dict[str, Any]:
+        return fetch_draftkings_odds(
+            scope="pregame",
+            game_pk=game_pk,
+            props_only=True,
+            date=date,
+            raw=raw,
+        )
 
+    @app.get("/odds/draftkings/debug")
+    def draftkings_debug_odds(
+        date: Optional[str] = None,
+        league: Optional[str] = None,
+        market_types: Optional[str] = None,
+        live_only: Optional[bool] = None,
+        state: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        parsed_market_types = (
+            [m.strip() for m in market_types.split(",") if m.strip()]
+            if market_types
+            else None
+        )
+        return fetch_draftkings_odds(
+            scope="debug",
+            date=date,
+            raw=True,
+            league=league,
+            market_types=parsed_market_types,
+            live_only=live_only,
+            state=state,
+        )
+
+    @app.get("/matchups")
+    def list_matchups(date: Optional[str] = None) -> List[Dict[str, Any]]:
+        if not date:
+            date = datetime.date.today().isoformat()
+        Session = _get_session()
+        with Session() as session:
+            try:
+                return generate_matchups_for_date(session, date)
+            except Exception as exc:
+                raise HTTPException(status_code=500, detail=str(exc))
     @app.get("/matchups")
     def list_matchups(date: Optional[str] = None) -> List[Dict[str, Any]]:
         if not date:
