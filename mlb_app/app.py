@@ -644,6 +644,25 @@ def create_app():
     def health():
         return {"status": "ok", "version": "0.5.2"}
 
+    @app.get("/odds/draftkings/pregame")
+    def draftkings_pregame_odds(date: Optional[str] = None) -> Dict[str, Any]:
+        return fetch_draftkings_odds(scope="pregame")
+
+    @app.get("/odds/draftkings/live")
+    def draftkings_live_odds() -> Dict[str, Any]:
+        return fetch_draftkings_odds(scope="live")
+
+    @app.get("/odds/draftkings/game/{game_pk}")
+    def draftkings_game_odds(game_pk: int) -> Dict[str, Any]:
+        return fetch_draftkings_odds(scope="pregame", game_pk=game_pk)
+
+    @app.get("/odds/draftkings/props/{game_pk}")
+    def draftkings_game_props(game_pk: int) -> Dict[str, Any]:
+        return fetch_draftkings_odds(scope="pregame", game_pk=game_pk, props_only=True)
+
+    @app.get("/matchups")
+    def list_matchups(date: Optional[str] = None) -> List[Dict[str, Any]]:
+
     @app.get("/matchups")
     def list_matchups(date: Optional[str] = None) -> List[Dict[str, Any]]:
         if not date:
