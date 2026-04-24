@@ -644,7 +644,7 @@ def create_app():
         allow_headers=["*"],
     )
 
-    @app.get("/health")
+     @app.get("/health")
     def health():
         return {"status": "ok", "version": "0.5.2"}
 
@@ -702,7 +702,7 @@ def create_app():
             date=date,
             raw=raw,
         )
-        
+
     @app.get("/odds/draftkings/props/{game_pk}")
     def draftkings_game_props(
         game_pk: int,
@@ -748,15 +748,6 @@ def create_app():
             props_only=True,
             raw=raw,
         )
-
-    @app.get("/odds/draftkings/debug")
-    def draftkings_debug_odds(
-        date: Optional[str] = None,
-        league: Optional[str] = None,
-        market_types: Optional[str] = None,
-        live_only: Optional[bool] = None,
-        state: Optional[str] = None,
-    ) -> Dict[str, Any]:
 
     @app.get("/odds/draftkings/debug")
     def draftkings_debug_odds(
