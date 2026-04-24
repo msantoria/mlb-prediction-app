@@ -8,6 +8,18 @@ except ImportError:
     ApifyClient = None
 
 _CACHE: Dict[str, Dict[str, Any]] = {}
+_ALLOWED_STATES = {
+    "Arizona", "Colorado", "Illinois", "Indiana", "Iowa", "Louisiana",
+    "Maryland", "Michigan", "New Jersey", "New York", "Ohio",
+    "Pennsylvania", "Tennessee", "Virginia", "West Virginia", "Wyoming",
+}
+_STATE_ABBREVIATIONS = {
+    "AZ": "Arizona", "CO": "Colorado", "IL": "Illinois", "IN": "Indiana",
+    "IA": "Iowa", "LA": "Louisiana", "MD": "Maryland", "MI": "Michigan",
+    "NJ": "New Jersey", "NY": "New York", "OH": "Ohio", "PA": "Pennsylvania",
+    "TN": "Tennessee", "VA": "Virginia", "WV": "West Virginia", "WY": "Wyoming",
+}
+_DEFAULT_MARKET_TYPES = ["moneyline", "spread", "total", "player_props"]
 
 
 def _cache_get(key: str):
@@ -18,10 +30,27 @@ def _cache_get(key: str):
 
 
 def _cache_set(key: str, data: Any, ttl: int = 60):
-    _CACHE[key] = {
-        "data": data,
-        "expires_at": time.time() + ttl,
-    }
+    _CACHE[key] = {"data": data, "expires_at": time.time() + ttl}
+
+
+def _normalize_state(value: Optional[str]) -> str:
+    raw = (value or "Illinois").strip()
+    if not raw:
+        return "Illinois"
+    upper = raw.upper()
+    if upper in _STATE_ABBREVIATIONS:
+        return _STATE_ABBREVIATIONS[upper]
+    title = raw.title()
+    if title in _ALLOWED_STATES:
+        return title
+    return "Illinois"
+
+
+def _parse_csv(value: Optional[str], fallback: List[str]) -> List[str]:
+    if not value:
+        return fallback
+    parsed = [v.strip() for v in value.split(",") if v.strip()]
+    return parsed or fallback
 
 
 def _provider_not_configured(scope: str, game_pk: Optional[int] = None, message: str = "APIFY_TOKEN is not configured.") -> Dict[str, Any]:
@@ -40,7 +69,7 @@ def _provider_not_configured(scope: str, game_pk: Optional[int] = None, message:
     }
 
 
-def _provider_error(scope: str, game_pk: Optional[int], exc: Exception) -> Dict[str, Any]:
+def _provider_error(scope: str, game_pk: Optional[int], exc: Exception, run_input: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     return {
         "provider": "draftkings",
         "status": "provider_error",
@@ -53,6 +82,7 @@ def _provider_error(scope: str, game_pk: Optional[int], exc: Exception) -> Dict[
         "market_count": 0,
         "errors": [str(exc)],
         "message": "DraftKings odds provider failed while fetching Apify data.",
+        "run_input": run_input or {},
     }
 
 
@@ -140,7 +170,45 @@ def _normalize_items(items: List[Dict[str, Any]], game_pk: Optional[int] = None)
     return markets
 
 
-def fetch_draftkings_odds(scope: str = "pregame", game_pk: Optional[int] = None, props_only: bool = False) -> Dict[str, Any]:
+def build_draftkings_run_input(
+    scope: str = "pregame",
+    props_only: bool = False,
+    date: Optional[str] = None,
+    league: Optional[str] = None,
+    market_types: Optional[List[str]] = None,
+    live_only: Optional[bool] = None,
+    state: Optional[str] = None,
+) -> Dict[str, Any]:
+    resolved_market_types = market_types or (["player_props"] if props_only else _parse_csv(os.getenv("DRAFTKINGS_ODDS_MARKET_TYPES"), _DEFAULT_MARKET_TYPES))
+    run_input: Dict[str, Any] = {
+        "leagues": [league or os.getenv("DRAFTKINGS_ODDS_LEAGUE", "MLB")],
+        "marketTypes": resolved_market_types,
+        "maxEvents": int(os.getenv("DRAFTKINGS_ODDS_MAX_EVENTS", "500")),
+        "liveOnly": scope == "live" if live_only is None else live_only,
+        "usState": _normalize_state(state or os.getenv("DRAFTKINGS_ODDS_STATE", "Illinois")),
+    }
+    if date:
+        run_input["date"] = date
+    return run_input
+
+
+def _run_actor(token: str, run_input: Dict[str, Any]) -> List[Dict[str, Any]]:
+    client = ApifyClient(token)
+    run = client.actor(os.getenv("DRAFTKINGS_ODDS_ACTOR_ID", "mherzog/draftkings-sportsbook-odds")).call(run_input=run_input)
+    return list(client.dataset(run["defaultDatasetId"]).iterate_items())
+
+
+def fetch_draftkings_odds(
+    scope: str = "pregame",
+    game_pk: Optional[int] = None,
+    props_only: bool = False,
+    date: Optional[str] = None,
+    raw: bool = False,
+    league: Optional[str] = None,
+    market_types: Optional[List[str]] = None,
+    live_only: Optional[bool] = None,
+    state: Optional[str] = None,
+) -> Dict[str, Any]:
     if ApifyClient is None:
         return _provider_not_configured(scope, game_pk=game_pk, message="apify-client is not installed in the running image.")
 
@@ -148,25 +216,26 @@ def fetch_draftkings_odds(scope: str = "pregame", game_pk: Optional[int] = None,
     if not token:
         return _provider_not_configured(scope, game_pk=game_pk)
 
-    cache_key = f"dk:{scope}:{game_pk or 'all'}:{props_only}"
+    run_input = build_draftkings_run_input(
+        scope=scope,
+        props_only=props_only,
+        date=date,
+        league=league,
+        market_types=market_types,
+        live_only=live_only,
+        state=state,
+    )
+
+    cache_key = f"dk:{scope}:{game_pk or 'all'}:{props_only}:{date or 'any'}:{str(run_input)}:{raw}"
     cached = _cache_get(cache_key)
     if cached:
         return cached
 
-    run_input = {
-        "leagues": [os.getenv("DRAFTKINGS_ODDS_LEAGUE", "MLB")],
-        "marketTypes": ["player_props" if props_only else "all"],
-        "liveOnly": scope == "live",
-        "usState": os.getenv("DRAFTKINGS_ODDS_STATE", "IL"),
-    }
-
     try:
-        client = ApifyClient(token)
-        run = client.actor(os.getenv("DRAFTKINGS_ODDS_ACTOR_ID", "mherzog/draftkings-sportsbook-odds")).call(run_input=run_input)
-        items: List[Dict[str, Any]] = list(client.dataset(run["defaultDatasetId"]).iterate_items())
+        items = _run_actor(token, run_input)
         markets = _normalize_items(items, game_pk=game_pk)
     except Exception as exc:
-        return _provider_error(scope, game_pk, exc)
+        return _provider_error(scope, game_pk, exc, run_input=run_input)
 
     normalized = {
         "provider": "draftkings",
@@ -174,6 +243,7 @@ def fetch_draftkings_odds(scope: str = "pregame", game_pk: Optional[int] = None,
         "scope": scope,
         "sport": "baseball_mlb",
         "game_pk": game_pk,
+        "target_date": date,
         "books": ["DraftKings"],
         "markets": markets,
         "last_updated": int(time.time()),
@@ -182,6 +252,8 @@ def fetch_draftkings_odds(scope: str = "pregame", game_pk: Optional[int] = None,
         "errors": [],
         "run_input": run_input,
     }
+    if raw:
+        normalized["raw_items_sample"] = items[:10]
 
     ttl = int(os.getenv("DRAFTKINGS_ODDS_CACHE_TTL_SECONDS", "60"))
     _cache_set(cache_key, normalized, ttl)
