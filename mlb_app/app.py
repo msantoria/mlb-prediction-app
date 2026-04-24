@@ -662,9 +662,6 @@ def create_app():
 
     @app.get("/matchups")
     def list_matchups(date: Optional[str] = None) -> List[Dict[str, Any]]:
-
-    @app.get("/matchups")
-    def list_matchups(date: Optional[str] = None) -> List[Dict[str, Any]]:
         if not date:
             date = datetime.date.today().isoformat()
         Session = _get_session()
