@@ -878,6 +878,7 @@ def create_app():
                 pitcher_hand=away_pitcher_hand,
                 lineup=home_lineup,
                 lineup_source="official" if home_lineup else "missing",
+                arsenal_rows=away_pitcher_detail.get("arsenal") or [],
             )
             away_matchup_analysis = build_matchup_analysis(
                 pitcher_id=home_pitcher_id,
@@ -885,6 +886,7 @@ def create_app():
                 pitcher_hand=home_pitcher_hand,
                 lineup=away_lineup,
                 lineup_source="official" if away_lineup else "missing",
+                arsenal_rows=home_pitcher_detail.get("arsenal") or [],
             )
 
             return {

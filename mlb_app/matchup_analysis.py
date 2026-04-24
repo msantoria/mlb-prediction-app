@@ -118,22 +118,44 @@ def _placeholder_pitch_arsenal(
     ]
 
 
+def _normalize_real_arsenal_rows(arsenal_rows: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    normalized = []
+    for row in arsenal_rows or []:
+        raw_pitch_type = row.get("pitch_type")
+        pitch_name = row.get("pitch_name") or raw_pitch_type
+        normalized.append(
+            {
+                "pitch_type": pitch_name,
+                "raw_pitch_type": raw_pitch_type,
+                "pitcher_usage_pct": row.get("usage_pct"),
+                "pitcher_whiff_pct": row.get("whiff_pct"),
+                "pitcher_strikeout_pct": row.get("strikeout_pct"),
+                "pitcher_xwoba": row.get("xwoba"),
+                "pitcher_hard_hit_pct": row.get("hard_hit_pct"),
+            }
+        )
+    return normalized
+
+
 def build_matchup_analysis(
     pitcher_id: Optional[int],
     pitcher_name: Optional[str],
     pitcher_hand: Optional[str],
     lineup: List[Dict[str, Any]],
     lineup_source: str,
+    arsenal_rows: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     Build a stable matchup-analysis payload.
 
-    This v1 implementation adds simple pitch-type matchup rows using a
-    placeholder arsenal adapter and lightweight scoring so the future
-    Matchup Analysis tab can begin rendering structured content.
+    Uses real pitcher arsenal rows when provided, with a placeholder fallback
+    for early or incomplete data states.
     """
     lineup_player_count = len([p for p in lineup if p.get("id")])
-    arsenal = _placeholder_pitch_arsenal(pitcher_id, pitcher_name, pitcher_hand)
+    arsenal = _normalize_real_arsenal_rows(arsenal_rows)
+    arsenal_source = "real_arsenal_rows" if arsenal else "placeholder_arsenal"
+    if not arsenal:
+        arsenal = _placeholder_pitch_arsenal(pitcher_id, pitcher_name, pitcher_hand)
 
     pitch_type_matchups = []
     for pitch in arsenal:
@@ -179,16 +201,19 @@ def build_matchup_analysis(
 
     status = "partial" if pitch_type_matchups else "scaffold"
     note = (
-        "Initial pitch arsenal vs lineup scoring is available."
+        "Real pitch arsenal vs lineup scoring is available."
+        if pitch_type_matchups and arsenal_source == "real_arsenal_rows"
+        else "Initial placeholder pitch arsenal vs lineup scoring is available."
         if pitch_type_matchups
         else "Pitch arsenal vs hitter weakness analysis is not yet fully wired."
     )
 
     return {
         "metadata": {
-            "source_type": "matchup_analysis_v1",
+            "source_type": "matchup_analysis_real_arsenal_v1" if arsenal_source == "real_arsenal_rows" else "matchup_analysis_v1",
             "generated_from": "build_matchup_analysis",
-            "data_confidence": "medium" if pitch_type_matchups else "low",
+            "data_confidence": "medium" if arsenal_source == "real_arsenal_rows" and pitch_type_matchups else "low",
+            "arsenal_source": arsenal_source,
             "pitcher_id": pitcher_id,
             "pitcher_name": pitcher_name,
             "pitcher_hand": pitcher_hand if pitcher_hand in {"L", "R"} else "unknown",
