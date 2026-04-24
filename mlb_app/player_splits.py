@@ -96,10 +96,34 @@ def fetch_player_splits(player_ids: List[int], season: int) -> List[Dict[str, fl
             continue
         splits = stats_list[0].get("splits", [])
         for split_entry in splits:
-            split_code = split_entry.get("split", {}).get("code")
-            # Only process 'vl' and 'vr'.  Other codes are ignored.
+            split_info = split_entry.get("split", {}) or {}
+            split_code = (
+                split_info.get("code")
+                or split_info.get("value")
+                or split_entry.get("sitCode")
+                or split_entry.get("splitCode")
+            )
+
+            # MLB Stats API responses can vary slightly by endpoint/version.
+            # Normalize common split descriptions back to the vL/vR codes used
+            # throughout the app.
+            split_label = str(
+                split_info.get("description")
+                or split_info.get("label")
+                or split_info.get("type")
+                or ""
+            ).lower()
+
+            if split_code not in {"vl", "vr"}:
+                if "vs left" in split_label or "vs lhp" in split_label or "left" in split_label:
+                    split_code = "vl"
+                elif "vs right" in split_label or "vs rhp" in split_label or "right" in split_label:
+                    split_code = "vr"
+
+            # Only process 'vl' and 'vr'. Other codes are ignored.
             if split_code not in {"vl", "vr"}:
                 continue
+
             stat = split_entry.get("stat", {})
             # Keys to extract; similar to team splits but per-player.
             numeric_keys = [
@@ -132,5 +156,21 @@ def fetch_player_splits(player_ids: List[int], season: int) -> List[Dict[str, fl
                     row[k] = float(stat.get(k, 0))
                 except (TypeError, ValueError):
                     row[k] = 0.0
+
+            # Add normalized aliases consumed by hitter profile builders.
+            row["k_pct"] = (
+                row["strikeOuts"] / row["plateAppearances"]
+                if row.get("plateAppearances") else None
+            )
+            row["bb_pct"] = (
+                row["baseOnBalls"] / row["plateAppearances"]
+                if row.get("plateAppearances") else None
+            )
+            row["iso"] = (
+                row["slg"] - row["avg"]
+                if row.get("slg") is not None and row.get("avg") is not None
+                else None
+            )
+
             results.append(row)
     return results
