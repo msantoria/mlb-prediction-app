@@ -504,6 +504,57 @@ function metricValue(v) {
   return String(v)
 }
 
+function metricSignalColor(key, value) {
+  if (value == null || typeof value !== 'number') return '#e6edf3'
+
+  const highGood = new Set([
+    'k_rate',
+    'whiff_rate',
+    'bb_rate',
+    'iso',
+    'barrel_rate',
+    'hard_hit_rate',
+    'contact_rate',
+    'confidence',
+  ])
+
+  const lowGood = new Set([
+    'xwoba_allowed',
+    'xba_allowed',
+    'hard_hit_rate_allowed',
+    'barrel_rate_allowed',
+    'avg_exit_velocity_allowed',
+    'k_pct',
+    'bb_pct',
+  ])
+
+  if (key === 'run_factor') {
+    if (value >= 1.08) return '#3fb950'
+    if (value <= 0.95) return '#f85149'
+    return '#d29922'
+  }
+
+  if (key === 'edge_score') {
+    if (value > 0.10) return '#3fb950'
+    if (value < -0.10) return '#f85149'
+    return '#d29922'
+  }
+
+  if (highGood.has(key)) {
+    if (value >= 0.20) return '#3fb950'
+    if (value >= 0.10) return '#d29922'
+    return '#f85149'
+  }
+
+  if (lowGood.has(key)) {
+    if (value <= 0.30) return '#3fb950'
+    if (value <= 0.38) return '#d29922'
+    return '#f85149'
+  }
+
+  return '#e6edf3'
+}
+
 function ProfileSectionCard({ title, data }) {
   const entries = Object.entries(data || {})
   return (
@@ -515,7 +566,7 @@ function ProfileSectionCard({ title, data }) {
         entries.map(([k, v]) => (
           <div key={k} style={t.statRow}>
             <span style={t.statKey}>{displayKey(k)}</span>
-            <span style={t.statVal}>{metricValue(v)}</span>
+            <span style={{ ...t.statVal, color: metricSignalColor(k, v) }}>{metricValue(v)}</span>
           </div>
         ))
       )}
@@ -644,8 +695,8 @@ function MatchupAnalysisPanel({ sideLabel, teamName, analysis }) {
                   <td style={{ ...t.mtd, ...t.mtdR }}>{pct(p.pitcher_usage_pct)}</td>
                   <td style={{ ...t.mtd, ...t.mtdR }}>{dec(p.pitcher_xwoba)}</td>
                   <td style={{ ...t.mtd, ...t.mtdR }}>{pct(p.pitcher_hard_hit_pct)}</td>
-                  <td style={{ ...t.mtd, ...t.mtdR }}>{edgeLabel(p.edge_score)}</td>
-                  <td style={{ ...t.mtd, ...t.mtdR }}>{pct(p.confidence)}</td>
+                  <td style={{ ...t.mtd, ...t.mtdR, color: metricSignalColor('edge_score', p.edge_score), fontWeight: '700' }}>{edgeLabel(p.edge_score)}</td>
+                  <td style={{ ...t.mtd, ...t.mtdR, color: confidenceColor(p.confidence), fontWeight: '700' }}>{pct(p.confidence)}</td>
                 </tr>
               ))}
             </tbody>
