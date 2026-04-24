@@ -765,31 +765,84 @@ def create_app():
             home_pitcher_hand = _determine_hand_from_name(home.get("probablePitcher", {}).get("fullName"))
             away_pitcher_hand = _determine_hand_from_name(away.get("probablePitcher", {}).get("fullName"))
 
-            home_pitcher_profile = compute_pitcher_profile(
-                {
-                    **(home_pitcher_detail.get("aggregate") or {}),
-                    "source_type": "statcast_aggregate_blended" if home_pitcher_detail.get("aggregate") else "missing",
-                    "source_fields_used": sorted(list((home_pitcher_detail.get("aggregate") or {}).keys())),
-                    "data_confidence": "medium" if home_pitcher_detail.get("aggregate") else "low",
-                    "generated_from": "matchup_detail.pitcher_detail",
-                    "sample_window": "blended",
-                    "sample_blend_policy": "pitcher_v1_weighted_blend",
-                    "sample_size": None,
-                    "stabilizer_window": "last_365_days",
+            def _weighted_arsenal_average(rows, value_key):
+                weighted_total = 0.0
+                weight_total = 0.0
+                simple_values = []
+                for row in rows or []:
+                    value = row.get(value_key)
+                    if value is None:
+                        continue
+                    try:
+                        value = float(value)
+                    except (TypeError, ValueError):
+                        continue
+                    usage = row.get("usage_pct")
+                    try:
+                        usage = float(usage) if usage is not None else None
+                    except (TypeError, ValueError):
+                        usage = None
+                    if usage is not None and usage > 0:
+                        weighted_total += value * usage
+                        weight_total += usage
+                    simple_values.append(value)
+                if weight_total > 0:
+                    return weighted_total / weight_total
+                if simple_values:
+                    return sum(simple_values) / len(simple_values)
+                return None
+
+            def _pitcher_profile_input(detail):
+                aggregate = dict(detail.get("aggregate") or {})
+                arsenal_rows = detail.get("arsenal") or {}
+
+                fallback_values = {
+                    "k_pct": _weighted_arsenal_average(arsenal_rows, "strikeout_pct"),
+                    "whiff_rate": _weighted_arsenal_average(arsenal_rows, "whiff_pct"),
+                    "hard_hit_pct": _weighted_arsenal_average(arsenal_rows, "hard_hit_pct"),
+                    "xwoba": _weighted_arsenal_average(arsenal_rows, "xwoba"),
                 }
+
+                for key, value in fallback_values.items():
+                    if aggregate.get(key) is None and value is not None:
+                        aggregate[key] = value
+
+                fields_used = sorted([k for k, v in aggregate.items() if v is not None])
+                has_aggregate_values = bool(fields_used)
+                has_arsenal_fallbacks = any(
+                    key in aggregate and aggregate.get(key) is not None
+                    for key in ["k_pct", "whiff_rate", "hard_hit_pct", "xwoba"]
+                )
+
+                aggregate.update(
+                    {
+                        "source_type": (
+                            "statcast_aggregate_with_arsenal_fallbacks"
+                            if has_arsenal_fallbacks
+                            else "statcast_aggregate_blended"
+                            if has_aggregate_values
+                            else "missing"
+                        ),
+                        "source_fields_used": fields_used,
+                        "data_confidence": "medium" if has_aggregate_values else "low",
+                        "generated_from": "matchup_detail.pitcher_detail",
+                        "sample_window": "blended",
+                        "sample_blend_policy": (
+                            "pitcher_v1_weighted_blend_with_arsenal_fallbacks"
+                            if has_arsenal_fallbacks
+                            else "pitcher_v1_weighted_blend"
+                        ),
+                        "sample_size": None,
+                        "stabilizer_window": "last_365_days",
+                    }
+                )
+                return aggregate
+
+            home_pitcher_profile = compute_pitcher_profile(
+                _pitcher_profile_input(home_pitcher_detail)
             )
             away_pitcher_profile = compute_pitcher_profile(
-                {
-                    **(away_pitcher_detail.get("aggregate") or {}),
-                    "source_type": "statcast_aggregate_blended" if away_pitcher_detail.get("aggregate") else "missing",
-                    "source_fields_used": sorted(list((away_pitcher_detail.get("aggregate") or {}).keys())),
-                    "data_confidence": "medium" if away_pitcher_detail.get("aggregate") else "low",
-                    "generated_from": "matchup_detail.pitcher_detail",
-                    "sample_window": "blended",
-                    "sample_blend_policy": "pitcher_v1_weighted_blend",
-                    "sample_size": None,
-                    "stabilizer_window": "last_365_days",
-                }
+                _pitcher_profile_input(away_pitcher_detail)
             )
 
             home_projected_lineup_offense_profile = build_projected_lineup_offense_profile(
