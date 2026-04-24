@@ -1,27 +1,26 @@
-import json
 import os
 import time
 from typing import Any, Dict, List, Optional
 
-try:
-    from apify_client import ApifyClient
-except ImportError:
-    ApifyClient = None
+import requests
 
 _CACHE: Dict[str, Dict[str, Any]] = {}
-_ALLOWED_STATES = {
-    "Arizona", "Colorado", "Illinois", "Indiana", "Iowa", "Louisiana",
-    "Maryland", "Michigan", "New Jersey", "New York", "Ohio",
-    "Pennsylvania", "Tennessee", "Virginia", "West Virginia", "Wyoming",
+_ODDS_API_BASE = "https://api.the-odds-api.com/v4"
+_ODDS_API_SPORT = "baseball_mlb"
+_DEFAULT_BOOKMAKER = "draftkings"
+_DEFAULT_REGIONS = "us"
+_DEFAULT_MARKETS = ["h2h", "spreads", "totals"]
+_MARKET_TYPE_MAP = {
+    "moneyline": "h2h",
+    "h2h": "h2h",
+    "spread": "spreads",
+    "spreads": "spreads",
+    "total": "totals",
+    "totals": "totals",
+    "player_props": "player_props",
+    "props": "player_props",
+    "all": "all",
 }
-_STATE_ABBREVIATIONS = {
-    "AZ": "Arizona", "CO": "Colorado", "IL": "Illinois", "IN": "Indiana",
-    "IA": "Iowa", "LA": "Louisiana", "MD": "Maryland", "MI": "Michigan",
-    "NJ": "New Jersey", "NY": "New York", "OH": "Ohio", "PA": "Pennsylvania",
-    "TN": "Tennessee", "VA": "Virginia", "WV": "West Virginia", "WY": "Wyoming",
-}
-_DEFAULT_MLB_LEAGUE_ID = "84240"
-_DEFAULT_MARKET_TYPES = ["all"]
 
 
 def _cache_get(key: str):
@@ -35,40 +34,10 @@ def _cache_set(key: str, data: Any, ttl: int = 300):
     _CACHE[key] = {"data": data, "expires_at": time.time() + ttl}
 
 
-def _normalize_state(value: Optional[str]) -> str:
-    raw = (value or "Illinois").strip()
-    if not raw:
-        return "Illinois"
-    upper = raw.upper()
-    if upper in _STATE_ABBREVIATIONS:
-        return _STATE_ABBREVIATIONS[upper]
-    title = raw.title()
-    if title in _ALLOWED_STATES:
-        return title
-    return "Illinois"
-
-
-def _parse_csv(value: Optional[str], fallback: List[str]) -> List[str]:
-    if not value:
-        return fallback
-    parsed = [v.strip() for v in value.split(",") if v.strip()]
-    return parsed or fallback
-
-
-def _json_env(name: str) -> Optional[Dict[str, Any]]:
-    raw = os.getenv(name)
-    if not raw:
-        return None
-    try:
-        parsed = json.loads(raw)
-        return parsed if isinstance(parsed, dict) else None
-    except Exception:
-        return None
-
-
-def _provider_not_configured(scope: str, game_pk: Optional[int] = None, message: str = "APIFY_TOKEN is not configured.") -> Dict[str, Any]:
+def _provider_not_configured(scope: str, game_pk: Optional[int] = None, message: str = "ODDS_API_KEY is not configured.") -> Dict[str, Any]:
     return {
-        "provider": "draftkings",
+        "provider": "the_odds_api",
+        "book": "DraftKings",
         "status": "provider_not_configured",
         "scope": scope,
         "game_pk": game_pk,
@@ -84,9 +53,10 @@ def _provider_not_configured(scope: str, game_pk: Optional[int] = None, message:
     }
 
 
-def _provider_error(scope: str, game_pk: Optional[int], exc: Exception, run_input: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def _provider_error(scope: str, game_pk: Optional[int], exc: Exception, request_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     return {
-        "provider": "draftkings",
+        "provider": "the_odds_api",
+        "book": "DraftKings",
         "status": "provider_error",
         "scope": scope,
         "game_pk": game_pk,
@@ -98,89 +68,120 @@ def _provider_error(scope: str, game_pk: Optional[int], exc: Exception, run_inpu
         "event_count": 0,
         "market_count": 0,
         "errors": [str(exc)],
-        "message": "DraftKings odds provider failed while fetching Apify data.",
-        "run_input": run_input or {},
+        "message": "The Odds API provider failed while fetching DraftKings odds.",
+        "request_params": request_params or {},
     }
 
 
-def _first_present(row: Dict[str, Any], keys: List[str]) -> Any:
-    for key in keys:
-        if key in row and row[key] not in (None, ""):
-            return row[key]
+def _parse_markets(market_types: Optional[List[str]], props_only: bool = False) -> List[str]:
+    if props_only:
+        return ["player_props"]
+    if not market_types:
+        env_value = os.getenv("ODDS_API_MARKETS")
+        raw = [m.strip() for m in env_value.split(",") if m.strip()] if env_value else _DEFAULT_MARKETS
+    else:
+        raw = market_types
+    mapped: List[str] = []
+    for market in raw:
+        value = _MARKET_TYPE_MAP.get(str(market).strip().lower(), str(market).strip())
+        if value == "all":
+            value = "h2h,spreads,totals"
+            for piece in value.split(","):
+                if piece not in mapped:
+                    mapped.append(piece)
+            continue
+        if value not in mapped:
+            mapped.append(value)
+    return mapped or _DEFAULT_MARKETS
+
+
+def _odds_decimal_from_american(price: Optional[float]) -> Optional[float]:
+    if price is None:
+        return None
+    try:
+        price = float(price)
+    except (TypeError, ValueError):
+        return None
+    if price > 0:
+        return round(1 + price / 100, 4)
+    if price < 0:
+        return round(1 + 100 / abs(price), 4)
     return None
 
 
-def _to_float(value: Any) -> Optional[float]:
-    if value is None:
+def _implied_from_american(price: Optional[float]) -> Optional[float]:
+    if price is None:
         return None
     try:
-        return float(value)
+        price = float(price)
     except (TypeError, ValueError):
         return None
+    if price > 0:
+        return round(100 / (price + 100), 4)
+    if price < 0:
+        return round(abs(price) / (abs(price) + 100), 4)
+    return None
 
 
-def _odds_dict(selection: Dict[str, Any]) -> Dict[str, Any]:
-    odds = selection.get("odds") if isinstance(selection.get("odds"), dict) else {}
-    american = _first_present(odds, ["american", "americanOdds", "oddsAmerican"])
-    if american is None:
-        american = _first_present(selection, ["americanOdds", "american_odds", "oddsAmerican", "price"])
-    decimal = _first_present(odds, ["decimal", "decimalOdds"])
-    fractional = _first_present(odds, ["fractional", "fractionalOdds"])
-    implied = _first_present(odds, ["impliedProbability", "implied_probability"])
+def _normalize_selection(outcome: Dict[str, Any], market: Dict[str, Any]) -> Dict[str, Any]:
+    price = outcome.get("price")
     return {
-        "american": american,
-        "decimal": decimal,
-        "fractional": fractional,
-        "implied_probability": implied,
+        "selection_id": None,
+        "name": outcome.get("name"),
+        "team": outcome.get("name"),
+        "side": None,
+        "line": outcome.get("point") if outcome.get("point") is not None else market.get("point"),
+        "odds": {
+            "american": price,
+            "decimal": _odds_decimal_from_american(price),
+            "fractional": None,
+            "implied_probability": _implied_from_american(price),
+        },
+        "price": price,
+        "is_open": True,
+        "raw": outcome,
     }
 
 
-def _normalize_selection(selection: Dict[str, Any], market: Dict[str, Any]) -> Dict[str, Any]:
-    odds = _odds_dict(selection)
-    return {
-        "selection_id": _first_present(selection, ["id", "selectionId", "outcomeId"]),
-        "name": _first_present(selection, ["name", "label", "outcome", "participant", "playerName", "teamName"]),
-        "team": _first_present(selection, ["team", "teamAbbreviation", "teamName"]),
-        "side": _first_present(selection, ["side", "homeAway", "designation"]),
-        "line": _first_present(selection, ["line", "points", "handicap", "total", "spread"]) or _first_present(market, ["line", "points", "total", "spread"]),
-        "odds": odds,
-        "price": odds.get("american"),
-        "is_open": selection.get("isOpen", selection.get("is_open", market.get("isOpen"))),
-        "raw": selection,
-    }
-
-
-def _normalize_event(item: Dict[str, Any]) -> Dict[str, Any]:
-    event_markets = item.get("markets") if isinstance(item.get("markets"), list) else []
+def _normalize_event(item: Dict[str, Any], bookmaker_key: str = _DEFAULT_BOOKMAKER) -> Dict[str, Any]:
+    target_book = None
+    for bookmaker in item.get("bookmakers", []) or []:
+        if bookmaker.get("key") == bookmaker_key:
+            target_book = bookmaker
+            break
+    if target_book is None and item.get("bookmakers"):
+        target_book = item.get("bookmakers", [None])[0]
+    book_markets = target_book.get("markets", []) if isinstance(target_book, dict) else []
     markets: List[Dict[str, Any]] = []
-    for market in event_markets:
-        if not isinstance(market, dict):
-            continue
-        selections = market.get("selections") if isinstance(market.get("selections"), list) else []
+    for market in book_markets:
+        outcomes = market.get("outcomes") if isinstance(market.get("outcomes"), list) else []
         markets.append({
-            "market_id": _first_present(market, ["id", "marketId"]),
-            "market_key": _first_present(market, ["type", "marketType", "market_key"]),
-            "market_name": _first_present(market, ["name", "marketName", "label"]),
-            "market_type": _first_present(market, ["type", "marketType"]),
-            "line": _first_present(market, ["line", "points", "total", "spread"]),
-            "period": _first_present(market, ["period", "periodName"]),
-            "is_open": market.get("isOpen", market.get("is_open")),
-            "selections": [_normalize_selection(sel, market) for sel in selections if isinstance(sel, dict)],
+            "market_id": market.get("key"),
+            "market_key": market.get("key"),
+            "market_name": market.get("key"),
+            "market_type": market.get("key"),
+            "line": None,
+            "period": None,
+            "is_open": True,
+            "last_update": market.get("last_update"),
+            "bookmaker_key": target_book.get("key") if isinstance(target_book, dict) else None,
+            "bookmaker_title": target_book.get("title") if isinstance(target_book, dict) else None,
+            "selections": [_normalize_selection(outcome, market) for outcome in outcomes if isinstance(outcome, dict)],
             "raw": market,
         })
     return {
-        "event_id": _first_present(item, ["eventId", "event_id", "id"]),
-        "name": _first_present(item, ["name", "eventName"]),
-        "sport": item.get("sport"),
-        "league": item.get("league"),
-        "league_id": _first_present(item, ["leagueId", "league_id"]),
-        "home_team": item.get("homeTeam"),
-        "away_team": item.get("awayTeam"),
-        "start_time": _first_present(item, ["startTime", "start_time", "commence_time"]),
-        "status": item.get("status"),
-        "is_live": bool(item.get("isLive", item.get("is_live", False))),
-        "source_url": _first_present(item, ["sourceUrl", "source_url"]),
-        "scraped_at": _first_present(item, ["scrapedAt", "scraped_at"]),
+        "event_id": item.get("id"),
+        "name": f"{item.get('away_team')} @ {item.get('home_team')}",
+        "sport": item.get("sport_title"),
+        "league": item.get("sport_key"),
+        "league_id": item.get("sport_key"),
+        "home_team": {"name": item.get("home_team")},
+        "away_team": {"name": item.get("away_team")},
+        "start_time": item.get("commence_time"),
+        "status": "scheduled",
+        "is_live": False,
+        "source_url": None,
+        "scraped_at": int(time.time()),
         "markets": markets,
         "market_count": len(markets),
         "raw": item,
@@ -220,6 +221,13 @@ def _filter_events(events: List[Dict[str, Any]], game_pk: Optional[int], target_
     return filtered
 
 
+def _fetch_odds_api(params: Dict[str, Any]) -> List[Dict[str, Any]]:
+    url = f"{_ODDS_API_BASE}/sports/{_ODDS_API_SPORT}/odds"
+    response = requests.get(url, params=params, timeout=20)
+    response.raise_for_status()
+    return response.json()
+
+
 def build_draftkings_run_input(
     scope: str = "pregame",
     props_only: bool = False,
@@ -229,32 +237,18 @@ def build_draftkings_run_input(
     live_only: Optional[bool] = None,
     state: Optional[str] = None,
 ) -> Dict[str, Any]:
-    override = _json_env("DRAFTKINGS_ODDS_RUN_INPUT_JSON")
-    if override is not None:
-        return override
-    if props_only:
-        resolved_market_types = ["player_props"]
-    else:
-        resolved_market_types = market_types or _parse_csv(os.getenv("DRAFTKINGS_ODDS_MARKET_TYPES"), _DEFAULT_MARKET_TYPES)
-    resolved_league = league or os.getenv("DRAFTKINGS_ODDS_LEAGUE", _DEFAULT_MLB_LEAGUE_ID)
+    markets = _parse_markets(market_types, props_only=props_only)
     return {
-        "leagues": [resolved_league],
-        "marketTypes": resolved_market_types,
-        "maxEvents": int(os.getenv("DRAFTKINGS_ODDS_MAX_EVENTS", "500")),
-        "liveOnly": scope == "live" if live_only is None else live_only,
-        "oddsFormat": os.getenv("DRAFTKINGS_ODDS_FORMAT", "all"),
-        "usState": _normalize_state(state or os.getenv("DRAFTKINGS_ODDS_STATE", "Illinois")),
-        "requestDelay": int(os.getenv("DRAFTKINGS_ODDS_REQUEST_DELAY_MS", "500")),
+        "apiKey": "***",
+        "sport": _ODDS_API_SPORT,
+        "regions": os.getenv("ODDS_API_REGIONS", _DEFAULT_REGIONS),
+        "markets": ",".join(markets),
+        "oddsFormat": os.getenv("ODDS_API_ODDS_FORMAT", "american"),
+        "dateFormat": os.getenv("ODDS_API_DATE_FORMAT", "iso"),
+        "bookmakers": os.getenv("ODDS_API_BOOKMAKERS", _DEFAULT_BOOKMAKER),
+        "scope": scope,
+        "target_date": date,
     }
-
-
-def _run_actor(token: str, run_input: Dict[str, Any]) -> List[Dict[str, Any]]:
-    client = ApifyClient(token)
-    run = client.actor(os.getenv("DRAFTKINGS_ODDS_ACTOR_ID", "mherzog/draftkings-sportsbook-odds")).call(run_input=run_input)
-    dataset_id = run.get("defaultDatasetId") or run.get("default_dataset_id")
-    if not dataset_id:
-        return []
-    return list(client.dataset(dataset_id).iterate_items())
 
 
 def fetch_draftkings_odds(
@@ -268,14 +262,14 @@ def fetch_draftkings_odds(
     live_only: Optional[bool] = None,
     state: Optional[str] = None,
 ) -> Dict[str, Any]:
-    if ApifyClient is None:
-        return _provider_not_configured(scope, game_pk=game_pk, message="apify-client is not installed in the running image.")
-    token = os.getenv("APIFY_TOKEN")
+    token = os.getenv("ODDS_API_KEY") or os.getenv("THE_ODDS_API_KEY")
     if not token:
         return _provider_not_configured(scope, game_pk=game_pk)
 
-    run_input = build_draftkings_run_input(scope, props_only, date, league, market_types, live_only, state)
-    cache_key = f"dk:{scope}:{game_pk or 'all'}:{props_only}:{date or 'any'}:{json.dumps(run_input, sort_keys=True)}:{raw}"
+    request_params = build_draftkings_run_input(scope, props_only, date, league, market_types, live_only, state)
+    actual_params = dict(request_params)
+    actual_params["apiKey"] = token
+    cache_key = f"oddsapi:{scope}:{game_pk or 'all'}:{props_only}:{date or 'any'}:{request_params}:{raw}"
     cached = _cache_get(cache_key)
     if cached:
         cached_copy = dict(cached)
@@ -283,18 +277,19 @@ def fetch_draftkings_odds(
         return cached_copy
 
     try:
-        items = _run_actor(token, run_input)
-        events = [_normalize_event(item) for item in items if isinstance(item, dict)]
+        items = _fetch_odds_api(actual_params)
+        events = [_normalize_event(item, bookmaker_key=os.getenv("ODDS_API_BOOKMAKERS", _DEFAULT_BOOKMAKER)) for item in items if isinstance(item, dict)]
         events = _filter_events(events, game_pk=game_pk, target_date=date)
         markets = _flatten_markets(events, game_pk=game_pk)
     except Exception as exc:
-        return _provider_error(scope, game_pk, exc, run_input=run_input)
+        return _provider_error(scope, game_pk, exc, request_params=request_params)
 
     normalized = {
-        "provider": "draftkings",
+        "provider": "the_odds_api",
+        "book": "DraftKings",
         "status": "ok" if items else "empty",
         "scope": scope,
-        "sport": "baseball_mlb",
+        "sport": _ODDS_API_SPORT,
         "game_pk": game_pk,
         "target_date": date,
         "books": ["DraftKings"],
@@ -305,11 +300,11 @@ def fetch_draftkings_odds(
         "event_count": len(events),
         "market_count": len(markets),
         "errors": [],
-        "run_input": run_input,
+        "request_params": request_params,
         "cache_hit": False,
     }
     if raw or scope == "debug":
         normalized["raw_items_sample"] = items[:10]
-    ttl = int(os.getenv("DRAFTKINGS_ODDS_CACHE_TTL_SECONDS", "300"))
+    ttl = int(os.getenv("ODDS_API_CACHE_TTL_SECONDS", "300"))
     _cache_set(cache_key, normalized, ttl)
     return normalized
