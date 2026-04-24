@@ -592,6 +592,30 @@ function ProfileMetadataCard({ title, metadata }) {
   )
 }
 
+function SignalLegend() {
+  return (
+    <div style={{
+      display: 'flex',
+      gap: '12px',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      background: '#0d1117',
+      border: '1px solid #21262d',
+      borderRadius: '8px',
+      padding: '10px 12px',
+      marginBottom: '14px',
+      fontSize: '12px',
+      color: '#8b949e',
+    }}>
+      <span style={{ color: '#e6edf3', fontWeight: '700' }}>Signal colors:</span>
+      <span><span style={{ color: '#3fb950', fontWeight: '700' }}>Green</span> = favorable / strong</span>
+      <span><span style={{ color: '#d29922', fontWeight: '700' }}>Yellow</span> = neutral / watch</span>
+      <span><span style={{ color: '#f85149', fontWeight: '700' }}>Red</span> = unfavorable / weak</span>
+    </div>
+  )
+}
+
+
 function PitcherProfilePanel({ sideLabel, teamName, profile }) {
   if (!profile) return <div style={t.noData}>No pitcher profile available for this matchup yet.</div>
   return (
@@ -900,6 +924,7 @@ export default function MatchupDetailPage() {
       {activeTab === 'pitcher' && (
         <div style={t.section}>
           <div style={t.sectionTitle}>Pitcher Profiles</div>
+          <SignalLegend />
           <div style={t.pitcherGrid}>
             <PitcherProfilePanel sideLabel="Away" teamName={away.name} profile={matchup.awayPitcherProfile} />
             <PitcherProfilePanel sideLabel="Home" teamName={home.name} profile={matchup.homePitcherProfile} />
@@ -910,6 +935,7 @@ export default function MatchupDetailPage() {
       {activeTab === 'batter' && (
         <div style={t.section}>
           <div style={t.sectionTitle}>Projected Lineup Offense Profiles</div>
+          <SignalLegend />
           <div style={t.pitcherGrid}>
             <BatterProfilePanel sideLabel="Away" teamName={away.name} profile={matchup.awayProjectedLineupOffenseProfile} />
             <BatterProfilePanel sideLabel="Home" teamName={home.name} profile={matchup.homeProjectedLineupOffenseProfile} />
@@ -918,12 +944,16 @@ export default function MatchupDetailPage() {
       )}
 
       {activeTab === 'environment' && (
-        <EnvironmentPanel profile={matchup.environmentProfile} />
+        <>
+          <SignalLegend />
+          <EnvironmentPanel profile={matchup.environmentProfile} />
+        </>
       )}
 
       {activeTab === 'analysis' && (
         <div style={t.section}>
           <div style={t.sectionTitle}>Matchup Analysis</div>
+          <SignalLegend />
           <div style={t.pitcherGrid}>
             <MatchupAnalysisPanel sideLabel="Away Offense" teamName={away.name} analysis={matchup.awayMatchupAnalysis} />
             <MatchupAnalysisPanel sideLabel="Home Offense" teamName={home.name} analysis={matchup.homeMatchupAnalysis} />
