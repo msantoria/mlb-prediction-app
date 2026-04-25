@@ -504,6 +504,68 @@ function metricValue(v) {
   return String(v)
 }
 
+function emptyMetricReason(key) {
+  const pitchLevelMetrics = new Set([
+    'csw_rate',
+    'zone_rate',
+    'first_pitch_strike_rate',
+    'barrel_rate_allowed',
+    'avg_exit_velocity_allowed',
+    'avg_launch_angle_allowed',
+    'whiff_rate',
+    'contact_rate',
+    'chase_rate',
+    'swing_rate',
+    'barrel_rate',
+    'hard_hit_rate',
+    'avg_exit_velocity',
+    'avg_launch_angle',
+  ])
+
+  const platoonMetrics = new Set([
+    'vs_lhb_woba_allowed',
+    'vs_rhb_woba_allowed',
+    'vs_lhb_k_rate',
+    'vs_rhb_k_rate',
+    'vs_lhb_bb_rate',
+    'vs_rhb_bb_rate',
+    'vs_lhp_woba',
+    'vs_rhp_woba',
+    'vs_lhp_iso',
+    'vs_rhp_iso',
+  ])
+
+  const weatherMetrics = new Set([
+    'temperature_f',
+    'condition',
+    'wind_speed_mph',
+    'wind_direction',
+    'humidity_pct',
+    'precipitation_probability',
+  ])
+
+  if (pitchLevelMetrics.has(key)) return 'Needs pitch-level data'
+  if (platoonMetrics.has(key)) return 'Needs split data'
+  if (weatherMetrics.has(key)) return 'Weather unavailable'
+  return 'Not available yet'
+}
+
+function MetricValue({ metricKey, value }) {
+  if (value == null) {
+    return (
+      <span style={{ ...t.statVal, color: '#8b949e', fontSize: '11px', fontStyle: 'italic' }}>
+        {emptyMetricReason(metricKey)}
+      </span>
+    )
+  }
+
+  return (
+    <span style={{ ...t.statVal, color: metricSignalColor(metricKey, value) }}>
+      {metricValue(value)}
+    </span>
+  )
+}
+
 function metricSignalColor(key, value) {
   if (value == null || typeof value !== 'number') return '#e6edf3'
 
@@ -566,7 +628,7 @@ function ProfileSectionCard({ title, data }) {
         entries.map(([k, v]) => (
           <div key={k} style={t.statRow}>
             <span style={t.statKey}>{displayKey(k)}</span>
-            <span style={{ ...t.statVal, color: metricSignalColor(k, v) }}>{metricValue(v)}</span>
+            <MetricValue metricKey={k} value={v} />
           </div>
         ))
       )}
