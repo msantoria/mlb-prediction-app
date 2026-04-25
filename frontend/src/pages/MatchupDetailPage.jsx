@@ -616,13 +616,55 @@ function SignalLegend() {
 }
 
 
+function dataQualityFromMetadata(metadata) {
+  const source = String(metadata?.source_type || '').toLowerCase()
+  const confidence = String(metadata?.data_confidence || '').toLowerCase()
+  const readiness = String(metadata?.readiness || metadata?.status || '').toLowerCase()
+
+  if (!metadata || source.includes('missing') || readiness === 'stub') {
+    return { label: 'Missing', color: '#f85149', bg: 'rgba(248,81,73,0.12)' }
+  }
+  if (source.includes('placeholder') || source.includes('scaffold')) {
+    return { label: 'Scaffold', color: '#d29922', bg: 'rgba(210,153,34,0.12)' }
+  }
+  if (source.includes('fallback') || confidence === 'low' || readiness === 'partial') {
+    return { label: 'Fallback', color: '#d29922', bg: 'rgba(210,153,34,0.12)' }
+  }
+  if (source.includes('real') || source.includes('aggregate') || confidence === 'medium' || confidence === 'high') {
+    return { label: 'Real Data', color: '#3fb950', bg: 'rgba(63,185,80,0.12)' }
+  }
+  return { label: 'Partial', color: '#d29922', bg: 'rgba(210,153,34,0.12)' }
+}
+
+function DataQualityBadge({ metadata }) {
+  const quality = dataQualityFromMetadata(metadata)
+  return (
+    <span style={{
+      color: quality.color,
+      background: quality.bg,
+      border: `1px solid ${quality.color}`,
+      borderRadius: '999px',
+      padding: '2px 8px',
+      fontSize: '11px',
+      fontWeight: '700',
+      whiteSpace: 'nowrap',
+    }}>
+      {quality.label}
+    </span>
+  )
+}
+
+
 function PitcherProfilePanel({ sideLabel, teamName, profile }) {
   if (!profile) return <div style={t.noData}>No pitcher profile available for this matchup yet.</div>
   return (
     <div style={t.pitcherCard}>
       <div style={{ fontSize: '12px', color: '#8b949e', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{sideLabel}</div>
       <div style={t.pitcherName}>{teamName}</div>
-      <div style={t.dataSource}>{profile.metadata?.generated_from || 'No source info'}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+        <div style={t.dataSource}>{profile.metadata?.generated_from || 'No source info'}</div>
+        <DataQualityBadge metadata={profile.metadata} />
+      </div>
       <InsightCards items={buildPitcherInsights(profile)} />
       <div style={t.splitsGrid}>
         <ProfileMetadataCard title="Metadata" metadata={profile.metadata} />
@@ -642,7 +684,10 @@ function BatterProfilePanel({ sideLabel, teamName, profile }) {
     <div style={t.pitcherCard}>
       <div style={{ fontSize: '12px', color: '#8b949e', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{sideLabel}</div>
       <div style={t.pitcherName}>{teamName}</div>
-      <div style={t.dataSource}>{profile.metadata?.generated_from || 'No source info'}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+        <div style={t.dataSource}>{profile.metadata?.generated_from || 'No source info'}</div>
+        <DataQualityBadge metadata={profile.metadata} />
+      </div>
       <InsightCards items={buildBatterInsights(profile)} />
       <div style={t.splitsGrid}>
         <ProfileMetadataCard title="Metadata" metadata={profile.metadata} />
@@ -660,7 +705,10 @@ function EnvironmentPanel({ profile }) {
   if (!profile) return <div style={t.noData}>No environment profile available for this game yet.</div>
   return (
     <div style={t.section}>
-      <div style={t.sectionTitle}>Environment Profile</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+        <div style={t.sectionTitle}>Environment Profile</div>
+        <DataQualityBadge metadata={{ ...(profile.metadata || {}), readiness: profile.status?.readiness }} />
+      </div>
       <InsightCards items={buildEnvironmentInsights(profile)} />
       <div style={t.splitsGrid}>
         <ProfileMetadataCard title="Metadata" metadata={profile.metadata} />
@@ -682,7 +730,10 @@ function MatchupAnalysisPanel({ sideLabel, teamName, analysis }) {
     <div style={t.pitcherCard}>
       <div style={{ fontSize: '12px', color: '#8b949e', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{sideLabel}</div>
       <div style={t.pitcherName}>{teamName}</div>
-      <div style={t.dataSource}>{analysis.metadata?.generated_from || 'No source info'}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+        <div style={t.dataSource}>{analysis.metadata?.generated_from || 'No source info'}</div>
+        <DataQualityBadge metadata={analysis.metadata} />
+      </div>
       <InsightCards items={buildMatchupInsights(analysis)} />
 
       <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '14px', fontSize: '12px' }}>
