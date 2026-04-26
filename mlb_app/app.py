@@ -77,6 +77,8 @@ from .odds_provider import (
     fetch_draftkings_events,
 )
 
+from .batter_routes import router as batter_router
+
 MLB_STATS_BASE = "https://statsapi.mlb.com/api/v1"
 MATCHUP_SNAPSHOT_CACHE: Dict[str, List[Dict[str, Any]]] = {}
 LIVE_CACHE: Dict[str, Dict[str, Any]] = {}
@@ -643,6 +645,8 @@ def create_app():
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    app.include_router(batter_router)
 
     @app.get("/health")
     def health():
