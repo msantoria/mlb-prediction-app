@@ -68,6 +68,14 @@ class StatcastEvent(Base):
 
     id: int = Column(Integer, primary_key=True, autoincrement=True)
     game_date: date = Column(Date, nullable=False, index=True)
+    game_pk: Optional[int] = Column(Integer, nullable=True, index=True)
+    at_bat_number: Optional[int] = Column(Integer, nullable=True)
+    pitch_number: Optional[int] = Column(Integer, nullable=True)
+    inning: Optional[int] = Column(Integer, nullable=True)
+    inning_topbot: Optional[str] = Column(String(10), nullable=True)
+    outs_when_up: Optional[int] = Column(Integer, nullable=True)
+    home_team: Optional[str] = Column(String(10), nullable=True)
+    away_team: Optional[str] = Column(String(10), nullable=True)
     pitcher_id: int = Column(Integer, nullable=False, index=True)
     batter_id: int = Column(Integer, nullable=False, index=True)
     pitch_type: Optional[str] = Column(String(5), nullable=True)
@@ -89,6 +97,7 @@ class StatcastEvent(Base):
     __table_args__ = (
         Index("ix_statcast_events_date_pitcher", "game_date", "pitcher_id"),
         Index("ix_statcast_events_date_batter", "game_date", "batter_id"),
+        Index("ix_statcast_events_batter_order", "batter_id", "game_date", "game_pk", "at_bat_number", "pitch_number"),
     )
 
 
@@ -292,7 +301,7 @@ def create_tables(engine) -> None:
     Call this function once during initialization to ensure the schema
     exists.  It will emit CREATE TABLE statements for any missing tables.
 
-    :param engine: A SQLAlchemy Engine connected to the target database.
+    :param engine: SQLAlchemy Engine connected to the target database.
     """
     Base.metadata.create_all(engine)
 
