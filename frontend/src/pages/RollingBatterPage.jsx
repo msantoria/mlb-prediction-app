@@ -31,8 +31,6 @@ const s = {
     padding: '8px 18px', fontSize: '13px', fontWeight: '500', cursor: 'pointer',
     background: active ? '#58a6ff' : 'transparent', color: active ? '#0d1117' : '#8b949e', border: 'none', outline: 'none',
   }),
-  qaBox: { background: '#161b22', border: '1px solid #30363d', borderRadius: '8px', padding: '12px 14px', marginBottom: '20px', fontSize: '13px', color: '#8b949e' },
-  qaWarn: { color: '#d29922', marginTop: '6px' },
   tableWrap: { background: '#161b22', border: '1px solid #30363d', borderRadius: '10px', overflow: 'auto', marginBottom: '20px' },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '600px' },
   th: { padding: '12px 14px', textAlign: 'left', color: '#8b949e', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid #21262d', whiteSpace: 'nowrap' },
@@ -57,18 +55,6 @@ const deg = v => v != null ? `${Number(v).toFixed(1)}°` : '—'
 function avgColor(v) { if (v == null) return '#e6edf3'; if (v >= 0.280) return '#3fb950'; if (v >= 0.240) return '#d29922'; return '#f85149' }
 function kColor(v) { if (v == null) return '#e6edf3'; if (v <= 0.18) return '#3fb950'; if (v <= 0.25) return '#d29922'; return '#f85149' }
 function evColor(v) { if (v == null) return '#e6edf3'; if (v >= 92) return '#3fb950'; if (v >= 88) return '#d29922'; return '#f85149' }
-
-function DataQualityBox({ quality }) {
-  if (!quality) return null
-  const warnings = quality.warnings || []
-  return (
-    <div style={s.qaBox}>
-      <div>Data Quality: <strong style={{ color: '#e6edf3' }}>{quality.ordering_quality || 'unknown'}</strong></div>
-      <div>Latest Event: <strong style={{ color: '#e6edf3' }}>{quality.latest_event_date || '—'}</strong></div>
-      {warnings.map((w, i) => <div key={i} style={s.qaWarn}>⚠ {w}</div>)}
-    </div>
-  )
-}
 
 export default function RollingBatterPage() {
   const { id } = useParams()
@@ -134,8 +120,6 @@ export default function RollingBatterPage() {
           <div style={s.subtitle}>Rolling PA is default. AB mode uses strict official AB filtering.</div>
         </div>
       </div>
-
-      <DataQualityBox quality={rolling?.data_quality} />
 
       <div style={s.tabs}>
         <button style={s.tab(view === 'pa')} onClick={() => setView('pa')}>Last N PA</button>
