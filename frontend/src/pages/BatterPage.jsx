@@ -21,6 +21,8 @@ const s = {
     color: '#58a6ff', textDecoration: 'none', borderRadius: '6px',
     padding: '7px 16px', fontSize: '13px', fontWeight: '500', marginBottom: '24px',
   },
+  qaBox: { background: '#161b22', border: '1px solid #30363d', borderRadius: '8px', padding: '12px 14px', marginBottom: '20px', fontSize: '13px', color: '#8b949e' },
+  qaWarn: { color: '#d29922', marginTop: '6px' },
   section: { marginBottom: '28px' },
   sectionTitle: { fontSize: '16px', fontWeight: '600', color: '#e6edf3', marginBottom: '14px', borderBottom: '1px solid #21262d', paddingBottom: '8px' },
   statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '12px' },
@@ -70,6 +72,18 @@ function StatCard({ label, value }) {
   )
 }
 
+function DataQualityBox({ quality }) {
+  if (!quality) return null
+  const warnings = quality.warnings || []
+  return (
+    <div style={s.qaBox}>
+      <div>Data Quality: <strong style={{ color: '#e6edf3' }}>{quality.ordering_quality || 'unknown'}</strong></div>
+      <div>Latest Statcast Event: <strong style={{ color: '#e6edf3' }}>{quality.latest_event_date || '—'}</strong></div>
+      {warnings.map((w, i) => <div key={i} style={s.qaWarn}>⚠ {w}</div>)}
+    </div>
+  )
+}
+
 function SplitCard({ title, split }) {
   if (!split) return (
     <div style={s.splitCard}>
@@ -115,7 +129,7 @@ export default function BatterPage() {
   function load(pid) {
     if (!pid) return
     setLoading(true); setError(null); setResults([])
-    fetch(`${API}/batter/${pid}`)
+    fetch(`${API}/batter/${pid}/profile`)
       .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(e.detail || r.statusText)))
       .then(d => { setData(d); setLoading(false) })
       .catch(e => { setError(String(e)); setLoading(false); setData(null) })
@@ -148,6 +162,7 @@ export default function BatterPage() {
   const splits = data?.splits || {}
   const yby = data?.year_by_year || []
   const agg = data?.aggregate
+  const dq = data?.data_quality
 
   return (
     <div>
@@ -184,7 +199,6 @@ export default function BatterPage() {
 
       {data && (
         <>
-          {/* Player header */}
           {info && (
             <div style={s.playerHeader}>
               <div style={s.playerName}>{info.name}</div>
@@ -198,13 +212,14 @@ export default function BatterPage() {
             </div>
           )}
 
+          <DataQualityBox quality={dq} />
+
           {id && (
             <Link to={`/batter/${id}/rolling`} style={s.rollingLink}>
-              View Rolling Stats (L10–L1000 ABs) →
+              View Rolling Stats (PA / AB / Games) →
             </Link>
           )}
 
-          {/* Live season stats */}
           {ss && (
             <div style={s.section}>
               <div style={s.sectionTitle}>
@@ -232,7 +247,6 @@ export default function BatterPage() {
             </div>
           )}
 
-          {/* Statcast metrics from DB events */}
           {sc && (
             <div style={s.section}>
               <div style={s.sectionTitle}>
@@ -252,12 +266,11 @@ export default function BatterPage() {
             </div>
           )}
 
-          {/* DB aggregate if available */}
           {agg && (
             <div style={s.section}>
               <div style={s.sectionTitle}>
                 Aggregate (DB)
-                {data.data_source && <span style={s.sourceBadge}>{data.data_source}</span>}
+                {data.aggregate_label && <span style={s.sourceBadge}>{data.aggregate_label}</span>}
               </div>
               <div style={s.statsGrid}>
                 <StatCard label="Exit Velocity" value={`${fmt(agg.avg_exit_velocity)} mph`} />
@@ -271,7 +284,6 @@ export default function BatterPage() {
             </div>
           )}
 
-          {/* Current splits */}
           {(splits.vsL || splits.vsR) && (
             <div style={s.section}>
               <div style={s.sectionTitle}>Platoon Splits — Current Season</div>
@@ -282,7 +294,6 @@ export default function BatterPage() {
             </div>
           )}
 
-          {/* Year-by-year from MLB API */}
           {yby.length > 0 && (
             <div style={s.section}>
               <div style={s.sectionTitle}>
