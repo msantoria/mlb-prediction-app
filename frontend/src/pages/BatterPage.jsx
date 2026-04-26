@@ -21,8 +21,6 @@ const s = {
     color: '#58a6ff', textDecoration: 'none', borderRadius: '6px',
     padding: '7px 16px', fontSize: '13px', fontWeight: '500', marginBottom: '24px',
   },
-  qaBox: { background: '#161b22', border: '1px solid #30363d', borderRadius: '8px', padding: '12px 14px', marginBottom: '20px', fontSize: '13px', color: '#8b949e' },
-  qaWarn: { color: '#d29922', marginTop: '6px' },
   section: { marginBottom: '28px' },
   sectionTitle: { fontSize: '16px', fontWeight: '600', color: '#e6edf3', marginBottom: '14px', borderBottom: '1px solid #21262d', paddingBottom: '8px' },
   statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '12px' },
@@ -68,18 +66,6 @@ function StatCard({ label, value }) {
     <div style={s.statCard}>
       <div style={s.statLabel}>{label}</div>
       <div style={s.statVal}>{value}</div>
-    </div>
-  )
-}
-
-function DataQualityBox({ quality }) {
-  if (!quality) return null
-  const warnings = quality.warnings || []
-  return (
-    <div style={s.qaBox}>
-      <div>Data Quality: <strong style={{ color: '#e6edf3' }}>{quality.ordering_quality || 'unknown'}</strong></div>
-      <div>Latest Statcast Event: <strong style={{ color: '#e6edf3' }}>{quality.latest_event_date || '—'}</strong></div>
-      {warnings.map((w, i) => <div key={i} style={s.qaWarn}>⚠ {w}</div>)}
     </div>
   )
 }
@@ -162,7 +148,6 @@ export default function BatterPage() {
   const splits = data?.splits || {}
   const yby = data?.year_by_year || []
   const agg = data?.aggregate
-  const dq = data?.data_quality
 
   return (
     <div>
@@ -211,8 +196,6 @@ export default function BatterPage() {
               </div>
             </div>
           )}
-
-          <DataQualityBox quality={dq} />
 
           {id && (
             <Link to={`/batter/${id}/rolling`} style={s.rollingLink}>
