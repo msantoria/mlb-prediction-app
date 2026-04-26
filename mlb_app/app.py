@@ -639,7 +639,9 @@ def create_app():
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
+    
+    app.include_router(batter_router)
+    
     @app.get("/health")
     def health():
         return {"status": "ok", "version": "0.5.2"}
