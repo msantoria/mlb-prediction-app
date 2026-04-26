@@ -150,6 +150,22 @@ def _load_team_splits(session, team_ids: List[int], season: int) -> None:
 # Statcast + aggregates
 # ---------------------------------------------------------------------------
 
+def _safe_int(val) -> Optional[int]:
+    try:
+        if pd.isna(val):
+            return None
+        return int(val)
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_str(val, max_len: int) -> Optional[str]:
+    if val is None or pd.isna(val):
+        return None
+    text = str(val).strip()
+    return text[:max_len] if text else None
+
+
 def _load_statcast_for_pitcher(session, pitcher_id: int, start: str, end: str) -> pd.DataFrame:
     try:
         df = fetch_statcast_pitcher_data(pitcher_id, start, end)
@@ -159,11 +175,20 @@ def _load_statcast_for_pitcher(session, pitcher_id: int, start: str, end: str) -
     if df is None or df.empty:
         return pd.DataFrame()
 
-    # Persist raw events (deduplicate by game_date + pitcher + batter + description)
+    # Persist raw events. Ordering fields are nullable so older or partial
+    # Statcast pulls remain compatible while newer pulls support true PA order.
     for _, row in df.iterrows():
         try:
             ev = StatcastEvent(
                 game_date=pd.to_datetime(row.get("game_date")).date() if row.get("game_date") else None,
+                game_pk=_safe_int(row.get("game_pk")),
+                at_bat_number=_safe_int(row.get("at_bat_number")),
+                pitch_number=_safe_int(row.get("pitch_number")),
+                inning=_safe_int(row.get("inning")),
+                inning_topbot=_safe_str(row.get("inning_topbot"), 10),
+                outs_when_up=_safe_int(row.get("outs_when_up")),
+                home_team=_safe_str(row.get("home_team"), 10),
+                away_team=_safe_str(row.get("away_team"), 10),
                 pitcher_id=pitcher_id,
                 batter_id=int(row["batter"]) if pd.notna(row.get("batter")) else 0,
                 pitch_type=str(row.get("pitch_type", "") or "")[:5] or None,
