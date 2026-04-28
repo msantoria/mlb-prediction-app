@@ -4,38 +4,45 @@ import { Link } from 'react-router-dom'
 const API = import.meta.env.VITE_API_BASE_URL || ''
 
 const s = {
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap', marginBottom: '24px' },
-  title: { fontSize: '24px', fontWeight: '700', color: '#e6edf3', margin: 0 },
-  subtitle: { color: '#8b949e', fontSize: '13px', marginTop: '6px' },
+  page: { display: 'grid', gap: '18px' },
+  hero: { background: 'linear-gradient(135deg, #161b22 0%, #0d1117 58%, #101826 100%)', border: '1px solid #30363d', borderRadius: '16px', padding: '22px', boxShadow: '0 18px 48px rgba(0,0,0,0.24)' },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' },
+  eyebrow: { color: '#58a6ff', fontSize: '12px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '1.2px', marginBottom: '8px' },
+  title: { fontSize: '30px', lineHeight: 1.05, fontWeight: '900', color: '#e6edf3', margin: 0 },
+  subtitle: { color: '#8b949e', fontSize: '14px', marginTop: '8px', maxWidth: '640px' },
   controls: { display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' },
-  input: { background: '#161b22', border: '1px solid #30363d', color: '#e6edf3', borderRadius: '6px', padding: '8px 12px', fontSize: '14px' },
-  select: { background: '#0d1117', border: '1px solid #30363d', color: '#e6edf3', borderRadius: '8px', padding: '8px 10px', fontSize: '13px', minWidth: '220px' },
-  button: { background: '#238636', border: '1px solid #2ea043', color: '#fff', borderRadius: '6px', padding: '8px 12px', fontSize: '13px', fontWeight: '700', cursor: 'pointer' },
-  mutedButton: { background: '#21262d', border: '1px solid #30363d', color: '#58a6ff', borderRadius: '6px', padding: '7px 10px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' },
-  stats: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px', marginBottom: '20px' },
-  statCard: { background: '#161b22', border: '1px solid #30363d', borderRadius: '8px', padding: '12px' },
-  statLabel: { color: '#8b949e', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.7px', fontWeight: '700' },
-  statValue: { color: '#e6edf3', fontSize: '22px', fontWeight: '800', marginTop: '4px' },
+  input: { background: '#0d1117', border: '1px solid #30363d', color: '#e6edf3', borderRadius: '10px', padding: '10px 12px', fontSize: '14px', outline: 'none' },
+  select: { background: '#0d1117', border: '1px solid #30363d', color: '#e6edf3', borderRadius: '10px', padding: '9px 11px', fontSize: '13px', outline: 'none', minWidth: '220px' },
+  button: { background: '#238636', border: '1px solid #2ea043', color: '#fff', borderRadius: '10px', padding: '10px 14px', fontSize: '13px', fontWeight: '800', cursor: 'pointer' },
+  mutedButton: { background: '#21262d', border: '1px solid #30363d', color: '#58a6ff', borderRadius: '9px', padding: '8px 11px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' },
+  stats: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', gap: '10px', marginTop: '18px' },
+  statCard: { background: 'rgba(13,17,23,0.72)', border: '1px solid #30363d', borderRadius: '12px', padding: '13px 14px' },
+  statLabel: { color: '#8b949e', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.9px', fontWeight: '800' },
+  statValue: { color: '#e6edf3', fontSize: '24px', fontWeight: '900', marginTop: '5px' },
+  toolbar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', background: '#161b22', border: '1px solid #30363d', borderRadius: '12px', padding: '12px 14px' },
+  toolbarText: { color: '#8b949e', fontSize: '13px' },
   grid: { display: 'grid', gap: '12px' },
-  card: { background: '#161b22', border: '1px solid #30363d', borderRadius: '10px', padding: '16px' },
-  cardHeader: { display: 'flex', justifyContent: 'space-between', gap: '14px', alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: '12px' },
-  matchup: { color: '#e6edf3', fontSize: '17px', fontWeight: '800' },
-  meta: { color: '#8b949e', fontSize: '12px', marginTop: '4px' },
-  badge: matched => ({ display: 'inline-block', borderRadius: '999px', padding: '3px 8px', fontSize: '11px', fontWeight: '800', background: matched ? '#1f3a1f' : '#3b2222', color: matched ? '#3fb950' : '#f85149' }),
-  markets: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '10px', marginTop: '12px' },
-  market: { border: '1px solid #21262d', borderRadius: '8px', padding: '10px', background: '#0d1117' },
-  marketTitle: { color: '#8b949e', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.7px', fontWeight: '800', marginBottom: '8px' },
-  oddsLine: { display: 'flex', justifyContent: 'space-between', gap: '8px', color: '#e6edf3', fontSize: '13px', marginTop: '5px' },
-  props: { marginTop: '12px', borderTop: '1px solid #30363d', paddingTop: '12px' },
+  card: { background: '#161b22', border: '1px solid #30363d', borderRadius: '14px', padding: '0', overflow: 'hidden' },
+  cardTop: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '14px', alignItems: 'center', padding: '15px 16px', borderBottom: '1px solid #30363d', background: '#111820' },
+  matchup: { color: '#e6edf3', fontSize: '18px', fontWeight: '900' },
+  metaRow: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' },
+  chip: { color: '#8b949e', border: '1px solid #30363d', background: '#0d1117', borderRadius: '999px', padding: '4px 8px', fontSize: '11px', fontWeight: '700' },
+  badge: matched => ({ display: 'inline-block', borderRadius: '999px', padding: '5px 10px', fontSize: '11px', fontWeight: '900', background: matched ? 'rgba(35,134,54,0.18)' : 'rgba(248,81,73,0.14)', border: matched ? '1px solid rgba(63,185,80,0.45)' : '1px solid rgba(248,81,73,0.45)', color: matched ? '#3fb950' : '#f85149' }),
+  markets: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px', padding: '14px 16px' },
+  market: { border: '1px solid #30363d', borderRadius: '12px', padding: '12px', background: '#0d1117' },
+  marketTitle: { color: '#8b949e', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.9px', fontWeight: '900', marginBottom: '9px' },
+  oddsLine: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', color: '#e6edf3', fontSize: '13px', marginTop: '6px', padding: '5px 0', borderTop: '1px solid rgba(48,54,61,0.55)' },
+  price: { fontWeight: '900', color: '#e6edf3', whiteSpace: 'nowrap' },
+  props: { borderTop: '1px solid #30363d', padding: '13px 16px 16px', background: '#111820' },
   propControls: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', marginBottom: '10px' },
-  propsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '8px' },
-  propCard: { border: '1px solid #21262d', borderRadius: '8px', padding: '9px', background: '#0d1117' },
-  propMarket: { color: '#d29922', fontSize: '11px', fontWeight: '800', marginBottom: '5px' },
-  propName: { color: '#e6edf3', fontSize: '13px', fontWeight: '800' },
+  propsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(235px, 1fr))', gap: '9px' },
+  propCard: { border: '1px solid #30363d', borderRadius: '10px', padding: '10px', background: '#0d1117' },
+  propMarket: { color: '#d29922', fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '6px' },
+  propName: { color: '#e6edf3', fontSize: '13px', fontWeight: '900' },
   propDetail: { color: '#8b949e', fontSize: '12px', marginTop: '4px' },
-  error: { color: '#f85149', background: '#1f1116', border: '1px solid #3b2222', borderRadius: '8px', padding: '14px', marginBottom: '14px' },
+  error: { color: '#f85149', background: '#1f1116', border: '1px solid #3b2222', borderRadius: '12px', padding: '14px' },
   loader: { color: '#8b949e', textAlign: 'center', padding: '40px' },
-  empty: { color: '#8b949e', textAlign: 'center', padding: '40px', border: '1px solid #30363d', borderRadius: '10px', background: '#161b22' },
+  empty: { color: '#8b949e', textAlign: 'center', padding: '40px', border: '1px solid #30363d', borderRadius: '14px', background: '#161b22' },
 }
 
 function normalizeTeamName(name) {
@@ -92,11 +99,11 @@ function MarketBox({ label, market }) {
   return (
     <div style={s.market}>
       <div style={s.marketTitle}>{label}</div>
-      {selections.length === 0 && <div style={s.oddsLine}><span>Unavailable</span><strong>—</strong></div>}
+      {selections.length === 0 && <div style={s.oddsLine}><span>Unavailable</span><strong style={s.price}>—</strong></div>}
       {selections.slice(0, 3).map((sel, idx) => (
         <div key={`${label}-${idx}`} style={s.oddsLine}>
           <span>{selectionLabel(sel)}</span>
-          <strong>{american(sel.price)}</strong>
+          <strong style={s.price}>{american(sel.price)}</strong>
         </div>
       ))}
     </div>
@@ -149,9 +156,9 @@ function PropsPanel({ eventId }) {
           </select>
         )}
       </div>
-      {open && loading && <div style={{ ...s.meta, marginTop: '10px' }}>Loading props…</div>}
+      {open && loading && <div style={{ color: '#8b949e', fontSize: '12px', marginTop: '10px' }}>Loading props…</div>}
       {open && error && <div style={{ color: '#f85149', fontSize: '12px', marginTop: '10px' }}>Props error: {error}</div>}
-      {open && !loading && !error && data && props.length === 0 && <div style={{ ...s.meta, marginTop: '10px' }}>No props returned for this selection.</div>}
+      {open && !loading && !error && data && props.length === 0 && <div style={{ color: '#8b949e', fontSize: '12px', marginTop: '10px' }}>No props returned for this selection.</div>}
       {open && props.length > 0 && (
         <div style={{ ...s.propsGrid, marginTop: '10px' }}>
           {props.slice(0, 80).map(({ market, sel }, idx) => (
@@ -222,24 +229,32 @@ export default function DailyOddsPage() {
   const unmatchedCount = rows.length - matchedCount
 
   return (
-    <div>
-      <div style={s.header}>
-        <div>
-          <h1 style={s.title}>Daily Odds</h1>
-          <div style={s.subtitle}>Full DraftKings board with MLB matchup matching, market odds, and selectable player props.</div>
+    <div style={s.page}>
+      <section style={s.hero}>
+        <div style={s.header}>
+          <div>
+            <div style={s.eyebrow}>DraftKings board</div>
+            <h1 style={s.title}>Daily Odds</h1>
+            <div style={s.subtitle}>Moneyline, run line, totals, prop market selectors, event IDs, and MLB game matching in one clean board.</div>
+          </div>
+          <div style={s.controls}>
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} style={s.input} />
+            <button type="button" style={s.button} onClick={load} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh Odds'}</button>
+          </div>
         </div>
-        <div style={s.controls}>
-          <input type="date" value={date} onChange={e => setDate(e.target.value)} style={s.input} />
-          <button type="button" style={s.button} onClick={load} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh Odds'}</button>
-        </div>
-      </div>
 
-      <div style={s.stats}>
-        <div style={s.statCard}><div style={s.statLabel}>MLB Games</div><div style={s.statValue}>{matchups.length}</div></div>
-        <div style={s.statCard}><div style={s.statLabel}>DK Events</div><div style={s.statValue}>{events.length}</div></div>
-        <div style={s.statCard}><div style={s.statLabel}>Matched</div><div style={s.statValue}>{matchedCount}</div></div>
-        <div style={s.statCard}><div style={s.statLabel}>Unmatched</div><div style={s.statValue}>{unmatchedCount}</div></div>
-        <div style={s.statCard}><div style={s.statLabel}>Last Refreshed</div><div style={{ ...s.statValue, fontSize: '14px' }}>{lastRefreshed ? lastRefreshed.toLocaleTimeString() : '—'}</div></div>
+        <div style={s.stats}>
+          <div style={s.statCard}><div style={s.statLabel}>MLB Games</div><div style={s.statValue}>{matchups.length}</div></div>
+          <div style={s.statCard}><div style={s.statLabel}>DK Events</div><div style={s.statValue}>{events.length}</div></div>
+          <div style={s.statCard}><div style={s.statLabel}>Matched</div><div style={s.statValue}>{matchedCount}</div></div>
+          <div style={s.statCard}><div style={s.statLabel}>Unmatched</div><div style={s.statValue}>{unmatchedCount}</div></div>
+          <div style={s.statCard}><div style={s.statLabel}>Last Refreshed</div><div style={{ ...s.statValue, fontSize: '15px' }}>{lastRefreshed ? lastRefreshed.toLocaleTimeString() : '—'}</div></div>
+        </div>
+      </section>
+
+      <div style={s.toolbar}>
+        <div style={s.toolbarText}>{rows.length} sportsbook events loaded for {date}</div>
+        <div style={s.toolbarText}>Use each game’s prop selector to choose exactly which player prop market to price.</div>
       </div>
 
       {error && <div style={s.error}>{error}</div>}
@@ -254,13 +269,15 @@ export default function DailyOddsPage() {
           const spread = findMarket(event, 'spreads')
           const total = findMarket(event, 'totals')
           return (
-            <div key={`${event.event_id || key || idx}`} style={s.card}>
-              <div style={s.cardHeader}>
+            <article key={`${event.event_id || key || idx}`} style={s.card}>
+              <div style={s.cardTop}>
                 <div>
                   <div style={s.matchup}>{away} @ {home}</div>
-                  <div style={s.meta}>Game time: {formatTime(matchup?.game_time || event?.start_time || event?.commence_time)}</div>
-                  <div style={s.meta}>MLB game_pk: {matchup?.game_pk ? <Link to={`/matchup/${matchup.game_pk}`} style={{ color: '#58a6ff' }}>{matchup.game_pk}</Link> : '—'} · DK event ID: {event.event_id || '—'}</div>
-                  <div style={s.meta}>MLB teams: {matchup ? `${matchup.away_team_name} @ ${matchup.home_team_name}` : 'No matched MLB game'} · DK teams: {away} @ {home}</div>
+                  <div style={s.metaRow}>
+                    <span style={s.chip}>Time: {formatTime(matchup?.game_time || event?.start_time || event?.commence_time)}</span>
+                    <span style={s.chip}>MLB: {matchup?.game_pk ? <Link to={`/matchup/${matchup.game_pk}`} style={{ color: '#58a6ff', textDecoration: 'none' }}>{matchup.game_pk}</Link> : '—'}</span>
+                    <span style={s.chip}>DK: {event.event_id || '—'}</span>
+                  </div>
                 </div>
                 <span style={s.badge(matched)}>{matched ? 'MATCHED' : 'UNMATCHED'}</span>
               </div>
@@ -272,7 +289,7 @@ export default function DailyOddsPage() {
               </div>
 
               {event.event_id && <PropsPanel eventId={event.event_id} />}
-            </div>
+            </article>
           )
         })}
       </div>
