@@ -49,7 +49,7 @@ const s = {
   modelCardTitle: { color: '#8b949e', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.9px', fontWeight: '900', marginBottom: '8px' },
   modelPick: { color: '#e6edf3', fontSize: '15px', fontWeight: '900', lineHeight: 1.25 },
   modelDetail: { color: '#8b949e', fontSize: '12px', marginTop: '6px', lineHeight: 1.35 },
-  confidence: score => ({ color: Number(score) >= 65 ? '#3fb950' : '#d29922', fontSize: '20px', fontWeight: '900', marginTop: '7px' }),
+  confidence: score => ({ color: Number(score) >= 0.65 || Number(score) >= 65 ? '#3fb950' : '#d29922', fontSize: '20px', fontWeight: '900', marginTop: '7px' }),
   reasonList: { margin: '8px 0 0', paddingLeft: '18px', color: '#8b949e', fontSize: '12px', lineHeight: 1.45 },
   section: { background: '#161b22', border: '1px solid #30363d', borderRadius: '14px', padding: '16px' },
   sectionHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' },
@@ -90,7 +90,8 @@ function pct(v) {
   if (v == null || v === '') return '—'
   const n = Number(v)
   if (Number.isNaN(n)) return String(v)
-  return `${Math.round(n)}%`
+  const pctValue = n <= 1 ? n * 100 : n
+  return `${Math.round(pctValue)}%`
 }
 
 function formatTime(iso) {
@@ -127,10 +128,6 @@ function firstDefined(...values) {
   return values.find(v => v !== undefined && v !== null && v !== '')
 }
 
-function pickText(value, fallback = '—') {
-  return firstDefined(value, fallback)
-}
-
 function modelGamesFromPayload(payload) {
   if (Array.isArray(payload)) return payload
   if (Array.isArray(payload?.games)) return payload.games
@@ -145,6 +142,34 @@ function propCandidatesFromPayload(payload) {
   if (Array.isArray(payload?.prop_candidates)) return payload.prop_candidates
   if (Array.isArray(payload?.props)) return payload.props
   return []
+}
+
+function modelDetail(model) {
+  if (!model) return ''
+  const probability = firstDefined(model.model_probability, model.probability)
+  const marketProbability = firstDefined(model.market_implied_probability, model.market_probability)
+  const score = firstDefined(model.score)
+  const parts = []
+  if (probability != null) parts.push(`Model probability: ${pct(probability)}`)
+  if (marketProbability != null) parts.push(`Market implied: ${pct(marketProbability)}`)
+  if (score != null) parts.push(`Score: ${score}`)
+  return parts.join(' · ')
+}
+
+function modelReasons(model) {
+  return [
+    ...asArray(model?.drivers),
+    ...asArray(model?.reasons),
+    ...asArray(model?.missing_inputs).slice(0, 2).map(item => `Missing: ${item}`),
+  ]
+}
+
+function normalizeCandidate(candidate) {
+  const pick = firstDefined(candidate.pick, candidate.side, candidate.recommendation, candidate.selection, 'No pick')
+  const market = cleanMarketName(firstDefined(candidate.market, candidate.market_name, candidate.prop_market, 'Prop Market'))
+  const line = firstDefined(candidate.line, candidate.prop_line)
+  const price = firstDefined(candidate.price, candidate.odds, candidate.american_odds)
+  return { pick, market, line, price }
 }
 
 function ModelCard({ title, pick, confidence, detail, reasons }) {
@@ -174,12 +199,17 @@ function GameModelPanel({ model }) {
     )
   }
 
-  const sidePick = firstDefined(model.side_pick, model.moneyline_pick, model.winner_pick, model.pick)
-  const totalPick = firstDefined(model.total_pick, model.total_model_pick, model.over_under_pick)
-  const runLinePick = firstDefined(model.run_line_pick, model.spread_pick, model.runline_pick)
-  const edge = firstDefined(model.edge, model.edge_score, model.model_edge)
-  const confidence = firstDefined(model.confidence, model.model_confidence, model.score)
-  const reasons = firstDefined(model.reasons, model.model_reasons, model.summary_reasons, [])
+  const modelRoot = model?.models || model
+  const moneylineModel = modelRoot?.moneyline || {}
+  const spreadModel = modelRoot?.spread || modelRoot?.run_line || {}
+  const totalModel = modelRoot?.total || {}
+
+  const sidePick = firstDefined(model.side_pick, model.moneyline_pick, model.winner_pick, model.pick, moneylineModel.pick)
+  const totalPick = firstDefined(model.total_pick, model.total_model_pick, model.over_under_pick, totalModel.pick)
+  const runLinePick = firstDefined(model.run_line_pick, model.spread_pick, model.runline_pick, spreadModel.pick)
+  const edge = firstDefined(model.edge, model.edge_score, model.model_edge, moneylineModel.edge, spreadModel.edge, totalModel.edge)
+  const confidence = firstDefined(model.confidence, model.model_confidence, model.score, moneylineModel.confidence)
+  const reasons = firstDefined(model.reasons, model.model_reasons, model.summary_reasons, moneylineModel.drivers, [])
 
   return (
     <div style={s.modelPanel}>
@@ -195,30 +225,53 @@ function GameModelPanel({ model }) {
           title="Moneyline Model"
           pick={sidePick}
           confidence={confidence}
-          detail={firstDefined(model.moneyline_detail, model.side_detail, model.summary)}
-          reasons={reasons}
+          detail={firstDefined(model.moneyline_detail, model.side_detail, model.summary, modelDetail(moneylineModel))}
+          reasons={firstDefined(reasons, modelReasons(moneylineModel))}
         />
         <ModelCard
           title="Run Line Model"
           pick={runLinePick}
-          confidence={firstDefined(model.run_line_confidence, model.spread_confidence)}
-          detail={firstDefined(model.run_line_detail, model.spread_detail)}
-          reasons={firstDefined(model.run_line_reasons, model.spread_reasons, [])}
+          confidence={firstDefined(model.run_line_confidence, model.spread_confidence, spreadModel.confidence)}
+          detail={firstDefined(model.run_line_detail, model.spread_detail, modelDetail(spreadModel))}
+          reasons={firstDefined(model.run_line_reasons, model.spread_reasons, modelReasons(spreadModel))}
         />
         <ModelCard
           title="Total Model"
           pick={totalPick}
-          confidence={firstDefined(model.total_confidence, model.over_under_confidence)}
-          detail={firstDefined(model.total_detail, model.over_under_detail)}
-          reasons={firstDefined(model.total_reasons, model.over_under_reasons, [])}
+          confidence={firstDefined(model.total_confidence, model.over_under_confidence, totalModel.confidence)}
+          detail={firstDefined(model.total_detail, model.over_under_detail, modelDetail(totalModel))}
+          reasons={firstDefined(model.total_reasons, model.over_under_reasons, modelReasons(totalModel))}
         />
       </div>
     </div>
   )
 }
 
+function CandidateGrid({ candidates, limit = 10 }) {
+  const rows = asArray(candidates).slice(0, limit)
+  if (rows.length === 0) return <div style={s.empty}>No top prop model candidates returned.</div>
+  return (
+    <div style={s.modelGrid}>
+      {rows.map((candidate, idx) => {
+        const { pick, market, line, price } = normalizeCandidate(candidate)
+        const player = firstDefined(candidate.player_name, candidate.player, candidate.name, 'Player')
+        return (
+          <ModelCard
+            key={`${player}-${market}-${pick}-${idx}`}
+            title={market}
+            pick={`${player}: ${pick}${line != null ? ` ${line}` : ''}${price != null ? ` (${american(price)})` : ''}`}
+            confidence={firstDefined(candidate.confidence, candidate.score, candidate.model_score)}
+            detail={firstDefined(candidate.detail, candidate.summary, candidate.edge != null ? `Edge: ${candidate.edge}` : '')}
+            reasons={firstDefined(candidate.reasons, candidate.reasoning, candidate.drivers, [])}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
 function TopPropModelCandidates({ candidates }) {
-  const rows = asArray(candidates).slice(0, 12)
+  const rows = asArray(candidates).slice(0, 20)
   return (
     <section style={s.section}>
       <div style={s.sectionHeader}>
@@ -228,30 +281,68 @@ function TopPropModelCandidates({ candidates }) {
         </div>
         <span style={s.chip}>{rows.length} shown</span>
       </div>
-      {rows.length === 0 ? (
-        <div style={s.empty}>No top prop model candidates returned for this date.</div>
-      ) : (
-        <div style={s.modelGrid}>
-          {rows.map((candidate, idx) => {
-            const player = firstDefined(candidate.player_name, candidate.player, candidate.name, 'Player')
-            const market = cleanMarketName(firstDefined(candidate.market, candidate.market_name, candidate.prop_market, 'Prop Market'))
-            const pick = firstDefined(candidate.pick, candidate.side, candidate.recommendation, candidate.selection, 'No pick')
-            const line = firstDefined(candidate.line, candidate.prop_line)
-            const price = firstDefined(candidate.price, candidate.odds, candidate.american_odds)
-            return (
-              <ModelCard
-                key={`${player}-${market}-${idx}`}
-                title={market}
-                pick={`${player}: ${pick}${line != null ? ` ${line}` : ''}${price != null ? ` (${american(price)})` : ''}`}
-                confidence={firstDefined(candidate.confidence, candidate.score, candidate.model_score)}
-                detail={firstDefined(candidate.detail, candidate.summary, candidate.edge ? `Edge: ${candidate.edge}` : '')}
-                reasons={firstDefined(candidate.reasons, candidate.reasoning, [])}
-              />
-            )
-          })}
-        </div>
-      )}
+      <CandidateGrid candidates={rows} limit={20} />
     </section>
+  )
+}
+
+function PerGamePropCandidates({ eventId }) {
+  const [open, setOpen] = useState(false)
+  const [limit, setLimit] = useState(10)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const [payload, setPayload] = useState(null)
+
+  function load() {
+    if (!eventId || loading) return
+    setLoading(true)
+    setError(null)
+    fetch(`${API}/daily-odds/event/${eventId}/prop-models`)
+      .then(async r => {
+        if (!r.ok) throw new Error(`${r.status} ${r.statusText}: ${await r.text()}`)
+        return r.json()
+      })
+      .then(json => { setPayload(json); setLoading(false) })
+      .catch(err => { setError(String(err?.message || err)); setLoading(false) })
+  }
+
+  function toggle() {
+    const next = !open
+    setOpen(next)
+    if (next && !payload) load()
+  }
+
+  const models = payload?.models || {}
+  const candidates = asArray(payload?.top_prop_model_candidates).length
+    ? payload.top_prop_model_candidates
+    : asArray(models?.top_candidates)
+  const count = firstDefined(models?.candidate_count, candidates.length, 0)
+
+  return (
+    <div style={s.modelPanel}>
+      <div style={s.modelHeader}>
+        <div>
+          <div style={s.modelTitle}>Per-Game Top Prop Model Candidates</div>
+          <div style={s.modelSubtitle}>Pitcher and hitter prop candidates ranked from this game’s DraftKings prop board.</div>
+        </div>
+        <div style={s.controls}>
+          <select value={limit} onChange={e => setLimit(Number(e.target.value))} style={s.select}>
+            <option value={5}>Top 5</option>
+            <option value={10}>Top 10</option>
+            <option value={20}>Top 20</option>
+          </select>
+          <button type="button" style={s.mutedButton} onClick={toggle}>{open ? 'Hide Prop Candidates' : 'Show Prop Candidates'}</button>
+        </div>
+      </div>
+      {open && loading && <div style={s.loader}>Loading prop model candidates...</div>}
+      {open && error && <div style={s.error}>Prop model error: {error}</div>}
+      {open && !loading && !error && payload && (
+        <>
+          <div style={{ ...s.modelSubtitle, marginBottom: '10px' }}>{count} prop candidates evaluated. Showing {Math.min(limit, candidates.length)}.</div>
+          <CandidateGrid candidates={candidates} limit={limit} />
+        </>
+      )}
+    </div>
   )
 }
 
@@ -475,6 +566,7 @@ export default function DailyOddsPage() {
               </div>
 
               <GameModelPanel model={model} />
+              {event.event_id && <PerGamePropCandidates eventId={event.event_id} />}
 
               <div style={s.markets}>
                 <MarketBox label="Moneyline" market={moneyline} />
