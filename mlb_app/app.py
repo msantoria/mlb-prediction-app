@@ -79,6 +79,8 @@ from .odds_provider import (
 
 from .batter_routes import router as batter_router
 
+from .daily_odds_routes import router as daily_odds_router
+
 MLB_STATS_BASE = "https://statsapi.mlb.com/api/v1"
 MATCHUP_SNAPSHOT_CACHE: Dict[str, List[Dict[str, Any]]] = {}
 LIVE_CACHE: Dict[str, Dict[str, Any]] = {}
@@ -647,6 +649,8 @@ def create_app():
     )
 
     app.include_router(batter_router)
+
+    app.include_router(daily_odds_router)
 
     @app.get("/health")
     def health():
