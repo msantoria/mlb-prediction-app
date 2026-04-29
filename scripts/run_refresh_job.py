@@ -6,10 +6,17 @@ never start the web server.
 
 Behavior:
 - verifies the app imports cleanly
+- runs a guarded Statcast ETL refresh before warming matchup payloads
 - refreshes live matchup payloads for today and tomorrow
 - warms matchup snapshots for today and tomorrow
 - does this for both production and sandbox targets
 - exits non-zero if any configured target fails
+
+Important:
+- REFRESH_ETL_BACKFILL_DAYS controls how many schedule dates the cron processes.
+  Default is 7 so missed/late probable-pitcher data gets picked up.
+- STATCAST_LOOKBACK_DAYS controls how far each ETL Statcast pull reaches back.
+  Default is set here to 365 unless Railway overrides it.
 """
 
 from __future__ import annotations
@@ -31,6 +38,11 @@ if str(PROJECT_ROOT) not in sys.path:
 REQUEST_TIMEOUT_SECONDS = int(os.environ.get("REFRESH_TIMEOUT_SECONDS", "60"))
 WARM_SNAPSHOTS = os.environ.get("WARM_MATCHUP_SNAPSHOTS", "1") == "1"
 REFRESH_MATCHUPS_FIRST = os.environ.get("REFRESH_MATCHUPS_FIRST", "1") == "1"
+
+RUN_STATCAST_ETL = os.environ.get("RUN_STATCAST_ETL", "1") == "1"
+REFRESH_ETL_BACKFILL_DAYS = int(os.environ.get("REFRESH_ETL_BACKFILL_DAYS", "7"))
+
+os.environ.setdefault("STATCAST_LOOKBACK_DAYS", "365")
 
 
 def _log(message: str) -> None:
@@ -83,6 +95,28 @@ def _warm_snapshot_for_date(label: str, base_url: str, target_date: dt.date) -> 
     _log(f"[{label}] Snapshot response for {target_date.isoformat()}: {result}")
 
 
+def _run_statcast_etl_refresh() -> None:
+    if not RUN_STATCAST_ETL:
+        _log("Skipping Statcast ETL refresh because RUN_STATCAST_ETL=0")
+        return
+
+    if REFRESH_ETL_BACKFILL_DAYS < 1:
+        _log("Skipping Statcast ETL refresh because REFRESH_ETL_BACKFILL_DAYS < 1")
+        return
+
+    lookback_days = os.environ.get("STATCAST_LOOKBACK_DAYS", "365")
+    _log(
+        "Starting Statcast ETL refresh: "
+        f"backfill_days={REFRESH_ETL_BACKFILL_DAYS}, "
+        f"statcast_lookback_days={lookback_days}"
+    )
+
+    from mlb_app.etl import run_backfill
+
+    run_backfill(REFRESH_ETL_BACKFILL_DAYS)
+    _log("Statcast ETL refresh completed")
+
+
 def _load_targets() -> list[tuple[str, str]]:
     targets: list[tuple[str, str]] = []
 
@@ -127,6 +161,12 @@ def main() -> int:
         import mlb_app.app  # noqa: F401
     except Exception as exc:
         _log(f"Failed to import app module: {exc}")
+        return 1
+
+    try:
+        _run_statcast_etl_refresh()
+    except Exception as exc:
+        _log(f"Statcast ETL refresh failed: {exc}")
         return 1
 
     try:
