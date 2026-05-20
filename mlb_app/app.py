@@ -106,6 +106,14 @@ from .simulation.inning_simulator import simulate_half_innings
 from .model_projection_routes import router as model_projection_router
 from .ai_data_assistant_routes import router as ai_data_assistant_router
 from .starting_pitcher_arsenal_refresh import refresh_starting_pitcher_arsenal
+from .pitcher_profile_store import (
+    get_pitcher_profile_overview,
+    get_pitcher_profile_arsenal,
+    get_pitcher_profile_recent_games,
+    serialize_pitcher_profile_overview,
+    serialize_pitcher_profile_arsenal,
+    serialize_pitcher_profile_recent_games,
+)
 
 MLB_STATS_BASE = "https://statsapi.mlb.com/api/v1"
 MLB_LIVE_FEED_BASE = "https://statsapi.mlb.com/api/v1.1/game"
@@ -1672,41 +1680,69 @@ def create_app():
         Session = _get_session()
         with Session() as session:
 
-            def pitcher_detail(pid: Optional[int]) -> Dict[str, Any]:
-                if not pid:
-                    return {
-                        "aggregate": None,
-                        "arsenal": [],
-                        "arsenal_season": None,
-                        "game_log": [],
-                    }
+def pitcher_detail(pid: Optional[int]) -> Dict[str, Any]:
+    if not pid:
+        return {
+            "aggregate": None,
+            "arsenal": [],
+            "arsenal_season": None,
+            "game_log": [],
+            "profile_overview": None,
+            "profile_arsenal": [],
+            "profile_recent_games": [],
+        }
 
-                agg, data_source = get_pitcher_aggregate_with_fallback(session, pid, season)
+    agg, data_source = get_pitcher_aggregate_with_fallback(session, pid, season)
 
-                try:
-                    arsenal_rows = refresh_starting_pitcher_arsenal(
-                        session=session,
-                        pitcher_id=pid,
-                        season=season,
-                        target_date=game_date_iso,
-                        window_days=365,
-                    )
-                    arsenal_season = season if arsenal_rows else None
-                except Exception:
-                    arsenal_rows = []
-                    arsenal_season = None
+    try:
+        arsenal_rows = refresh_starting_pitcher_arsenal(
+            session=session,
+            pitcher_id=pid,
+            season=season,
+            target_date=game_date_iso,
+            window_days=365,
+        )
+        arsenal_season = season if arsenal_rows else None
+    except Exception:
+        arsenal_rows = []
+        arsenal_season = None
 
-                if not arsenal_rows:
-                    arsenal, arsenal_season = get_pitch_arsenal_with_fallback(session, pid, season)
-                    arsenal_rows = _normalize_arsenal_to_dicts(arsenal)
+    if not arsenal_rows:
+        arsenal, arsenal_season = get_pitch_arsenal_with_fallback(session, pid, season)
+        arsenal_rows = _normalize_arsenal_to_dicts(arsenal)
 
-                if not arsenal_rows:
-                    live_arsenal, live_season = _fetch_live_pitch_arsenal(pid, season)
-                    if live_arsenal:
-                        arsenal_rows = live_arsenal
-                        arsenal_season = live_season
+    if not arsenal_rows:
+        live_arsenal, live_season = _fetch_live_pitch_arsenal(pid, season)
+        if live_arsenal:
+            arsenal_rows = live_arsenal
+            arsenal_season = live_season
 
-                game_log = get_pitcher_game_log(session, pid, 5)
+    game_log = get_pitcher_game_log(session, pid, 5)
+
+    profile_overview_row = get_pitcher_profile_overview(session, pid, season)
+    profile_arsenal_rows = get_pitcher_profile_arsenal(session, pid, season)
+    profile_recent_game_rows = get_pitcher_profile_recent_games(session, pid, limit=5)
+
+    return {
+        "aggregate": {
+            "data_source": data_source,
+            "avg_velocity": agg.avg_velocity if agg else None,
+            "avg_spin_rate": agg.avg_spin_rate if agg else None,
+            "hard_hit_pct": agg.hard_hit_pct if agg else None,
+            "k_pct": agg.k_pct if agg else None,
+            "bb_pct": agg.bb_pct if agg else None,
+            "xwoba": agg.xwoba if agg else None,
+            "xba": agg.xba if agg else None,
+            "avg_horiz_break": agg.avg_horiz_break if agg else None,
+            "avg_vert_break": agg.avg_vert_break if agg else None,
+        },
+        "arsenal": arsenal_rows,
+        "arsenal_season": arsenal_season,
+        "game_log": game_log,
+        "profile_overview": serialize_pitcher_profile_overview(profile_overview_row),
+        "profile_arsenal": serialize_pitcher_profile_arsenal(profile_arsenal_rows),
+        "profile_recent_games": serialize_pitcher_profile_recent_games(profile_recent_game_rows),
+    }
 
                 return {
                     "aggregate": {
@@ -2119,8 +2155,12 @@ def create_app():
                     arsenal_rows = live_arsenal
                     arsenal_season = live_season
 
-            multi = get_pitcher_multi_season(session, player_id, [season, season - 1, season - 2, season - 3])
-            game_log = get_pitcher_game_log(session, player_id, 10)
+multi = get_pitcher_multi_season(session, player_id, [season, season - 1, season - 2, season - 3])
+game_log = get_pitcher_game_log(session, player_id, 10)
+
+profile_overview_row = get_pitcher_profile_overview(session, player_id, season)
+profile_arsenal_rows = get_pitcher_profile_arsenal(session, player_id, season)
+profile_recent_game_rows = get_pitcher_profile_recent_games(session, player_id, limit=10)
 
             if not agg and not arsenal_rows:
                 player_name = None
@@ -2146,21 +2186,27 @@ def create_app():
                     "arsenal_season": None,
                     "multi_season": [],
                     "game_log": [],
+                    "profile_overview": None,
+                    "profile_arsenal": [],
+                    "profile_recent_games": [],
                     "no_data": True,
                 }
 
-            return {
-                "player_id": player_id,
-                "data_source": data_source,
-                "aggregate": {
-                    column.name: getattr(agg, column.name)
-                    for column in agg.__table__.columns
-                } if agg else None,
-                "arsenal": arsenal_rows,
-                "arsenal_season": arsenal_season,
-                "multi_season": multi,
-                "game_log": game_log,
-            }
+                return {
+                    "player_id": player_id,
+                    "data_source": data_source,
+                    "aggregate": {
+                        column.name: getattr(agg, column.name)
+                        for column in agg.__table__.columns
+                    } if agg else None,
+                    "arsenal": arsenal_rows,
+                    "arsenal_season": arsenal_season,
+                    "multi_season": multi,
+                    "game_log": game_log,
+                    "profile_overview": serialize_pitcher_profile_overview(profile_overview_row),
+                    "profile_arsenal": serialize_pitcher_profile_arsenal(profile_arsenal_rows),
+                    "profile_recent_games": serialize_pitcher_profile_recent_games(profile_recent_game_rows),
+                }
 
     @app.get("/pitcher/{player_id}/rolling")
     def pitcher_rolling(
