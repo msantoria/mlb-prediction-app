@@ -3,7 +3,7 @@ Database models and utilities for the MLB prediction app.
 
 This module defines the SQLAlchemy ORM models used to store raw Statcast
 events, aggregated pitch-arsenal statistics, platoon splits, rolling/seasonal
-metrics and game-level matchups.  It also provides helper functions to
+metrics and game-level matchups. It also provides helper functions to
 instantiate a database engine and session maker based on a connection URL.
 """
 
@@ -13,6 +13,7 @@ from datetime import date, datetime
 from typing import Optional
 
 from sqlalchemy import (
+    JSON,
     Column,
     Date,
     DateTime,
@@ -255,6 +256,130 @@ class Matchup(Base):
     prediction: Optional[float] = Column(Float, nullable=True)
 
     __table_args__ = (Index("ix_matchups_date_home_away", "game_date", "home_team_id", "away_team_id"),)
+
+
+class PitcherProfileOverview(Base):
+    __tablename__ = "pitcher_profile_overview"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    player_id: int = Column(Integer, nullable=False, index=True)
+    season: int = Column(Integer, nullable=False, index=True)
+    player_name: Optional[str] = Column(String(120), nullable=True)
+    team_id: Optional[int] = Column(Integer, nullable=True, index=True)
+    team_name: Optional[str] = Column(String(120), nullable=True)
+    era: Optional[float] = Column(Float, nullable=True)
+    whip: Optional[float] = Column(Float, nullable=True)
+    wins: Optional[int] = Column(Integer, nullable=True)
+    losses: Optional[int] = Column(Integer, nullable=True)
+    games_pitched: Optional[int] = Column(Integer, nullable=True)
+    games_started: Optional[int] = Column(Integer, nullable=True)
+    innings_pitched: Optional[float] = Column(Float, nullable=True)
+    batters_faced: Optional[int] = Column(Integer, nullable=True)
+    pitches_thrown: Optional[int] = Column(Integer, nullable=True)
+    strikeouts: Optional[int] = Column(Integer, nullable=True)
+    walks: Optional[int] = Column(Integer, nullable=True)
+    home_runs_allowed: Optional[int] = Column(Integer, nullable=True)
+    earned_runs: Optional[int] = Column(Integer, nullable=True)
+    runs_allowed: Optional[int] = Column(Integer, nullable=True)
+    hits_allowed: Optional[int] = Column(Integer, nullable=True)
+    fip: Optional[float] = Column(Float, nullable=True)
+    xfip: Optional[float] = Column(Float, nullable=True)
+    siera: Optional[float] = Column(Float, nullable=True)
+    xsiera: Optional[float] = Column(Float, nullable=True)
+    k_pct: Optional[float] = Column(Float, nullable=True)
+    bb_pct: Optional[float] = Column(Float, nullable=True)
+    k_minus_bb_pct: Optional[float] = Column(Float, nullable=True)
+    hr_per_9: Optional[float] = Column(Float, nullable=True)
+    gb_pct: Optional[float] = Column(Float, nullable=True)
+    fb_pct: Optional[float] = Column(Float, nullable=True)
+    hr_fb_pct: Optional[float] = Column(Float, nullable=True)
+    babip: Optional[float] = Column(Float, nullable=True)
+    lob_pct: Optional[float] = Column(Float, nullable=True)
+    xwoba_allowed: Optional[float] = Column(Float, nullable=True)
+    xba_allowed: Optional[float] = Column(Float, nullable=True)
+    hard_hit_pct: Optional[float] = Column(Float, nullable=True)
+    barrel_pct: Optional[float] = Column(Float, nullable=True)
+    avg_exit_velocity_allowed: Optional[float] = Column(Float, nullable=True)
+    avg_launch_angle_allowed: Optional[float] = Column(Float, nullable=True)
+    whiff_rate: Optional[float] = Column(Float, nullable=True)
+    csw_rate: Optional[float] = Column(Float, nullable=True)
+    avg_velocity: Optional[float] = Column(Float, nullable=True)
+    avg_spin_rate: Optional[float] = Column(Float, nullable=True)
+    avg_horiz_break: Optional[float] = Column(Float, nullable=True)
+    avg_vert_break: Optional[float] = Column(Float, nullable=True)
+    avg_release_pos_x: Optional[float] = Column(Float, nullable=True)
+    avg_release_pos_z: Optional[float] = Column(Float, nullable=True)
+    avg_release_extension: Optional[float] = Column(Float, nullable=True)
+    arm_slot_label: Optional[str] = Column(String(40), nullable=True)
+    source_priority_json = Column(JSON, nullable=True)
+    metric_sources_json = Column(JSON, nullable=True)
+    missing_inputs_json = Column(JSON, nullable=True)
+    data_window_used: Optional[str] = Column(String(255), nullable=True)
+    profile_source: str = Column(String(60), nullable=False, default="derived_serving_table")
+    source_updated_at: Optional[datetime] = Column(DateTime, nullable=True)
+    created_at: datetime = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: datetime = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_pitcher_profile_overview_player_season", "player_id", "season", unique=True),
+    )
+
+
+class PitcherProfileArsenal(Base):
+    __tablename__ = "pitcher_profile_arsenal"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    player_id: int = Column(Integer, nullable=False, index=True)
+    season: int = Column(Integer, nullable=False, index=True)
+    pitch_type: str = Column(String(5), nullable=False)
+    pitch_name: Optional[str] = Column(String(50), nullable=True)
+    pitch_count: Optional[int] = Column(Integer, nullable=True)
+    usage_pct: Optional[float] = Column(Float, nullable=True)
+    whiff_pct: Optional[float] = Column(Float, nullable=True)
+    strikeout_pct: Optional[float] = Column(Float, nullable=True)
+    batted_ball_count: Optional[int] = Column(Integer, nullable=True)
+    xwoba: Optional[float] = Column(Float, nullable=True)
+    hard_hit_pct: Optional[float] = Column(Float, nullable=True)
+    avg_velocity: Optional[float] = Column(Float, nullable=True)
+    avg_spin_rate: Optional[float] = Column(Float, nullable=True)
+    avg_horiz_break: Optional[float] = Column(Float, nullable=True)
+    avg_vert_break: Optional[float] = Column(Float, nullable=True)
+    avg_release_pos_x: Optional[float] = Column(Float, nullable=True)
+    avg_release_pos_z: Optional[float] = Column(Float, nullable=True)
+    avg_release_extension: Optional[float] = Column(Float, nullable=True)
+    source: Optional[str] = Column(String(60), nullable=True)
+    source_window: Optional[str] = Column(String(120), nullable=True)
+    quality_flags_json = Column(JSON, nullable=True)
+    source_updated_at: Optional[datetime] = Column(DateTime, nullable=True)
+    created_at: datetime = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: datetime = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_pitcher_profile_arsenal_player_season_pitch", "player_id", "season", "pitch_type", unique=True),
+    )
+
+
+class PitcherProfileRecentGame(Base):
+    __tablename__ = "pitcher_profile_recent_games"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    player_id: int = Column(Integer, nullable=False, index=True)
+    game_pk: Optional[int] = Column(Integer, nullable=True, index=True)
+    game_date: date = Column(Date, nullable=False, index=True)
+    pitch_count: Optional[int] = Column(Integer, nullable=True)
+    plate_appearances: Optional[int] = Column(Integer, nullable=True)
+    strikeouts: Optional[int] = Column(Integer, nullable=True)
+    walks: Optional[int] = Column(Integer, nullable=True)
+    home_runs: Optional[int] = Column(Integer, nullable=True)
+    hard_hit_pct: Optional[float] = Column(Float, nullable=True)
+    avg_velocity: Optional[float] = Column(Float, nullable=True)
+    source_updated_at: Optional[datetime] = Column(DateTime, nullable=True)
+    created_at: datetime = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: datetime = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_pitcher_profile_recent_games_player_game", "player_id", "game_date", "game_pk", unique=True),
+    )
 
 
 STATCAST_EVENT_SAFE_COLUMNS = {
