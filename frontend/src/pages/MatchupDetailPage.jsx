@@ -293,9 +293,46 @@ function edgeLabel(score) {
 }
 
 function PitcherCard({ side, pitcherName, pitcherId, detail }) {
+  const profileOverview = detail?.profile_overview || detail?.pitcher_profile_overview || null
   const agg = detail?.aggregate || {}
-  const arsenal = detail?.arsenal || []
-  const gameLog = detail?.game_log || []
+  const arsenal = (detail?.profile_arsenal && detail.profile_arsenal.length > 0)
+    ? detail.profile_arsenal
+    : (detail?.arsenal || [])
+  const gameLog = (detail?.profile_recent_games && detail.profile_recent_games.length > 0)
+    ? detail.profile_recent_games
+    : (detail?.game_log || [])
+  const sourceLabelText = profileOverview?.profile_source || agg.data_source || 'No data'
+
+  const overviewRows = profileOverview
+    ? [
+        ['ERA', dec(profileOverview.era)],
+        ['WHIP', dec(profileOverview.whip)],
+        ['FIP', dec(profileOverview.fip)],
+        ['SIERA', dec(profileOverview.siera)],
+        ['GB%', pct(profileOverview.gb_pct)],
+        ['FB%', pct(profileOverview.fb_pct)],
+        ['HR/FB', pct(profileOverview.hr_fb_pct)],
+        ['BABIP', dec(profileOverview.babip)],
+        ['LOB%', pct(profileOverview.lob_pct)],
+        ['K%', pct(pickMetric(profileOverview, ['k_pct'], agg.k_pct))],
+        ['BB%', pct(pickMetric(profileOverview, ['bb_pct'], agg.bb_pct))],
+        ['xwOBA', dec(pickMetric(profileOverview, ['xwoba_allowed'], agg.xwoba))],
+        ['Hard Hit%', pct(pickMetric(profileOverview, ['hard_hit_pct'], agg.hard_hit_pct))],
+        ['Velocity', mph(pickMetric(profileOverview, ['avg_velocity'], agg.avg_velocity)) + (pickMetric(profileOverview, ['avg_velocity'], agg.avg_velocity) ? ' mph' : '')],
+        ['Spin Rate', pickMetric(profileOverview, ['avg_spin_rate'], agg.avg_spin_rate) ? `${Math.round(pickMetric(profileOverview, ['avg_spin_rate'], agg.avg_spin_rate))} rpm` : '—'],
+        ['Horiz Break', pickMetric(profileOverview, ['avg_horiz_break'], agg.avg_horiz_break) != null ? `${Number(pickMetric(profileOverview, ['avg_horiz_break'], agg.avg_horiz_break)).toFixed(2)}"` : '—'],
+        ['Vert Break', pickMetric(profileOverview, ['avg_vert_break'], agg.avg_vert_break) != null ? `${Number(pickMetric(profileOverview, ['avg_vert_break'], agg.avg_vert_break)).toFixed(2)}"` : '—'],
+      ]
+    : [
+        ['K%', pct(agg.k_pct)],
+        ['BB%', pct(agg.bb_pct)],
+        ['xwOBA', dec(agg.xwoba)],
+        ['Hard Hit%', pct(agg.hard_hit_pct)],
+        ['Velocity', mph(agg.avg_velocity) + (agg.avg_velocity ? ' mph' : '')],
+        ['Spin Rate', agg.avg_spin_rate ? `${Math.round(agg.avg_spin_rate)} rpm` : '—'],
+        ['Horiz Break', agg.avg_horiz_break != null ? `${Number(agg.avg_horiz_break).toFixed(2)}"` : '—'],
+        ['Vert Break', agg.avg_vert_break != null ? `${Number(agg.avg_vert_break).toFixed(2)}"` : '—'],
+      ]
 
   return (
     <div style={t.pitcherCard}>
@@ -305,18 +342,9 @@ function PitcherCard({ side, pitcherName, pitcherId, detail }) {
           ? <Link to={`/pitcher/${pitcherId}`} style={{ color: '#e6edf3', textDecoration: 'none' }}>{pitcherName || `ID ${pitcherId}`}</Link>
           : <span style={{ color: '#8b949e' }}>TBD</span>}
       </div>
-      <div style={t.dataSource}>{agg.data_source || 'No data'}</div>
+      <div style={t.dataSource}>{sourceLabelText}</div>
 
-      {[
-        ['K%', pct(agg.k_pct)],
-        ['BB%', pct(agg.bb_pct)],
-        ['xwOBA', dec(agg.xwoba)],
-        ['Hard Hit%', pct(agg.hard_hit_pct)],
-        ['Velocity', mph(agg.avg_velocity) + (agg.avg_velocity ? ' mph' : '')],
-        ['Spin Rate', agg.avg_spin_rate ? `${Math.round(agg.avg_spin_rate)} rpm` : '—'],
-        ['Horiz Break', agg.avg_horiz_break != null ? `${Number(agg.avg_horiz_break).toFixed(2)}"` : '—'],
-        ['Vert Break', agg.avg_vert_break != null ? `${Number(agg.avg_vert_break).toFixed(2)}"` : '—'],
-      ].map(([k, v]) => (
+      {overviewRows.map(([k, v]) => (
         <div key={k} style={t.statRow}>
           <span style={t.statKey}>{k}</span>
           <span style={t.statVal}>{v}</span>
@@ -339,7 +367,7 @@ function PitcherCard({ side, pitcherName, pitcherId, detail }) {
               </thead>
               <tbody>
                 {arsenal.map((p, i) => {
-                  const flags = Array.isArray(p.quality_flags) ? p.quality_flags : []
+                  const flags = Array.isArray(p.quality_flags) ? p.quality_flags : (Array.isArray(p.quality_flags_json) ? p.quality_flags_json : [])
                   const pitchLabel = PITCH_NAMES[p.pitch_type] || p.pitch_name || p.pitch_type || '—'
 
                   return (
@@ -402,7 +430,7 @@ function PitcherCard({ side, pitcherName, pitcherId, detail }) {
             <tbody>
               {gameLog.map((g, i) => (
                 <tr key={i}>
-                  <td style={t.td}>{g.game_date?.slice(5)}</td>
+                  <td style={t.td}>{g.game_date?.slice ? g.game_date.slice(5) : String(g.game_date || '').slice(5)}</td>
                   <td style={t.td}>{g.pitch_count}</td>
                   <td style={t.td}>{g.plate_appearances}</td>
                   <td style={t.td}>{g.strikeouts}</td>
