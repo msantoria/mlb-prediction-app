@@ -1,12 +1,9 @@
-import os
-
 import pytest
 
 from mlb_app.database import create_tables, get_engine, get_session
 from mlb_app.kibl_integration import (
     KIBL_FIXTURES_PATH,
     KIBL_LIVE_BETTING_TYPE_ID,
-    KIBL_MARKETS_PATH,
     KIBL_PREMATCH_BETTING_TYPE_ID,
     KiblApiClient,
     KiblAuthClient,
@@ -44,6 +41,23 @@ class FakeSession:
         if not self.responses:
             raise AssertionError("No fake response queued")
         return self.responses.pop(0)
+
+
+class StubClient:
+    def __init__(self, config, fixture_rows=None, market_rows=None):
+        self.config = config
+        self.fixture_rows = fixture_rows if fixture_rows is not None else []
+        self.market_rows = market_rows if market_rows is not None else []
+        self.fixture_calls = []
+        self.market_calls = []
+
+    def fixtures(self, betting_type_id, league_id, watermark):
+        self.fixture_calls.append((betting_type_id, league_id, watermark))
+        return self.fixture_rows
+
+    def markets(self, betting_type_id, league_id, watermark):
+        self.market_calls.append((betting_type_id, league_id, watermark))
+        return self.market_rows
 
 
 @pytest.fixture()
@@ -148,16 +162,11 @@ def test_401_refreshes_token_and_retries_once(config):
 
 
 def test_empty_diff_response_does_not_crash_or_advance_watermark(config, db_session):
-    class StubClient:
-        config = config
-
-        def fixtures(self, betting_type_id, league_id, watermark):
-            assert watermark is None
-            return []
+    client = StubClient(config, fixture_rows=[])
 
     result = sync_kibl_endpoint(
         db_session,
-        StubClient(),
+        client,
         KIBL_FIXTURES_PATH,
         KIBL_PREMATCH_BETTING_TYPE_ID,
         league_id="20,643",
@@ -166,6 +175,7 @@ def test_empty_diff_response_does_not_crash_or_advance_watermark(config, db_sess
 
     assert result["rows_received"] == 0
     assert result["new_watermark"] is None
+    assert client.fixture_calls[0] == (KIBL_PREMATCH_BETTING_TYPE_ID, "20,643", None)
     assert db_session.query(KiblSyncWatermark).count() == 0
 
 
@@ -174,16 +184,11 @@ def test_watermark_updates_to_newest_timestamp(config, db_session):
         {"id": "a", "last_updated": "2026-06-02 14:30:00"},
         {"id": "b", "inserted_on": "2026-06-02 14:35:00"},
     ]
-
-    class StubClient:
-        config = config
-
-        def fixtures(self, betting_type_id, league_id, watermark):
-            return rows
+    client = StubClient(config, fixture_rows=rows)
 
     result = sync_kibl_endpoint(
         db_session,
-        StubClient(),
+        client,
         KIBL_FIXTURES_PATH,
         KIBL_PREMATCH_BETTING_TYPE_ID,
         league_id="20,643",
