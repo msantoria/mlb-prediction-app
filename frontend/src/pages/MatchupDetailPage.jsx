@@ -66,153 +66,44 @@ const t = {
   mtd: { padding: '7px 10px', borderBottom: '1px solid #161b22', color: '#e6edf3' },
   mtdR: { textAlign: 'right' },
   noData: { color: '#8b949e', fontSize: '13px', textAlign: 'center', padding: '24px' },
-
-  pitchWidgetGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-    gap: '12px',
-    marginTop: '12px',
-  },
+  pitchWidgetGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px', marginTop: '12px' },
   pitchWidget: (edge) => ({
     background: 'linear-gradient(180deg, #101820 0%, #0d1117 100%)',
     border: `1px solid ${edge > 0.15 ? '#2ea043' : edge < -0.15 ? '#da3633' : '#30363d'}`,
     borderRadius: '12px',
     padding: '14px',
-    boxShadow: edge > 0.15
-      ? '0 0 0 1px rgba(46,160,67,0.08), 0 8px 24px rgba(0,0,0,0.22)'
-      : edge < -0.15
-        ? '0 0 0 1px rgba(218,54,51,0.08), 0 8px 24px rgba(0,0,0,0.22)'
-        : '0 8px 24px rgba(0,0,0,0.18)',
+    boxShadow: edge > 0.15 ? '0 0 0 1px rgba(46,160,67,0.08), 0 8px 24px rgba(0,0,0,0.22)' : edge < -0.15 ? '0 0 0 1px rgba(218,54,51,0.08), 0 8px 24px rgba(0,0,0,0.22)' : '0 8px 24px rgba(0,0,0,0.18)',
   }),
-  pitchWidgetTop: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: '10px',
-    marginBottom: '12px',
-  },
-  pitchTypeBig: {
-    fontSize: '18px',
-    fontWeight: '800',
-    color: '#e6edf3',
-    letterSpacing: '0.2px',
-  },
-  pitchNameSmall: {
-    fontSize: '11px',
-    color: '#8b949e',
-    marginTop: '2px',
-    textTransform: 'uppercase',
-    letterSpacing: '0.6px',
-  },
+  pitchWidgetTop: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', marginBottom: '12px' },
+  pitchTypeBig: { fontSize: '18px', fontWeight: '800', color: '#e6edf3', letterSpacing: '0.2px' },
+  pitchNameSmall: { fontSize: '11px', color: '#8b949e', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.6px' },
   sourceBadge: (source) => ({
-    fontSize: '10px',
-    fontWeight: '700',
-    padding: '3px 7px',
-    borderRadius: '999px',
-    whiteSpace: 'nowrap',
+    fontSize: '10px', fontWeight: '700', padding: '3px 7px', borderRadius: '999px', whiteSpace: 'nowrap',
     background: source === 'batter_pitch_type_matchups' ? '#102b1b' : '#21262d',
     color: source === 'batter_pitch_type_matchups' ? '#3fb950' : '#8b949e',
     border: `1px solid ${source === 'batter_pitch_type_matchups' ? '#238636' : '#30363d'}`,
   }),
-  metricPillGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-    gap: '8px',
-    marginBottom: '12px',
-  },
-  metricPill: {
-    background: '#0a0f14',
-    border: '1px solid #21262d',
-    borderRadius: '8px',
-    padding: '8px',
-    minHeight: '48px',
-  },
-  metricLabel: {
-    color: '#8b949e',
-    fontSize: '10px',
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px',
-    marginBottom: '4px',
-  },
-  metricValue: {
-    color: '#e6edf3',
-    fontSize: '15px',
-    fontWeight: '800',
-  },
-  sampleStrip: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-    gap: '6px',
-    marginBottom: '12px',
-  },
-  sampleCell: {
-    background: '#161b22',
-    border: '1px solid #21262d',
-    borderRadius: '7px',
-    padding: '7px',
-    textAlign: 'center',
-  },
-  sampleNum: {
-    color: '#e6edf3',
-    fontSize: '14px',
-    fontWeight: '800',
-  },
-  sampleLabel: {
-    color: '#8b949e',
-    fontSize: '9px',
-    textTransform: 'uppercase',
-    letterSpacing: '0.4px',
-    marginTop: '2px',
-  },
-  rateStack: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-  },
-  rateRow: {
-    display: 'grid',
-    gridTemplateColumns: '70px 1fr 44px',
-    alignItems: 'center',
-    gap: '8px',
-    fontSize: '11px',
-  },
-  rateLabel: {
-    color: '#8b949e',
-    textTransform: 'uppercase',
-    letterSpacing: '0.4px',
-  },
-  rateTrack: {
-    height: '7px',
-    background: '#21262d',
-    borderRadius: '999px',
-    overflow: 'hidden',
-  },
+  metricPillGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px', marginBottom: '12px' },
+  metricPill: { background: '#0a0f14', border: '1px solid #21262d', borderRadius: '8px', padding: '8px', minHeight: '48px' },
+  metricLabel: { color: '#8b949e', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' },
+  metricValue: { color: '#e6edf3', fontSize: '15px', fontWeight: '800' },
+  sampleStrip: { display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px', marginBottom: '12px' },
+  sampleCell: { background: '#161b22', border: '1px solid #21262d', borderRadius: '7px', padding: '7px', textAlign: 'center' },
+  sampleNum: { color: '#e6edf3', fontSize: '14px', fontWeight: '800' },
+  sampleLabel: { color: '#8b949e', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.4px', marginTop: '2px' },
+  rateStack: { display: 'flex', flexDirection: 'column', gap: '8px' },
+  rateRow: { display: 'grid', gridTemplateColumns: '105px 1fr 44px', alignItems: 'center', gap: '8px', fontSize: '11px' },
+  rateLabel: { color: '#8b949e', textTransform: 'uppercase', letterSpacing: '0.4px' },
+  rateTrack: { height: '7px', background: '#21262d', borderRadius: '999px', overflow: 'hidden' },
   rateFill: (value, variant = 'neutral') => ({
     height: '100%',
     width: `${Math.max(0, Math.min(100, Number(value || 0) * 100))}%`,
     background: variant === 'good' ? '#3fb950' : variant === 'bad' ? '#f85149' : '#58a6ff',
     borderRadius: '999px',
   }),
-  rateValue: {
-    color: '#e6edf3',
-    textAlign: 'right',
-    fontWeight: '700',
-  },
-  widgetFooter: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: '10px',
-    borderTop: '1px solid #21262d',
-    paddingTop: '10px',
-    marginTop: '12px',
-  },
-  confidenceWrap: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    minWidth: '130px',
-  },
+  rateValue: { color: '#e6edf3', textAlign: 'right', fontWeight: '700' },
+  widgetFooter: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', borderTop: '1px solid #21262d', paddingTop: '10px', marginTop: '12px' },
+  confidenceWrap: { display: 'flex', alignItems: 'center', gap: '8px', minWidth: '130px' },
 }
 
 const pct = (v, d = 1) => fmtPct(v, d)
@@ -232,6 +123,20 @@ function confidenceVariant(value) {
   if (value >= 0.70) return 'good'
   if (value <= 0.45) return 'bad'
   return 'neutral'
+}
+
+function hitterRiskVariant(value, strong = 0.30, medium = 0.22) {
+  if (value == null) return 'neutral'
+  if (value >= strong) return 'bad'
+  if (value >= medium) return 'neutral'
+  return 'good'
+}
+
+function hitterDamageVariant(value, strong = 0.40, medium = 0.32) {
+  if (value == null) return 'neutral'
+  if (value >= strong) return 'good'
+  if (value >= medium) return 'neutral'
+  return 'bad'
 }
 
 function sourceLabel(source) {
@@ -289,7 +194,30 @@ function weatherLabel(weather) {
 
 function edgeLabel(score) {
   if (score == null) return '—'
-  return (score > 0 ? '+' : '') + score.toFixed(2)
+  if (score > 0.15) return `Hitter Edge ${(score > 0 ? '+' : '') + score.toFixed(2)}`
+  if (score < -0.15) return `Pitcher Edge ${score.toFixed(2)}`
+  return `Neutral ${(score > 0 ? '+' : '') + score.toFixed(2)}`
+}
+
+function edgeMeta(score) {
+  if (score == null) return { label: 'Neutral', color: '#8b949e' }
+  if (score > 0.15) return { label: 'Hitter Edge', color: '#3fb950' }
+  if (score < -0.15) return { label: 'Pitcher Edge', color: '#f85149' }
+  return { label: 'Neutral', color: '#8b949e' }
+}
+
+function tooltipFor(label) {
+  const tips = {
+    'Usage': 'How often the pitcher throws this pitch. More relevant, not automatically better.',
+    'Hitter Whiff%': 'How often this hitter swings and misses vs this pitch type. Higher favors the pitcher.',
+    'Hitter K%': 'How often this hitter’s PA ends in a strikeout vs this pitch type. Higher favors the pitcher.',
+    'PutAway Risk': 'Two-strike finish risk for the hitter on this pitch type. Higher favors the pitcher.',
+    'Hitter HardHit%': 'Share of batted balls hit 95+ mph by the hitter vs this pitch type. Higher favors the hitter.',
+    'Pitcher xwOBA Allowed': 'Expected offensive value allowed by the pitcher on this pitch. Higher favors the hitter.',
+    'Confidence': 'Sample/relevance confidence, not betting certainty.',
+    'Edge Score': 'Composite pitch-type interaction score. Positive favors the hitter; negative favors the pitcher.',
+  }
+  return tips[label] || label
 }
 
 function PitcherCard({ side, pitcherName, pitcherId, detail }) {
@@ -483,9 +411,9 @@ function SplitTable({ title, split }) {
   )
 }
 
-function RateBar({ label, value, variant = 'neutral' }) {
+function RateBar({ label, value, variant = 'neutral', title }) {
   return (
-    <div style={t.rateRow}>
+    <div style={t.rateRow} title={title || tooltipFor(label)}>
       <span style={t.rateLabel}>{label}</span>
       <div style={t.rateTrack}>
         <div style={t.rateFill(value, variant)} />
@@ -495,9 +423,9 @@ function RateBar({ label, value, variant = 'neutral' }) {
   )
 }
 
-function MetricPill({ label, value }) {
+function MetricPill({ label, value, title }) {
   return (
-    <div style={t.metricPill}>
+    <div style={t.metricPill} title={title || tooltipFor(label)}>
       <div style={t.metricLabel}>{label}</div>
       <div style={t.metricValue}>{value ?? '—'}</div>
     </div>
@@ -509,6 +437,7 @@ function PitchTypeWidget({ pitch }) {
   const edge = pitch.edge_score ?? 0
   const conf = pitch.confidence ?? 0
   const source = bvt.source || null
+  const edgeInfo = edgeMeta(edge)
 
   const pitchesSeenVal = pickMetric(bvt, ['pitches_seen', 'pa']) ?? 0
   const paEndedVal = pickMetric(bvt, ['pa_ended', 'pa']) ?? 0
@@ -531,7 +460,7 @@ function PitchTypeWidget({ pitch }) {
       <div style={t.pitchWidgetTop}>
         <div>
           <div style={t.pitchTypeBig}>{pitch.pitch_type || '—'}</div>
-          <div style={t.pitchNameSmall}>
+          <div style={t.pitchNameSmall} title={tooltipFor('Usage')}>
             Usage {pct(pitch.pitcher_usage_pct)}
           </div>
         </div>
@@ -539,11 +468,10 @@ function PitchTypeWidget({ pitch }) {
           {source && (
             <span style={t.sourceBadge(source)}>{sourceLabel(source)}</span>
           )}
-          <span style={{
-            fontSize: '13px',
-            fontWeight: '800',
-            color: edge > 0.15 ? '#3fb950' : edge < -0.15 ? '#f85149' : '#8b949e',
-          }}>
+          <span style={{ fontSize: '10px', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '0.5px' }} title={tooltipFor('Edge Score')}>
+            {edgeInfo.label}
+          </span>
+          <span style={{ fontSize: '13px', fontWeight: '800', color: edgeInfo.color }} title={tooltipFor('Edge Score')}>
             {edge > 0 ? '+' : ''}{Number(edge).toFixed(2)}
           </span>
         </div>
@@ -564,24 +492,24 @@ function PitchTypeWidget({ pitch }) {
       </div>
 
       <div style={t.metricPillGrid}>
-        <MetricPill label="AVG" value={dec(avgVal)} />
-        <MetricPill label="xwOBA" value={dec(xwobaVal)} />
-        <MetricPill label="EV" value={evVal != null ? `${Number(evVal).toFixed(1)}` : '—'} />
-        <MetricPill label="LA" value={laVal != null ? `${Number(laVal).toFixed(1)}°` : '—'} />
+        <MetricPill label="AVG" value={dec(avgVal)} title="Batting average by this hitter against this pitch type. Higher favors the hitter." />
+        <MetricPill label="xwOBA" value={dec(xwobaVal)} title="Expected offensive value by this hitter against this pitch type. Higher favors the hitter." />
+        <MetricPill label="EV" value={evVal != null ? `${Number(evVal).toFixed(1)}` : '—'} title="Average exit velocity by this hitter against this pitch type. Higher generally favors the hitter." />
+        <MetricPill label="LA" value={laVal != null ? `${Number(laVal).toFixed(1)}°` : '—'} title="Average launch angle by this hitter against this pitch type. Best interpreted by range, not simply higher." />
       </div>
 
       <div style={t.rateStack}>
-        <RateBar label="Whiff%" value={whiffPct} variant="good" />
-        <RateBar label="K%" value={kPct} variant="good" />
-        <RateBar label="PutAway%" value={putawayPct} variant="good" />
-        <RateBar label="HardHit%" value={hardHitPct} variant={hardHitPct != null && hardHitPct > 0.40 ? 'bad' : 'neutral'} />
+        <RateBar label="Hitter Whiff%" value={whiffPct} variant={hitterRiskVariant(whiffPct, 0.34, 0.24)} />
+        <RateBar label="Hitter K%" value={kPct} variant={hitterRiskVariant(kPct, 0.28, 0.20)} />
+        <RateBar label="PutAway Risk" value={putawayPct} variant={hitterRiskVariant(putawayPct, 0.24, 0.16)} />
+        <RateBar label="Hitter HardHit%" value={hardHitPct} variant={hitterDamageVariant(hardHitPct, 0.40, 0.32)} />
       </div>
 
       <div style={t.widgetFooter}>
-        <span style={{ fontSize: '11px', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-          Pitcher xwOBA {dec(pitch.pitcher_xwoba)}
+        <span style={{ fontSize: '11px', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '0.5px' }} title={tooltipFor('Pitcher xwOBA Allowed')}>
+          Pitcher xwOBA Allowed {dec(pitch.pitcher_xwoba)}
         </span>
-        <div style={t.confidenceWrap}>
+        <div style={t.confidenceWrap} title={tooltipFor('Confidence')}>
           <div style={{ ...t.rateTrack, flex: 1 }}>
             <div style={t.rateFill(conf, confidenceVariant(conf))} />
           </div>
