@@ -87,7 +87,7 @@ class KiblBet105Repository:
     def _paged_summary_rows(self, path: str, body: Dict[str, Any], notes: List[str], label: str) -> List[Dict[str, Any]]:
         limit = int(os.getenv("KIBL_SUMMARY_LIMIT", "250"))
         max_pages = int(os.getenv("KIBL_SUMMARY_MAX_PAGES", "20"))
-        short_page_probe_offsets = int(os.getenv("KIBL_SHORT_PAGE_PROBE_OFFSETS", "20"))
+        short_page_probe_offsets = int(os.getenv("KIBL_SHORT_PAGE_PROBE_OFFSETS", "0"))
         rows: List[Dict[str, Any]] = []
         for page in range(max_pages):
             offset = page * limit
@@ -96,10 +96,6 @@ class KiblBet105Repository:
             notes.append(f"{label}_page:{path}:offset={offset}:limit={limit}:rows={len(page_rows)}")
             rows.extend(page_rows)
             if len(page_rows) < limit:
-                # Normal row-offset pagination would be complete here. KIBL production
-                # currently returns exactly one Bet105 baseball row at offset 0. Probe
-                # small offsets 1..N to detect APIs that treat offset as an item/page
-                # cursor or ignore limit, without changing the known-good base filters.
                 if page == 0 and page_rows and short_page_probe_offsets > 0:
                     empty_streak = 0
                     for probe_offset in range(1, short_page_probe_offsets + 1):
@@ -114,6 +110,8 @@ class KiblBet105Repository:
                         if empty_streak >= 3:
                             notes.append(f"{label}_probe_stopped:empty_streak={empty_streak}:last_offset={probe_offset}")
                             break
+                elif page == 0 and page_rows:
+                    notes.append("short_page_probe_disabled:set_KIBL_SHORT_PAGE_PROBE_OFFSETS_to_enable")
                 break
         return rows
 
