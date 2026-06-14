@@ -10,6 +10,7 @@ from .kibl_client import KiblClient, find_rows
 
 class KiblBet105Repository:
     market_summary_path = "info/markets"
+    fixture_summary_path = "info/fixtures"
     fixture_paths = ("info/fixtures", "fixtures", "events", "info/events", "info/games", "info/matches")
     metadata_paths = ("info/fixture_participants", "info/participants", "info/contestants", "info/competitors", "info/teams")
 
@@ -60,12 +61,10 @@ class KiblBet105Repository:
         for key in ("league_id", "leagueId", "competition_id", "competitionId", "sport_id", "sportId"):
             row_values.update(self._csv_values(row.get(key)))
         if not row_values:
-            # Current KIBL market rows may not carry league_id directly. Keep the row,
-            # but diagnostics will show that the filter was request-only.
             return True
         return bool(row_values.intersection(requested))
 
-    def _filter_market_rows(self, rows: List[Dict[str, Any]], filters: Dict[str, Any], notes: List[str]) -> List[Dict[str, Any]]:
+    def _filter_rows(self, rows: List[Dict[str, Any]], filters: Dict[str, Any], notes: List[str], label: str) -> List[Dict[str, Any]]:
         kept: List[Dict[str, Any]] = []
         for row in rows:
             if not self._row_matches_requested_feed(row, filters):
@@ -74,23 +73,40 @@ class KiblBet105Repository:
                 continue
             kept.append(row)
         notes.append(
-            f"market_filter:raw={len(rows)}:kept={len(kept)}:feed={filters.get('feed_source_id')}:betting={filters.get('betting_type_id')}:league={filters.get('league_id')}"
+            f"{label}_filter:raw={len(rows)}:kept={len(kept)}:feed={filters.get('feed_source_id')}:betting={filters.get('betting_type_id')}:league={filters.get('league_id')}"
         )
         return kept
 
-    def fetch_market_summary(self, filters: Dict[str, Any], notes: List[str]) -> List[Dict[str, Any]]:
+    def fetch_summary(self, path: str, filters: Dict[str, Any], notes: List[str], label: str) -> List[Dict[str, Any]]:
         rows: List[Dict[str, Any]] = []
         limit = int(os.getenv("KIBL_SUMMARY_LIMIT", "250"))
         max_pages = int(os.getenv("KIBL_SUMMARY_MAX_PAGES", "1"))
         for page in range(max_pages):
             offset = page * limit
-            payload = self.client.post_summary(self.market_summary_path, filters, offset=offset, limit=limit)
+            payload = self.client.post_summary(path, filters, offset=offset, limit=limit)
             page_rows = find_rows(payload)
-            filtered = self._filter_market_rows(page_rows, filters, notes)
-            notes.append(f"market_summary:{self.market_summary_path}:offset={offset}:limit={limit}:raw={len(page_rows)}:kept={len(filtered)}")
+            filtered = self._filter_rows(page_rows, filters, notes, label)
+            notes.append(f"{label}_summary:{path}:offset={offset}:limit={limit}:raw={len(page_rows)}:kept={len(filtered)}")
             rows.extend(filtered)
             if len(page_rows) < limit:
                 break
+        return rows
+
+    def fetch_market_summary(self, filters: Dict[str, Any], notes: List[str]) -> List[Dict[str, Any]]:
+        return self.fetch_summary(self.market_summary_path, filters, notes, "market")
+
+    def fetch_fixture_summary(self, filters: Dict[str, Any], ids: Dict[str, List[str]], notes: List[str]) -> List[Dict[str, Any]]:
+        rows = self.fetch_summary(self.fixture_summary_path, filters, notes, "fixture")
+        fixture_ids = set(ids.get("fixture_id") or [])
+        if fixture_ids and rows:
+            matched = []
+            for row in rows:
+                row_ids = self._csv_values(row.get("fixture_id") or row.get("event_id") or row.get("id"))
+                if not row_ids or row_ids.intersection(fixture_ids):
+                    matched.append(row)
+            notes.append(f"fixture_summary_join:raw={len(rows)}:matched={len(matched)}:market_fixture_ids={len(fixture_ids)}")
+            return matched
+        notes.append(f"fixture_summary_join:raw={len(rows)}:matched={len(rows)}:market_fixture_ids={len(fixture_ids)}")
         return rows
 
     @staticmethod
@@ -167,7 +183,9 @@ class KiblBet105Repository:
         board.notes.append(
             f"market_ids:fixtures={len(board.ids.get('fixture_id') or [])}:participants={len(board.ids.get('participant_id') or [])}:fixture_participants={len(board.ids.get('fixture_participant_id') or [])}:markets={len(board.ids.get('market_id') or [])}"
         )
-        board.fixture_rows = self.fetch_details(self.fixture_paths, filters, board.ids, ["fixture_id"], board.notes, "fixture")
+        board.fixture_rows = self.fetch_fixture_summary(filters, board.ids, board.notes)
+        if not board.fixture_rows:
+            board.fixture_rows = self.fetch_details(self.fixture_paths, filters, board.ids, ["fixture_id"], board.notes, "fixture")
         board.participant_rows = self.fetch_details(
             self.metadata_paths,
             filters,
