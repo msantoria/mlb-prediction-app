@@ -32,6 +32,11 @@ test('Query Studio metadata tolerates missing and malformed object fields', () =
   ])
 })
 
+test('Query Studio initial render accepts a null result before execution', () => {
+  assert.deepEqual(queryStudioRows(null), [])
+  assert.deepEqual(queryStudioColumns(null), [])
+})
+
 test('Query Studio result helpers preserve the server plan and row contract', () => {
   const result = {
     component: 'hitters',

@@ -21,8 +21,8 @@ export function queryStudioObjects(metadata = {}) {
 }
 
 export function queryStudioRows(result = {}) {
-  if (Array.isArray(result.records)) return result.records
-  return Array.isArray(result.items) ? result.items : []
+  if (Array.isArray(result?.records)) return result.records
+  return Array.isArray(result?.items) ? result.items : []
 }
 
 export function queryStudioColumns(result = {}) {
