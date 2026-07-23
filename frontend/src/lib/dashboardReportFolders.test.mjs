@@ -34,3 +34,15 @@ test('uses a renamed physical folder label without changing computed rollup labe
   assert.equal(organized.monthly[0].label, '2026-07')
   assert.deepEqual(organized.weekly[0].folderIds, [1])
 })
+
+test('malformed legacy folder dates cannot crash authenticated workspace rollups', () => {
+  const organized = organizeReportFolders([
+    ...folders,
+    { id: 5, folder_name: 'Legacy Import', folder_date: '2026-99-45', item_count: 0, items: [] },
+  ])
+
+  assert.equal(organized.daily.some(entry => entry.id === 5), false)
+  assert.equal(organized.weekly.every(entry => entry.key), true)
+  assert.equal(organized.monthly.every(entry => entry.key), true)
+  assert.equal(organized.custom.some(entry => entry.id === 5), true)
+})

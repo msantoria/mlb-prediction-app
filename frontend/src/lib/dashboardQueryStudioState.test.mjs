@@ -5,6 +5,7 @@ import {
   canOpenQueryStudio,
   QUERY_STUDIO_EXAMPLE,
   queryStudioColumns,
+  queryStudioObjects,
   queryStudioRows,
   queryStudioSavePayload,
 } from './dashboardQueryStudioState.mjs'
@@ -14,6 +15,23 @@ test('Query Studio visibility requires the server-returned advanced capability',
   assert.equal(canOpenQueryStudio({ capabilities: ['workbench.execute'] }), false)
   assert.equal(canOpenQueryStudio({ role: 'admin' }), false)
 })
+
+test('Query Studio metadata tolerates missing and malformed object fields', () => {
+  assert.deepEqual(queryStudioObjects(), [])
+  assert.deepEqual(queryStudioObjects({ objects: null }), [])
+  assert.deepEqual(queryStudioObjects({
+    objects: [
+      null,
+      { label: 'Missing API name', fields: [] },
+      { api_name: 'hitters', label: 'Hitters' },
+      { api_name: 'pitchers', fields: [null, {}, { name: 'full_name', label: 'Name' }] },
+    ],
+  }), [
+    { api_name: 'hitters', label: 'Hitters', fields: [] },
+    { api_name: 'pitchers', fields: [{ name: 'full_name', label: 'Name' }] },
+  ])
+})
+
 test('Query Studio result helpers preserve the server plan and row contract', () => {
   const result = {
     component: 'hitters',

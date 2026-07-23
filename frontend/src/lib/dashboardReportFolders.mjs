@@ -1,6 +1,8 @@
 function dateValue(value) {
   const text = String(value || '').slice(0, 10)
-  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null
+  const parsed = new Date(`${text}T00:00:00Z`)
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === text ? text : null
 }
 
 function uniqueItems(folders) {

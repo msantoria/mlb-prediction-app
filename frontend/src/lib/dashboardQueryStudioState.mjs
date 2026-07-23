@@ -7,6 +7,19 @@ LIMIT 50`
 export function canOpenQueryStudio(profile = {}) {
   return Array.isArray(profile.capabilities) && profile.capabilities.includes('workbench.advanced')
 }
+
+export function queryStudioObjects(metadata = {}) {
+  if (!Array.isArray(metadata?.objects)) return []
+  return metadata.objects
+    .filter(object => object && typeof object === 'object' && object.api_name)
+    .map(object => ({
+      ...object,
+      fields: Array.isArray(object.fields)
+        ? object.fields.filter(field => field && typeof field === 'object' && field.name)
+        : [],
+    }))
+}
+
 export function queryStudioRows(result = {}) {
   if (Array.isArray(result.records)) return result.records
   return Array.isArray(result.items) ? result.items : []

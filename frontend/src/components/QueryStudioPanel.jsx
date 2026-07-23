@@ -4,6 +4,7 @@ import { buildReportCsv, safeFilenamePart } from '../lib/dashboardReportUtils.mj
 import {
   QUERY_STUDIO_EXAMPLE,
   queryStudioColumns,
+  queryStudioObjects,
   queryStudioRows,
   queryStudioSavePayload,
 } from '../lib/dashboardQueryStudioState.mjs'
@@ -32,7 +33,7 @@ function download(filename, contents) {
 }
 
 function exampleForObject(object) {
-  const fields = (object?.fields || []).filter(field => field.name !== 'metrics')
+  const fields = (Array.isArray(object?.fields) ? object.fields : []).filter(field => field?.name && field.name !== 'metrics')
   const selected = fields.slice(0, 4).map(field => field.name)
   const sortable = fields.find(field => field.sortable)
   return `SELECT ${selected.join(', ')}\nFROM ${object.api_name}${sortable ? `\nORDER BY ${sortable.name} DESC` : ''}\nLIMIT 50`
@@ -75,11 +76,12 @@ export default function QueryStudioPanel({ folderId, refreshWorkspace, restore, 
 
   const rows = queryStudioRows(result)
   const columns = queryStudioColumns(result)
+  const objects = useMemo(() => queryStudioObjects(metadata), [metadata])
   const fieldLabels = useMemo(() => {
     const map = {}
-    ;(metadata?.objects || []).forEach(object => (object.fields || []).forEach(field => { map[field.name] = field.label || field.name }))
+    objects.forEach(object => object.fields.forEach(field => { map[field.name] = field.label || field.name }))
     return map
-  }, [metadata])
+  }, [objects])
   const pageInfo = result?.page_info || {}
 
   async function request(path, nextPage = 1) {
@@ -145,7 +147,7 @@ export default function QueryStudioPanel({ folderId, refreshWorkspace, restore, 
 
   return <section style={s.panel}>
     <div style={s.row}><div><div style={s.eyebrow}>Owner Query Studio</div><h3 style={s.title}>Prompt the report registry</h3><p style={s.muted}>SELECT-only MLBGPT language. Your statement becomes a validated report plan; authored SQL never reaches the database.</p></div><span style={s.readyBadge}>Protected</span></div>
-    <div style={s.objectStrip}>{(metadata?.objects || []).map(object => <button type="button" key={object.api_name} style={s.objectChip} title={`Use ${object.label}`} onClick={() => { setStatement(exampleForObject(object)); setPreview(null); setResult(null); setPageNumber(1) }}>{object.label}<small>{object.fields.length} fields</small></button>)}</div>
+    <div style={s.objectStrip}>{objects.map(object => <button type="button" key={object.api_name} style={s.objectChip} title={`Use ${object.label || object.api_name}`} onClick={() => { setStatement(exampleForObject(object)); setPreview(null); setResult(null); setPageNumber(1) }}>{object.label || object.api_name}<small>{object.fields.length} fields</small></button>)}</div>
     <label style={s.label}>MLBGPT statement<textarea aria-label="Query Studio statement" spellCheck="false" style={s.editor} value={statement} onChange={event => setStatement(event.target.value)} onKeyDown={event => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') { event.preventDefault(); request('/my-dashboard/query-studio/execute', 1) } }} /></label>
     {error ? <div style={s.error}>{error}</div> : null}
     <div style={s.actions}><button style={s.secondary} disabled={running} onClick={() => request('/my-dashboard/query-studio/preview', 1)}>Preview Plan</button><button style={s.primary} disabled={running} onClick={() => request('/my-dashboard/query-studio/execute', 1)}>{running ? 'Validating…' : 'Run Query'}</button></div>

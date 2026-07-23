@@ -39,6 +39,41 @@ const C = { bg: 'var(--md-bg)', panel: 'var(--md-panel)', panel2: 'var(--md-pane
 const FRANKLIN = '"Franklin Gothic Medium", "Franklin Gothic", "Arial Narrow", Arial, sans-serif'
 const CENTURY = '"Century Gothic", CenturyGothic, AppleGothic, Arial, sans-serif'
 
+class DashboardWorkspaceErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props)
+    this.state = { error: null }
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error }
+  }
+
+  componentDidCatch(error, info) {
+    console.error('MyDashboard workspace render failed', error, info)
+  }
+
+  async signOut() {
+    await logoutDashboardSession().catch(() => null)
+    window.location.assign('/my-dashboard')
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children
+    return <main style={s.crashPage}>
+      <section style={s.crashCard}>
+        <div style={s.eyebrow}>MyDashboard recovery</div>
+        <h1 style={s.crashTitle}>The workspace could not finish loading.</h1>
+        <p style={s.crashCopy}>Your session is still protected. Reload the latest workspace, or sign out to return to the landing page.</p>
+        <div style={s.actions}>
+          <button type="button" style={s.primary} onClick={() => window.location.reload()}>Reload Workspace</button>
+          <button type="button" style={s.secondary} onClick={() => this.signOut()}>Sign Out</button>
+        </div>
+      </section>
+    </main>
+  }
+}
+
 function safeArray(value) { return Array.isArray(value) ? value : [] }
 function titleCase(value) { return String(value || '').replace(/[_.-]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/\b\w/g, c => c.toUpperCase()) }
 function readJson(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) || fallback } catch { return fallback } }
@@ -193,7 +228,7 @@ function ReportWorkspace({ open, close, objectMeta, result, fields, builderField
   return <div style={s.overlay} role="dialog" aria-modal="true"><section style={s.reportSurface}><header style={s.reportHeader}><div><div style={s.eyebrow}>Report Workspace</div><h2 style={s.reportTitle}>{objectMeta.label} Report</h2><div style={s.copySmall}>MLB date {reportDate} · Generated {generatedAt ? new Date(generatedAt).toLocaleString() : 'now'} · Showing {range.start}–{range.end} of {range.total}</div></div><div style={s.actions}><button style={s.secondary} onClick={exportCsv} disabled={!rows.length}>Export current page CSV</button><button style={s.secondary} onClick={onSave} disabled={!rows.length}>Save Report</button><button style={s.primary} onClick={close}>Back to Builder</button></div></header><div style={{ ...s.reportBody, ...(isMobile ? s.reportBodyMobile : {}) }}><aside style={s.columnPanel}><div style={s.panelTitle}>Report Columns</div><div style={s.copySmall}>Hide or reorder columns without changing saved results.</div><div style={s.columnList}>{columns.map((accessor, index) => { const isHidden = hidden.includes(accessor); return <div style={s.columnRow} key={accessor}><label><input type="checkbox" checked={!isHidden} onChange={() => setHidden(current => isHidden ? current.filter(v => v !== accessor) : [...current, accessor])} /> {fieldMap[accessor]?.label || titleCase(accessor)}</label><div><button style={s.iconButton} disabled={index === 0} onClick={() => setColumns(current => { const next = [...current]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; return next })}>↑</button><button style={s.iconButton} disabled={index === columns.length - 1} onClick={() => setColumns(current => { const next = [...current]; [next[index + 1], next[index]] = [next[index], next[index + 1]]; return next })}>↓</button></div></div> })}</div><button style={s.secondaryWide} onClick={() => { setColumns(builderFields); setHidden([]) }}>Reset to Builder Fields</button></aside><main style={s.gridPanel}><div style={s.gridToolbar}><div style={s.pillRow}><Pill>{range.total} matching rows</Pill><Pill tone="green">Sorted by: {fieldMap[query.sort_by]?.label || titleCase(query.sort_by)} {query.sort_direction}</Pill></div><label style={s.pageSize}>Rows per page <select style={s.input} value={query.page_size} onChange={e => requestPageSize(e.target.value)}>{PAGE_SIZE_OPTIONS.map(size => <option key={size} value={size}>{size}</option>)}</select></label></div>{result?.filter_warnings?.length ? <div style={s.warning}>{result.filter_warnings.join(' • ')}</div> : null}{loading ? <StatePanel tone="loading" title="Loading report page">Loading the complete report.</StatePanel> : rows.length && visible.length ? <div style={s.dataGridWrap}><table style={s.table}><thead><tr>{visible.map(accessor => <th key={accessor} style={s.th}><button style={s.sortButton} disabled={fieldMap[accessor]?.sortable === false} onClick={() => requestSort(accessor)}>{fieldMap[accessor]?.label || titleCase(accessor)} {query.sort_by === accessor ? (query.sort_direction === 'desc' ? '↓' : '↑') : '↕'}</button></th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={row.entity_id || `${objectMeta.key}-${rowIndex}`}>{visible.map(accessor => <td style={s.td} key={`${rowIndex}-${accessor}`}>{formatCell(getValue(row, accessor))}</td>)}</tr>)}</tbody></table></div> : <StatePanel tone={bootstrapMessage.tone} title={bootstrapMessage.title}>{bootstrapMessage.detail}</StatePanel>}<div style={s.pagination}><button style={s.secondary} disabled={!pageInfo.has_previous || loading} onClick={() => requestPage(pageInfo.previous_page || Math.max(1, query.page_number - 1))}>← Previous</button><span>Page {pageInfo.page_number || 1} of {pageInfo.page_count || 1}</span><button style={s.secondary} disabled={!pageInfo.has_next || loading} onClick={() => requestPage(pageInfo.next_page || query.page_number + 1)}>Next →</button></div></main></div></section></div>
 }
 
-export default function MyDashboardReportBuilderPage() {
+function MyDashboardReportBuilderContent() {
   const persisted = typeof window === 'undefined' ? {} : readJson(BUILDER_KEY, {}); const [width, setWidth] = useState(() => typeof window === 'undefined' ? 1200 : window.innerWidth)
   const [themePreference, setThemePreference] = useState(() => typeof window === 'undefined' ? 'system' : readThemePreference())
   const [systemDark, setSystemDark] = useState(() => typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches)
@@ -264,7 +299,15 @@ export default function MyDashboardReportBuilderPage() {
   return <main style={s.page}><section style={s.hero}><div><div style={s.brandSmall}>MLB<span>GPT</span></div><div style={s.eyebrow}>Private report workspace</div><h1 style={s.title}>Build your report.</h1><p style={s.copy}>Choose an MLB date, report type, fields, and filters. Sorting and pagination apply to every matching result.</p><div style={s.pillRow}><Pill>Signed in: {profile.username}</Pill><Pill tone="green">MLB date: {reportDate}</Pill></div></div><div style={s.actions}>{hasDashboardCapability(profile, 'admin.portal.access') ? <a style={s.adminLink} href="/admin">Control Center</a> : null}<button style={s.secondary} onClick={signOut}>Sign Out</button><label>MLB date<input type="date" style={s.input} value={reportDate} onChange={e => setReportDate(e.target.value || mlbDateIso())} /></label><button style={s.primary} disabled={loading[activeObject]} onClick={() => populateReport(activeObject, defaultQueryState())}>{loading[activeObject] ? 'Populating…' : 'Populate Report'}</button></div></section>{saveMessage ? <div style={saveMessage.startsWith('Failed') || saveMessage.startsWith('No ') || saveMessage.startsWith('This ') || saveMessage.startsWith('Name ') || saveMessage.startsWith('Choose ') || saveMessage.startsWith('Run ') ? s.error : s.success}>{saveMessage}</div> : null}{error ? <StatePanel tone="error" title="Report could not be generated">{error}</StatePanel> : null}<div style={{ ...s.builderShell, ...(isNarrow ? s.builderShellNarrow : {}) }}><aside style={{ ...s.objectManager, ...(isMobile ? { position: 'static' } : {}) }}><div style={s.panelTitle}>Report Types</div>{OBJECTS.map(object => <button key={object.key} style={activeObject === object.key ? s.objectActive : s.objectButton} onClick={() => selectPrimaryObject(object.key)}><span><strong>{object.label}</strong><small>{object.description}</small></span><b>{results[object.key]?.totalSize ?? safeArray(results[object.key]?.items).length}</b></button>)}</aside><div style={s.mainStack}><section style={s.card}><div style={s.cardHeader}><div><div style={s.panelTitle}>{activeMeta.label}</div><div style={s.copySmall}>{activeMeta.description}</div></div><label><input type="checkbox" checked={activeLineupsOnly} disabled={!ACTIVE_LINEUP_OBJECTS.has(activeObject)} onChange={e => setActiveLineupsOnly(e.target.checked)} /> Confirmed 1–9 only</label></div></section><div style={{ ...s.builderColumns, ...(isNarrow ? s.builderColumnsNarrow : {}) }}><div style={s.stack}><FilterPanel objectKey={activeObject} filters={activeFilters} fields={activeFields} setBasic={setBasic} setMetric={setMetric} setWeight={setWeight} /><FieldLibrary fields={activeFields} selected={selectedFields} setSelected={setSelectedFields} /></div><div style={s.stack}>{hasDashboardCapability(profile, 'workbench.advanced') ? <QueryStudioPanel folderId={folderId} refreshWorkspace={loadWorkspace} restore={queryStudioRestore} onMessage={setSaveMessage} /> : null}<section style={s.card}><div style={s.panelTitle}>Report Preview</div><div style={s.previewStats}><Pill>{selectedFields.length} columns</Pill><Pill tone="green">{Object.keys(cleanFilters(activeFilters)).length} active filter groups</Pill></div><button style={s.populateWide} disabled={loading[activeObject]} onClick={() => populateReport(activeObject, defaultQueryState())}>{loading[activeObject] ? 'Populating Report…' : 'Populate Report'}</button>{activeResult ? <button style={s.secondaryWide} onClick={() => { setReportObject(activeObject); setReportResult(activeResult); setReportColumns([...selectedFields]); setReportQuery(normalizeQueryState(activeResult.query || defaultQueryState())); setGeneratedForDate(reportDate); setGeneratedAt(new Date().toISOString()); setReportOpen(true) }}>Open Last Report</button> : <StatePanel title="No report generated yet">Choose fields and filters, then populate the report.</StatePanel>}</section></div></div><SavedReportsShelfV2 workspace={workspace} loading={workspaceLoading} error={workspaceError} openSaved={openSaved} refresh={loadWorkspace} renameSaved={renameSaved} open={savedShelfOpen} setOpen={setSavedShelfOpen} view={savedShelfView} setView={setSavedShelfView} selectedEntryKey={selectedShelfEntryKey} setSelectedEntryKey={setSelectedShelfEntryKey} selectedFolderId={selectedFolderId} setSelectedFolderId={setSelectedFolderId} newFolderName={newFolderName} setNewFolderName={setNewFolderName} createFolder={createReportFolder} creatingFolder={creatingFolder} /></div></div><ReportWorkspace open={reportOpen} close={() => setReportOpen(false)} objectMeta={reportMeta} result={reportResult} fields={reportFields} builderFields={selectedFields} initialColumns={reportColumns} generatedAt={generatedAt} reportDate={generatedForDate} query={reportQuery} setQuery={setReportQuery} reload={next => populateReport(reportObject, next, false)} loading={loading[reportObject]} onSave={saveReport} isMobile={isMobile} /></main>
 }
 
+export default function MyDashboardReportBuilderPage() {
+  return <DashboardWorkspaceErrorBoundary><MyDashboardReportBuilderContent /></DashboardWorkspaceErrorBoundary>
+}
+
 const s = {
+  crashPage: { minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24, color: '#edf2fb', background: '#07111f', boxSizing: 'border-box', fontFamily: CENTURY },
+  crashCard: { width: 'min(100%,620px)', padding: 'clamp(24px,5vw,48px)', background: '#111d2d', border: '1px solid #33445a', borderRadius: 24, boxShadow: '0 24px 70px rgba(0,0,0,.38)' },
+  crashTitle: { margin: '8px 0 12px', fontFamily: FRANKLIN, fontSize: 'clamp(28px,5vw,44px)', fontWeight: 500, lineHeight: 1.05 },
+  crashCopy: { margin: '0 0 22px', color: '#b9c5d6', fontSize: 14, lineHeight: 1.6 },
   page: { minHeight: '100vh', padding: 'clamp(12px,2.5vw,28px)', color: C.text, colorScheme: 'var(--md-color-scheme)', background: 'var(--md-page-bg)', boxSizing: 'border-box', fontFamily: CENTURY, fontSize: 13, lineHeight: 1.42, transition: 'color .2s ease,background .2s ease' },
   loadingPage: { minHeight: '100vh', display: 'grid', placeItems: 'center', color: C.text, colorScheme: 'var(--md-color-scheme)', background: 'var(--md-page-bg)', fontFamily: CENTURY },
   authPage: { position: 'relative', minHeight: '100vh', display: 'grid', alignItems: 'center', gap: 'clamp(24px,5vw,84px)', padding: 'clamp(22px,5vw,74px)', overflow: 'hidden', color: C.text, colorScheme: 'var(--md-color-scheme)', background: 'var(--md-auth-bg)', boxSizing: 'border-box', fontFamily: CENTURY, transition: 'color .2s ease,background .2s ease' },
