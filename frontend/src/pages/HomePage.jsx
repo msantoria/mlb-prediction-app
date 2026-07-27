@@ -1,11 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { API_BASE, fetchJson, getMlbLiveDate, readCachedJson } from '../lib/api'
 
 const API = API_BASE
 const MATCHUPS_TTL_SECONDS = 120
-const ODDS_EVENTS_TTL_SECONDS = 90
-const PROPS_TTL_SECONDS = 90
 const CALENDAR_SCHEDULE_URL = `${API}/matchups/calendar/schedule`
 
 function useIsMobile(breakpoint = 768) {
@@ -39,26 +37,6 @@ const s = {
   prob: { fontSize: 30, fontWeight: 900, letterSpacing: '-0.06em', marginTop: 12, overflowWrap: 'anywhere' },
   vs: { display: 'grid', placeItems: 'center', color: 'var(--text-muted)', fontWeight: 900, letterSpacing: '0.18em', fontSize: 12, minWidth: 0 },
   vsMobile: { placeItems: 'start', padding: '0 2px', letterSpacing: '0.08em' },
-  oddsBox: { marginTop: 16, padding: 14, border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', background: 'rgba(7, 11, 18, 0.46)', minWidth: 0 },
-  oddsHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 12, minWidth: 0 },
-  oddsHeaderMobile: { flexDirection: 'column', alignItems: 'stretch' },
-  oddsTitle: { color: 'var(--text-primary)', fontSize: 13, fontWeight: 850, letterSpacing: '0.02em', overflowWrap: 'anywhere' },
-  oddsSubtle: { color: 'var(--text-muted)', fontSize: 12, overflowWrap: 'anywhere' },
-  oddsGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10, minWidth: 0 },
-  oddsGridMobile: { gridTemplateColumns: '1fr' },
-  marketCard: { border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', padding: 10, background: 'rgba(17, 24, 39, 0.76)', minWidth: 0 },
-  marketLabel: { color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 7, fontWeight: 850, overflowWrap: 'anywhere' },
-  oddsLine: { display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12, color: 'var(--text-secondary)', marginTop: 4, minWidth: 0, overflowWrap: 'anywhere' },
-  oddsLineText: { minWidth: 0, overflowWrap: 'anywhere', whiteSpace: 'normal' },
-  oddsPrice: { color: 'var(--text-primary)', whiteSpace: 'nowrap' },
-  propButton: { marginTop: 12, padding: '8px 11px', fontSize: 12, fontWeight: 800, maxWidth: '100%' },
-  propsPanel: { marginTop: 12, borderTop: '1px solid var(--border-subtle)', paddingTop: 12, minWidth: 0 },
-  propsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, minWidth: 0 },
-  propsGridMobile: { gridTemplateColumns: '1fr' },
-  propCard: { border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', padding: 10, background: 'rgba(17, 24, 39, 0.78)', minWidth: 0 },
-  propMarket: { color: 'var(--warning)', fontSize: 11, fontWeight: 850, marginBottom: 5, overflowWrap: 'anywhere' },
-  propName: { color: 'var(--text-primary)', fontSize: 12, fontWeight: 800, overflowWrap: 'anywhere' },
-  propDetails: { color: 'var(--text-muted)', fontSize: 12, marginTop: 3, overflowWrap: 'anywhere' },
 }
 
 function probColor(p) {
@@ -73,7 +51,9 @@ function formatTime(iso) {
   try {
     const d = new Date(iso)
     return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' }) + ' ET'
-  } catch { return null }
+  } catch {
+    return null
+  }
 }
 
 function weatherLabel(weather) {
@@ -83,34 +63,6 @@ function weatherLabel(weather) {
   if (weather.condition) pieces.push(weather.condition)
   if (weather.wind) pieces.push(weather.wind)
   return pieces.length ? pieces.join(' · ') : null
-}
-
-function american(v) {
-  if (v == null || v === '') return 'Unavailable'
-  const n = Number(v)
-  if (Number.isNaN(n)) return String(v)
-  return n > 0 ? `+${n}` : `${n}`
-}
-
-function normalizeTeamName(name) {
-  return String(name || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '')
-    .replace(/^the/, '')
-}
-
-function matchupKey(away, home) {
-  return `${normalizeTeamName(away)}@${normalizeTeamName(home)}`
-}
-
-function keyFromMatchup(m) {
-  return matchupKey(m.away_team_name || m.away_team || m.away_name, m.home_team_name || m.home_team || m.home_name)
-}
-
-function keyFromEvent(e) {
-  const away = e?.away_team?.name || e?.away_team || ''
-  const home = e?.home_team?.name || e?.home_team || ''
-  return matchupKey(away, home)
 }
 
 function dateBucket(date) {
@@ -156,119 +108,6 @@ async function loadScheduleFallback(date) {
   return source.games.map(game => scheduleRowToMatchup(game, source.date || date))
 }
 
-function eventMarkets(event) {
-  return event?.markets || []
-}
-
-function findMarket(event, keys) {
-  const wanted = Array.isArray(keys) ? keys : [keys]
-  return eventMarkets(event).find(m => wanted.includes(m.market_key) || wanted.includes(m.market_type) || wanted.includes(m.market_name))
-}
-
-function OddsMarket({ label, market }) {
-  const selections = market?.selections || []
-  if (!market || selections.length === 0) {
-    return (
-      <div style={s.marketCard}>
-        <div style={s.marketLabel}>{label}</div>
-        <div style={s.oddsLine}><span style={s.oddsLineText}>Unavailable</span><span>—</span></div>
-      </div>
-    )
-  }
-  return (
-    <div style={s.marketCard}>
-      <div style={s.marketLabel}>{label}</div>
-      {selections.slice(0, 2).map((sel, idx) => (
-        <div key={`${label}-${idx}`} style={s.oddsLine}>
-          <span style={s.oddsLineText}>{sel.name || sel.description || 'Unavailable'}{sel.line != null ? ` ${sel.line}` : ''}</span>
-          <strong style={s.oddsPrice}>{american(sel.price)}</strong>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function PropPreview({ eventId, isMobile }) {
-  const cacheUrl = `${API}/odds/bet105/event/${eventId}/props`
-  const [open, setOpen] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [propsData, setPropsData] = useState(() => readCachedJson(cacheUrl, PROPS_TTL_SECONDS))
-  const [error, setError] = useState(null)
-
-  function toggle(e) {
-    e.stopPropagation()
-    if (open) {
-      setOpen(false)
-      return
-    }
-    setOpen(true)
-    if (propsData || loading) return
-    setLoading(true)
-    setError(null)
-    fetchJson(cacheUrl, { ttlSeconds: PROPS_TTL_SECONDS })
-      .then(data => { setPropsData(data); setLoading(false) })
-      .catch(err => { setError(String(err)); setLoading(false) })
-  }
-
-  const markets = propsData?.markets || propsData?.event?.markets || []
-  const cards = markets.flatMap(market =>
-    (market.selections || [])
-      .filter(sel => sel?.description && sel?.name)
-      .slice(0, 8)
-      .map(sel => ({ market, sel }))
-  ).slice(0, 12)
-
-  return (
-    <div onClick={e => e.stopPropagation()}>
-      <button type="button" style={{ ...s.propButton, ...(isMobile ? { width: '100%' } : {}) }} onClick={toggle}>
-        {open ? 'Hide Player Props' : 'Show Player Props'}
-      </button>
-      {open && (
-        <div style={s.propsPanel}>
-          {loading && <div style={s.oddsSubtle}>Loading Bet105 props…</div>}
-          {error && <div className="state-panel error" style={{ padding: 12, textAlign: 'left' }}>Props unavailable: {error}</div>}
-          {!loading && !error && propsData && cards.length === 0 && (
-            <div style={s.oddsSubtle}>No player props returned for this event.</div>
-          )}
-          <div style={{ ...s.propsGrid, ...(isMobile ? s.propsGridMobile : {}) }}>
-            {cards.map(({ market, sel }, idx) => (
-              <div key={`${market.market_key}-${sel.description}-${sel.name}-${idx}`} style={s.propCard}>
-                <div style={s.propMarket}>{String(market.market_name || market.market_key || '').replaceAll('_', ' ')}</div>
-                <div style={s.propName}>{sel.description}</div>
-                <div style={s.propDetails}>{sel.name} {sel.line} · <strong style={{ color: 'var(--text-primary)' }}>{american(sel.price)}</strong></div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function OddsSnapshot({ event, isMobile }) {
-  if (!event) return null
-  const moneyline = findMarket(event, 'h2h')
-  const spread = findMarket(event, 'spreads')
-  const total = findMarket(event, 'totals')
-  return (
-    <div style={s.oddsBox} onClick={e => e.stopPropagation()}>
-      <div style={{ ...s.oddsHeader, ...(isMobile ? s.oddsHeaderMobile : {}) }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={s.oddsTitle}>Bet105 Market Snapshot</div>
-          <div style={s.oddsSubtle}>Moneyline, run line, totals, and available props</div>
-        </div>
-        <div className="status-badge">Market Context</div>
-      </div>
-      <div style={{ ...s.oddsGrid, ...(isMobile ? s.oddsGridMobile : {}) }}>
-        <OddsMarket label="Moneyline" market={moneyline} />
-        <OddsMarket label="Run Line" market={spread} />
-        <OddsMarket label="Total" market={total} />
-      </div>
-      {event.event_id && <PropPreview eventId={event.event_id} isMobile={isMobile} />}
-    </div>
-  )
-}
-
 function ProbBar({ homeProb, awayProb }) {
   const hp = homeProb != null ? Math.round(homeProb * 100) : 50
   const ap = awayProb != null ? Math.round(awayProb * 100) : 100 - hp
@@ -287,9 +126,9 @@ function ProbBar({ homeProb, awayProb }) {
 }
 
 function statusClass(status) {
-  const s = String(status || '').toLowerCase()
-  if (s.includes('final')) return 'success'
-  if (s.includes('progress') || s.includes('live')) return 'warning'
+  const value = String(status || '').toLowerCase()
+  if (value.includes('final')) return 'success'
+  if (value.includes('progress') || value.includes('live')) return 'warning'
   return ''
 }
 
@@ -303,19 +142,12 @@ export default function HomePage() {
   const today = getMlbLiveDate()
   const [date, setDate] = useState(today)
   const initialMatchupsUrl = `${API}/matchups?date=${today}`
-  const initialOddsUrl = `${API}/odds/bet105/events?date=${today}`
   const [matchups, setMatchups] = useState(() => {
     const cached = readCachedJson(initialMatchupsUrl, MATCHUPS_TTL_SECONDS)
     return Array.isArray(cached) ? cached : []
   })
-  const [oddsEvents, setOddsEvents] = useState(() => {
-    const cached = readCachedJson(initialOddsUrl, ODDS_EVENTS_TTL_SECONDS)
-    return Array.isArray(cached?.events) ? cached.events : []
-  })
   const [loading, setLoading] = useState(matchups.length === 0)
-  const [oddsLoading, setOddsLoading] = useState(oddsEvents.length === 0)
   const [error, setError] = useState(null)
-  const [oddsError, setOddsError] = useState(null)
 
   useEffect(() => {
     let cancelled = false
@@ -341,7 +173,7 @@ export default function HomePage() {
           if (cancelled) return
           setMatchups(fallback)
           setError(fallback.length ? null : String(e))
-        } catch (fallbackErr) {
+        } catch {
           if (cancelled) return
           setError(String(e))
           setMatchups([])
@@ -352,48 +184,13 @@ export default function HomePage() {
     return () => { cancelled = true }
   }, [date])
 
-  useEffect(() => {
-    let cancelled = false
-    const url = `${API}/odds/bet105/events?date=${date}`
-    const cached = readCachedJson(url, ODDS_EVENTS_TTL_SECONDS)
-    if (Array.isArray(cached?.events)) {
-      setOddsEvents(cached.events)
-      setOddsLoading(false)
-    } else {
-      setOddsLoading(true)
-    }
-    setOddsError(null)
-    fetchJson(url, { ttlSeconds: ODDS_EVENTS_TTL_SECONDS })
-      .then(data => {
-        if (cancelled) return
-        setOddsEvents(Array.isArray(data?.events) ? data.events : [])
-        setOddsLoading(false)
-      })
-      .catch(e => {
-        if (cancelled) return
-        setOddsError(String(e))
-        setOddsEvents([])
-        setOddsLoading(false)
-      })
-    return () => { cancelled = true }
-  }, [date])
-
-  const oddsByMatchup = useMemo(() => {
-    const map = new Map()
-    oddsEvents.forEach(event => {
-      const key = keyFromEvent(event)
-      if (key !== '@') map.set(key, event)
-    })
-    return map
-  }, [oddsEvents])
-
   return (
     <div>
       <header className="page-header">
         <div>
           <p className="page-kicker">Live Slate</p>
           <h1 className="page-title">Daily Matchups</h1>
-          <p className="page-subtitle">Validated MLB schedule, probable starters, model win probabilities, weather context, and Bet105 market snapshots in one production slate.</p>
+          <p className="page-subtitle">Validated MLB schedule, probable starters, model win probabilities, and weather context in one production slate.</p>
         </div>
         <div className="control-row">
           <span className="status-badge success">Live Data</span>
@@ -408,15 +205,12 @@ export default function HomePage() {
         </div>
       )}
       {error && <div className="state-panel error">Matchup data unavailable: {error}</div>}
-      {!loading && !error && oddsError && <div className="state-panel error" style={{ marginBottom: 16 }}>Odds data unavailable: {oddsError}</div>}
-      {!loading && !error && !oddsError && oddsLoading && <div className="card-meta" style={{ marginBottom: 14 }}>Loading Bet105 market context…</div>}
       {!loading && !error && matchups.length === 0 && (
         <div className="state-panel">No games are scheduled for {date}.</div>
       )}
 
       <div style={s.matchupGrid}>
         {matchups.map((m, i) => {
-          const oddsEvent = oddsByMatchup.get(keyFromMatchup(m))
           const awayPanelStyle = {
             ...s.teamPanel,
             ...(isMobile ? s.teamPanelMobile : {}),
@@ -457,7 +251,7 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                <div style={{ ...s.vs, ...(isMobile ? s.vsMobile : {}) }}>{isMobile ? 'AT' : 'AT'}</div>
+                <div style={{ ...s.vs, ...(isMobile ? s.vsMobile : {}) }}>AT</div>
 
                 <div style={homePanelStyle}>
                   <div style={s.teamName}>{m.home_team_name || `Team ${m.home_team_id}`}</div>
@@ -476,7 +270,6 @@ export default function HomePage() {
               </div>
 
               <ProbBar homeProb={m.home_win_prob} awayProb={m.away_win_prob} />
-              <OddsSnapshot event={oddsEvent} isMobile={isMobile} />
             </article>
           )
         })}
