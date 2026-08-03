@@ -79,8 +79,12 @@ def build_model_projection_probability(
             "is_fallback": False,
         }
 
-    canonical_home = _safe_float(matchup.get("home_win_prob") or matchup.get("home_win_probability"))
-    canonical_away = _safe_float(matchup.get("away_win_prob") or matchup.get("away_win_probability"))
+    canonical_home = _safe_float(matchup.get("home_win_prob"))
+    if canonical_home is None:
+        canonical_home = _safe_float(matchup.get("home_win_probability"))
+    canonical_away = _safe_float(matchup.get("away_win_prob"))
+    if canonical_away is None:
+        canonical_away = _safe_float(matchup.get("away_win_probability"))
     missing_reason = "sharedSimulation derived outputs missing"
     if source_path and (home_prob is None or away_prob is None):
         missing_reason = "sharedSimulation derived outputs missing home/away win probability"
