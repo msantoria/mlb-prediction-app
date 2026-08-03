@@ -108,6 +108,7 @@ from .draftkings_projection_routes import (
 from .daily_odds_routes import router as daily_odds_router
 from .simulation.inning_simulator import simulate_half_innings
 from .model_projection_routes import router as model_projection_router
+from .model_projection_probability import build_model_projection_probability
 from .ai_data_assistant_routes import router as ai_data_assistant_router
 from .news_routes import router as news_router
 from .starting_pitcher_arsenal_refresh import refresh_starting_pitcher_arsenal
@@ -1966,6 +1967,22 @@ def create_app():
                 away_bp=away_vs_home_bullpen_pa_outcome_model,
                 home_bp=home_vs_away_bullpen_pa_outcome_model,
             )
+
+            def projection_offense_inputs(profile: Dict[str, Any], lineup_source: Optional[str]) -> Dict[str, Any]:
+                contact = profile.get("contact_skill") or {}
+                discipline = profile.get("plate_discipline") or {}
+                power = profile.get("power") or {}
+                metadata = profile.get("metadata") or {}
+                return {
+                    "k_pct": contact.get("k_rate"),
+                    "bb_pct": discipline.get("bb_rate"),
+                    "iso": power.get("iso"),
+                    "lineup_source": lineup_source,
+                    "profile_granularity": metadata.get("profile_granularity"),
+                    "source": metadata.get("source_type"),
+                    "pa": metadata.get("sample_size"),
+                }
+
             shared_matchup_input = {
                 "game_pk": game_pk,
                 "game_date": game_date_iso,
@@ -1981,6 +1998,22 @@ def create_app():
 
                 "away_pitcher_name": away_pitcher.get("fullName"),
                 "home_pitcher_name": home_pitcher.get("fullName"),
+
+                # Keep Matchup Detail on the same probability inputs used by
+                # Model Projections instead of asking the shared simulator to
+                # operate on empty default profiles.
+                "away_pitcher_features": away_pitcher_detail.get("aggregate") or {},
+                "home_pitcher_features": home_pitcher_detail.get("aggregate") or {},
+                "away_pitcher_arsenal": away_pitcher_detail.get("arsenal") or [],
+                "home_pitcher_arsenal": home_pitcher_detail.get("arsenal") or [],
+                "away_offense_inputs": projection_offense_inputs(
+                    away_projected_lineup_offense_profile,
+                    away_lineup_source,
+                ),
+                "home_offense_inputs": projection_offense_inputs(
+                    home_projected_lineup_offense_profile,
+                    home_lineup_source,
+                ),
 
                 "venue": {"name": venue_name},
                 "weather": game.get("weather") or {},
@@ -2011,6 +2044,17 @@ def create_app():
                     },
                 }
 
+            model_projection_probability = build_model_projection_probability(
+                game_pk=game_pk,
+                date=game_date_iso[:10] if game_date_iso else None,
+                shared_simulation=shared_game_simulation,
+                matchup={
+                    "home_win_prob": home_win_prob,
+                    "away_win_prob": away_win_prob,
+                    "model_version": "legacy_matchup_win_probability_v1",
+                },
+            )
+
             return {
                 "game_pk": game_pk,
                 "game_date": game_date_iso,
@@ -2018,8 +2062,17 @@ def create_app():
                 "status": (game.get("status") or {}).get("detailedState"),
                 "weather": _extract_weather(game),
                 "park_factor": get_park_factor(venue_name),
-                "home_win_prob": home_win_prob,
-                "away_win_prob": away_win_prob,
+                "home_win_prob": model_projection_probability.get("home_win_prob"),
+                "away_win_prob": model_projection_probability.get("away_win_prob"),
+                "home_win_probability": model_projection_probability.get("home_win_probability"),
+                "away_win_probability": model_projection_probability.get("away_win_probability"),
+                "model_projection_probability": model_projection_probability,
+                "probability": model_projection_probability,
+                "probability_source": model_projection_probability.get("source"),
+                "probability_source_path": model_projection_probability.get("source_path"),
+                "probability_is_fallback": model_projection_probability.get("is_fallback"),
+                "legacy_home_win_prob": home_win_prob,
+                "legacy_away_win_prob": away_win_prob,
                 "homePitcherProfile": home_pitcher_profile,
                 "awayPitcherProfile": away_pitcher_profile,
                 "homeProjectedLineupOffenseProfile": home_projected_lineup_offense_profile,
