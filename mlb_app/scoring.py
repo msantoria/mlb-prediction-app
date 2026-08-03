@@ -137,6 +137,21 @@ def _normalize(value: Optional[float], baseline: float) -> float:
     return value - baseline
 
 
+def _normalize_rate(value: Optional[float]) -> Optional[float]:
+    """Normalize rate fields that may be stored as either 0-1 or 0-100.
+
+    Historical warehouse rows contain both representations. Feeding a value
+    such as ``24.7`` into a model whose baseline is ``0.225`` overwhelms the
+    logit and produces a false 0%/100% result.
+    """
+    if value is None:
+        return None
+    number = float(value)
+    if abs(number) > 1.0:
+        number /= 100.0
+    return max(0.0, min(1.0, number))
+
+
 def _logistic(x: float) -> float:
     if x > 20:
         return 1.0
@@ -151,6 +166,8 @@ def _pitcher_advantage(agg) -> float:
     score = 0.0
     for field, weight in PITCHER_WEIGHTS.items():
         val = getattr(agg, field, None)
+        if field in {"k_pct", "bb_pct", "hard_hit_pct"}:
+            val = _normalize_rate(val)
         baseline = PITCHER_BASELINE.get(field, 0.0)
         score += weight * _normalize(val, baseline)
     return score
@@ -162,6 +179,8 @@ def _batter_advantage(agg) -> float:
     score = 0.0
     for field, weight in BATTER_WEIGHTS.items():
         val = getattr(agg, field, None)
+        if field in {"hard_hit_pct", "barrel_pct", "k_pct", "bb_pct"}:
+            val = _normalize_rate(val)
         baseline = BATTER_BASELINE.get(field, 0.0)
         score += weight * _normalize(val, baseline)
     return score
@@ -173,14 +192,16 @@ def _arsenal_vs_batter(arsenal: List, batter_split) -> float:
 
     batter_obp = None
     if batter_split:
-        batter_obp = getattr(batter_split, "on_base_pct", None)
+        batter_obp = _normalize_rate(getattr(batter_split, "on_base_pct", None))
 
     score = 0.0
     for pitch in arsenal:
-        usage = pitch.usage_pct or 0.0
+        usage = _normalize_rate(pitch.usage_pct) or 0.0
         pitch_score = 0.0
         for field, weight in ARSENAL_WEIGHTS.items():
             val = getattr(pitch, field, None)
+            if field in {"whiff_pct", "strikeout_pct"}:
+                val = _normalize_rate(val)
             baseline = ARSENAL_BASELINE.get(field, 0.0)
             pitch_score += weight * _normalize(val, baseline)
         score += usage * pitch_score
