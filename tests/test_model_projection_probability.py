@@ -71,6 +71,23 @@ def test_build_probability_contract_marks_canonical_fallback_explicitly() -> Non
     assert probability["away_win_prob"] == 0.49
 
 
+def test_build_probability_contract_preserves_zero_fallback_value() -> None:
+    probability = build_model_projection_probability(
+        game_pk=123,
+        date="2026-07-09",
+        shared_simulation={"derived_outputs": {}},
+        matchup={
+            "home_win_prob": 0.0,
+            "home_win_probability": 0.55,
+            "away_win_prob": 1.0,
+            "away_win_probability": 0.45,
+        },
+    )
+
+    assert probability["home_win_prob"] == 0.0
+    assert probability["away_win_prob"] == 1.0
+
+
 def test_projection_route_contract_repoints_legacy_aliases_from_model_projection() -> None:
     payload = {
         "date": "2026-07-09",
