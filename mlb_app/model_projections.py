@@ -774,6 +774,10 @@ def _attach_production_shadow_comparison(
             material
             .canonical_shadow_execution_inputs
         ),
+        pitcher_appearance_sequence_audit=(
+            material
+            .pitcher_appearance_sequence_audit
+        ),
     )
 
 

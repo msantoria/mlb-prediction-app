@@ -11,6 +11,9 @@ from mlb_app.simulation.game.probability_diagnostics import (
 from mlb_app.simulation.projections import (
     canonical_player_projection_rows,
 )
+from mlb_app.simulation.projections.pitcher_role_enrichment import (
+    enrich_canonical_pitcher_projection_roles,
+)
 from .input_assembly import (
     CanonicalShadowExecutionInputs,
 )
@@ -37,6 +40,9 @@ def attach_canonical_shadow(
     ] = None,
     canonical_shadow_execution_inputs: Optional[
         CanonicalShadowExecutionInputs
+    ] = None,
+    pitcher_appearance_sequence_audit: Optional[
+        Dict[str, Any]
     ] = None,
 ) -> Dict[str, Any]:
     """Attach shadow diagnostics without mutating legacy data."""
@@ -105,15 +111,13 @@ def attach_canonical_shadow(
 
     if enabled and canonical_payload is not None:
         try:
-            shadow_payload[
-                "player_projections"
-            ] = canonical_player_projection_rows(
-                canonical_payload
+            projection_rows = (
+                canonical_player_projection_rows(
+                    canonical_payload
+                )
             )
         except Exception as exc:
-            shadow_payload[
-                "player_projections"
-            ] = {
+            projection_rows = {
                 "schema_version": (
                     "canonical_player_projection_rows_v1"
                 ),
@@ -127,6 +131,46 @@ def attach_canonical_shadow(
                 "authoritative": False,
                 "authoritative_source": "legacy",
             }
+        else:
+            if (
+                pitcher_appearance_sequence_audit
+                is not None
+            ):
+                try:
+                    projection_rows = (
+                        enrich_canonical_pitcher_projection_roles(
+                            payload=projection_rows,
+                            appearance_audit=(
+                                pitcher_appearance_sequence_audit
+                            ),
+                        )
+                    )
+                except Exception as exc:
+                    projection_rows[
+                        "pitcher_role_enrichment_applied"
+                    ] = False
+                    projection_rows[
+                        "pitcher_role_enrichment"
+                    ] = {
+                        "schema_version": (
+                            "canonical_pitcher_projection_"
+                            "role_enrichment_v1"
+                        ),
+                        "status": "error",
+                        "error_type": (
+                            exc.__class__.__name__
+                        ),
+                        "error_message": str(exc),
+                        "inference_used": False,
+                        "database_writes_performed":
+                            False,
+                        "production_authority_changed":
+                            False,
+                    }
+
+        shadow_payload[
+            "player_projections"
+        ] = projection_rows
 
     if probability_resolution_diagnostics is not None:
         try:

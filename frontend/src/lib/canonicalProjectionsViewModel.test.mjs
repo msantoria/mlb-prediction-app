@@ -60,6 +60,7 @@ function payload() {
               player_id: 'p-1',
               player_type: 'pitcher',
               team_side: 'home',
+              pitcher_role: 'starter',
               metrics: {
                 batters_faced: metric(24),
                 outs_recorded: metric(
@@ -139,6 +140,11 @@ test('derives pitcher innings from canonical outs recorded', () => {
   const pitcher = view.pitchers[0]
 
   assert.equal(pitcher.name, 'p-1')
+  assert.equal(pitcher.pitcherRole, 'starter')
+  assert.equal(
+    pitcher.pitcherRoleLabel,
+    'Starter',
+  )
   assert.equal(pitcher.inningsPitched, 6)
   assert.equal(pitcher.inningsPitchedP10, 4)
   assert.equal(
@@ -151,6 +157,60 @@ test('derives pitcher innings from canonical outs recorded', () => {
   assert.equal(pitcher.dfsFloor, 8)
   assert.equal(pitcher.dfsMedian, 17)
   assert.equal(pitcher.dfsCeiling, 27)
+})
+
+
+test('does not infer missing pitcher role from workload', () => {
+  const source = payload()
+  const pitcher = (
+    source
+      .diagnostics
+      .canonical_shadow
+      .player_projections
+      .players[1]
+  )
+
+  delete pitcher.pitcher_role
+
+  pitcher.metrics.outs_recorded.mean = 24
+  pitcher.metrics.batters_faced.mean = 35
+
+  const view = (
+    buildCanonicalProjectionsViewModel(source)
+  )
+
+  assert.equal(
+    view.pitchers[0].pitcherRole,
+    null,
+  )
+  assert.equal(
+    view.pitchers[0].pitcherRoleLabel,
+    '—',
+  )
+})
+
+
+test('formats canonical bulk follower role', () => {
+  const source = payload()
+  source
+    .diagnostics
+    .canonical_shadow
+    .player_projections
+    .players[1]
+    .pitcher_role = 'bulk_follower'
+
+  const view = (
+    buildCanonicalProjectionsViewModel(source)
+  )
+
+  assert.equal(
+    view.pitchers[0].pitcherRole,
+    'bulk_follower',
+  )
+  assert.equal(
+    view.pitchers[0].pitcherRoleLabel,
+    'Bulk Follower',
+  )
 })
 
 

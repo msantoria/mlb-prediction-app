@@ -91,6 +91,22 @@ function teamSide(row) {
   return value || '—'
 }
 
+function pitcherRoleLabel(value) {
+  const role = String(value || '').trim()
+
+  const labels = {
+    starter: 'Starter',
+    opener: 'Opener',
+    bulk_follower: 'Bulk Follower',
+    reliever: 'Reliever',
+    tandem_primary: 'Tandem Primary',
+    tandem_secondary: 'Tandem Secondary',
+    unexpected_pitcher: 'Unexpected',
+  }
+
+  return labels[role] || '—'
+}
+
 function dfsValue(row, key) {
   const direct = number(row?.[key])
 
@@ -171,6 +187,10 @@ function pitcherRow(row) {
     mlbPlayerId: row?.mlb_player_id ?? null,
     name: playerName(row),
     side: teamSide(row),
+    pitcherRole: row?.pitcher_role ?? null,
+    pitcherRoleLabel: pitcherRoleLabel(
+      row?.pitcher_role,
+    ),
     battersFaced: metricValue(
       row,
       'batters_faced',

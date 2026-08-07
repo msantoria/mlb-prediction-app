@@ -79,6 +79,15 @@ test('projections tab renders requested batter metrics', async () => {
   }
 })
 
+test('projections tab renders canonical pitcher role', async () => {
+  const source = await pageSource()
+
+  assert.match(
+    source,
+    /key: 'pitcherRoleLabel', label: 'Role'/,
+  )
+})
+
 test('projections tab renders pitcher workload distribution', async () => {
   const source = await pageSource()
 

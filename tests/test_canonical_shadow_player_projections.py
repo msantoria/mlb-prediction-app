@@ -247,3 +247,65 @@ def test_disabled_shadow_has_no_player_projections():
     ]
 
     assert "player_projections" not in shadow
+
+def test_shadow_attaches_same_run_pitcher_role_evidence():
+    result = attach_canonical_shadow(
+        legacy_result=legacy_result(),
+        enabled=True,
+        canonical_payload=canonical_payload(),
+        pitcher_appearance_sequence_audit={
+            "records": [
+                {
+                    "trial_index": 0,
+                    "team_side": "home",
+                    "pitcher_id": "200",
+                    "planned_role": "starter",
+                },
+            ],
+        },
+    )
+
+    projections = result["diagnostics"][
+        "canonical_shadow"
+    ]["player_projections"]
+
+    pitcher = next(
+        row
+        for row in projections["players"]
+        if row["player_id"] == "200"
+    )
+
+    assert pitcher["pitcher_role"] == "starter"
+    assert pitcher[
+        "pitcher_role_resolution_status"
+    ] == "resolved"
+    assert projections[
+        "pitcher_role_enrichment_applied"
+    ] is True
+    assert projections["pitcher_role_enrichment"][
+        "inference_used"
+    ] is False
+
+
+def test_pitcher_role_failure_preserves_projection_rows():
+    result = attach_canonical_shadow(
+        legacy_result=legacy_result(),
+        enabled=True,
+        canonical_payload=canonical_payload(),
+        pitcher_appearance_sequence_audit={
+            "records": "invalid",
+        },
+    )
+
+    projections = result["diagnostics"][
+        "canonical_shadow"
+    ]["player_projections"]
+
+    assert len(projections["players"]) == 2
+    assert projections[
+        "pitcher_role_enrichment_applied"
+    ] is False
+    assert projections["pitcher_role_enrichment"][
+        "status"
+    ] == "error"
+    assert projections["authoritative"] is False

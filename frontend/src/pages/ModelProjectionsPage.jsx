@@ -887,6 +887,7 @@ const BATTER_PROJECTION_COLUMNS = [
 const PITCHER_PROJECTION_COLUMNS = [
   { key: 'name', label: 'Pitcher', format: 'text', align: 'left' },
   { key: 'side', label: 'Side', format: 'text', align: 'left' },
+  { key: 'pitcherRoleLabel', label: 'Role', format: 'text', align: 'left' },
   { key: 'battersFaced', label: 'BF' },
   { key: 'inningsPitched', label: 'IP' },
   { key: 'inningsPitchedP10', label: 'IP P10' },
