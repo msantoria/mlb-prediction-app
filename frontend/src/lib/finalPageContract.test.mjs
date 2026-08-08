@@ -5,6 +5,7 @@ import test from 'node:test'
 const app = await readFile(new URL('../App.jsx', import.meta.url), 'utf8')
 const finalPage = await readFile(new URL('../pages/FinalGamePage.jsx', import.meta.url), 'utf8')
 const livePage = await readFile(new URL('../pages/LiveScoreboardPage.jsx', import.meta.url), 'utf8')
+const theme = await readFile(new URL('../styles/theme.css', import.meta.url), 'utf8')
 
 test('Final list and detail routes are registered and Live hands final games off', () => {
   assert.match(app, /path="\/final"/)
@@ -26,3 +27,11 @@ test('primary ribbon uses grouped menus instead of every route as a top-level li
   assert.match(app, /<NavLink to="\/final"/)
 })
 
+test('Final detail keeps wide box scores usable on mobile without clipping the page', () => {
+  assert.match(finalPage, /role="region" aria-label=\{label\} tabIndex="0"/)
+  assert.match(finalPage, /variant="batting"/)
+  assert.match(finalPage, /variant="pitching"/)
+  assert.match(theme, /\.final-detail-page[\s\S]*?min-width: 0/)
+  assert.match(theme, /\.final-table-scroll[\s\S]*?overflow-x: auto/)
+  assert.match(theme, /\.final-table-batting th:nth-child\(2\)[\s\S]*?position: sticky/)
+})
