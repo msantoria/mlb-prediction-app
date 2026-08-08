@@ -136,9 +136,10 @@ function GameCard({ game }) {
   const isLive = normalizedStatus.abstract === 'Live'
   const isFinal = normalizedStatus.abstract === 'Final'
   const showProbables = !isFinal && !isLive
+  const destination = isFinal ? `/final/${game.game_pk}` : `/live/${game.game_pk}`
 
   return (
-    <Link to={`/live/${game.game_pk}`} style={{ textDecoration: 'none' }}>
+    <Link to={destination} style={{ textDecoration: 'none' }}>
       <div style={{
         background: '#0d1117',
         border: `1px solid ${isLive ? '#3fb950' : '#30363d'}`,
@@ -357,9 +358,10 @@ export default function LiveScoreboardPage() {
 
       {finalGames.length > 0 && (
         <section>
-          <h2 style={{ fontSize: '13px', fontWeight: '600', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '12px' }}>
-            Final
-          </h2>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+            <h2 style={{ fontSize: '13px', fontWeight: '600', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>Final</h2>
+            <Link to={`/final?date=${date}`} style={{ color: '#58a6ff', fontSize: 12, textDecoration: 'none', fontWeight: 700 }}>Completed-game review →</Link>
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '12px' }}>
             {finalGames.map(g => <GameCard key={g.game_pk} game={g} />)}
           </div>
