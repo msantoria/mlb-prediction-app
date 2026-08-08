@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "node --test src/lib/landing/selectBetOfTheDay.test.mjs src/lib/modelTrackerPnl.test.mjs src/lib/dashboardReportUtils.test.mjs src/lib/dashboardQueryState.test.mjs src/lib/dashboardFilterState.test.mjs src/lib/dashboardReportBuilderState.test.mjs src/lib/dashboardReportFolders.test.mjs src/lib/dashboardRenameState.test.mjs src/lib/dashboardSession.test.mjs src/lib/dashboardQueryStudioState.test.mjs src/lib/dashboardThemeState.test.mjs src/lib/dashboardWorkspaceRouteContract.test.mjs src/lib/adminControlCenterState.test.mjs src/lib/canonicalDiagnosticsViewModel.test.mjs src/lib/canonicalProjectionsViewModel.test.mjs src/lib/canonicalProjectionsUiContract.test.mjs",
+    "test": "node --test src/lib/landing/selectBetOfTheDay.test.mjs src/lib/modelTrackerPnl.test.mjs src/lib/dashboardReportUtils.test.mjs src/lib/dashboardQueryState.test.mjs src/lib/dashboardFilterState.test.mjs src/lib/dashboardReportBuilderState.test.mjs src/lib/dashboardReportFolders.test.mjs src/lib/dashboardRenameState.test.mjs src/lib/dashboardSession.test.mjs src/lib/dashboardQueryStudioState.test.mjs src/lib/dashboardThemeState.test.mjs src/lib/dashboardWorkspaceRouteContract.test.mjs src/lib/adminControlCenterState.test.mjs src/lib/canonicalDiagnosticsViewModel.test.mjs src/lib/canonicalProjectionsViewModel.test.mjs src/lib/canonicalProjectionsUiContract.test.mjs src/lib/finalPageContract.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

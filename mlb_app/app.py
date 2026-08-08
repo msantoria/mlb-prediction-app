@@ -24,6 +24,8 @@ Endpoints:
     GET  /live/game/{pk}/boxscore        In-game pitcher lines + batter lines (AB/H/R/RBI/K)
     GET  /live/game/{pk}/plays           Recent play-by-play with hit data (exit velo, distance)
     GET  /live/game/{pk}/linescore       Inning-by-inning runs/hits/errors + game decisions
+    GET  /final                          Durable completed-game snapshots for one MLB date
+    GET  /final/game/{pk}                Immutable full box score, summary, and scoring plays
 """
 
 from __future__ import annotations
@@ -38,7 +40,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests as _req
 
 try:
-    from fastapi import FastAPI, HTTPException, Query
+    from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.staticfiles import StaticFiles
     from pydantic import BaseModel
@@ -46,6 +48,7 @@ try:
     _FASTAPI = True
 except ImportError:
     FastAPI = None
+    BackgroundTasks = None
     HTTPException = Exception
     CORSMiddleware = None
     StaticFiles = None
@@ -122,6 +125,16 @@ from .pitcher_profile_store import (
 from .sportsbook_routes import router as sportsbook_router
 from .model_tracker_routes import router as model_tracker_router
 from .admin_routes import router as admin_router
+from .final_game_snapshots import (
+    FinalGameSnapshot,
+    build_game_boxscore_payload,
+    get_final_snapshot,
+    is_final_feed,
+    is_final_status,
+    list_final_snapshots,
+    persist_final_snapshot,
+    serialize_snapshot,
+)
 
 MLB_STATS_BASE = "https://statsapi.mlb.com/api/v1"
 MLB_LIVE_FEED_BASE = "https://statsapi.mlb.com/api/v1.1/game"
@@ -1087,6 +1100,74 @@ def _fetch_live_feed(game_pk: int) -> Optional[Dict[str, Any]]:
             continue
 
     return None
+
+
+def _snapshot_final_game(game_pk: int) -> Dict[str, Any]:
+    """Persist one final feed without allowing snapshot failures to affect Live."""
+
+    Session = _get_session()
+    with Session() as session:
+        existing = get_final_snapshot(session, game_pk)
+        if existing is not None:
+            return {"game_pk": game_pk, "status": "existing"}
+
+    feed = _fetch_live_feed(game_pk)
+    if feed is None:
+        return {"game_pk": game_pk, "status": "unavailable"}
+    if not is_final_feed(feed):
+        return {"game_pk": game_pk, "status": "not_final"}
+
+    try:
+        with Session() as session:
+            snapshot = persist_final_snapshot(session, feed)
+            return {
+                "game_pk": game_pk,
+                "status": "snapshotted",
+                "official_date": snapshot.official_date.isoformat(),
+            }
+    except Exception as exc:
+        # Live and Final reads remain available even if persistence is
+        # temporarily unavailable. The next request can retry safely.
+        return {"game_pk": game_pk, "status": "error", "error": type(exc).__name__}
+
+
+def _hydrate_final_snapshots_for_date(target_date: str) -> Dict[str, Any]:
+    """Find completed games for a date and fill only missing snapshots."""
+
+    try:
+        schedule = _request_json(
+            f"{MLB_STATS_BASE}/schedule",
+            params={"sportId": 1, "date": target_date},
+            timeout=15,
+        )
+    except Exception as exc:
+        return {
+            "attempted": 0,
+            "snapshotted": 0,
+            "errors": [{"status": "schedule_error", "error": type(exc).__name__}],
+        }
+
+    final_game_pks = []
+    for date_entry in schedule.get("dates", []):
+        for game in date_entry.get("games", []):
+            game_pk = game.get("gamePk")
+            if game_pk and is_final_status(game.get("status")):
+                final_game_pks.append(int(game_pk))
+
+    Session = _get_session()
+    with Session() as session:
+        existing = {
+            value for (value,) in session.query(FinalGameSnapshot.game_pk)
+            .filter(FinalGameSnapshot.game_pk.in_(final_game_pks or [-1]))
+            .all()
+        }
+
+    results = [_snapshot_final_game(game_pk) for game_pk in final_game_pks if game_pk not in existing]
+    return {
+        "attempted": len(results),
+        "snapshotted": sum(result.get("status") == "snapshotted" for result in results),
+        "errors": [result for result in results if result.get("status") == "error"],
+    }
 
 
 def _person_payload(person: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -2660,13 +2741,16 @@ def create_app():
         }
 
     @app.get("/live/scoreboard")
-    def live_scoreboard(date: Optional[str] = None) -> Dict[str, Any]:
+    def live_scoreboard(background_tasks: BackgroundTasks, date: Optional[str] = None) -> Dict[str, Any]:
         """Today's games: scores, status, inning, weather, probable pitchers, decisions."""
         target_date = date or datetime.date.today().isoformat()
         cache_key = f"scoreboard:{target_date}"
         cached = _live_cache_get(cache_key)
 
         if cached is not None:
+            for game in cached.get("games", []):
+                if game.get("status_abstract") == "Final" and game.get("game_pk"):
+                    background_tasks.add_task(_snapshot_final_game, int(game["game_pk"]))
             return cached
 
         try:
@@ -2762,7 +2846,64 @@ def create_app():
         is_live = any(game["status_abstract"] == "Live" for game in games)
         _live_cache_set(cache_key, result, ttl=8 if is_live else 60)
 
+        # Finalization is intentionally outside the response path. The Live
+        # scoreboard remains fast while each terminal game becomes a durable,
+        # immutable Final snapshot in the background.
+        for game in games:
+            if game.get("status_abstract") == "Final" and game.get("game_pk"):
+                background_tasks.add_task(_snapshot_final_game, int(game["game_pk"]))
+
         return result
+
+    @app.get("/final")
+    def final_scoreboard(
+        date: Optional[str] = None,
+        hydrate: bool = Query(True),
+    ) -> Dict[str, Any]:
+        """Completed-game snapshots for one MLB date; defaults to yesterday."""
+
+        target_date = date or (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        try:
+            parsed_date = datetime.date.fromisoformat(target_date)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
+
+        hydration = {"attempted": 0, "snapshotted": 0, "errors": []}
+        if hydrate:
+            hydration = _hydrate_final_snapshots_for_date(target_date)
+
+        Session = _get_session()
+        with Session() as session:
+            snapshots = list_final_snapshots(session, parsed_date)
+            games = [serialize_snapshot(snapshot, include_payload=False) for snapshot in snapshots]
+
+        return {
+            "date": target_date,
+            "game_count": len(games),
+            "games": games,
+            "snapshot_status": hydration,
+            "source": "final_game_snapshots",
+        }
+
+    @app.get("/final/game/{game_pk}")
+    def final_game(game_pk: int) -> Dict[str, Any]:
+        """One immutable, complete final-game snapshot."""
+
+        Session = _get_session()
+        with Session() as session:
+            snapshot = get_final_snapshot(session, game_pk)
+            if snapshot is not None:
+                return serialize_snapshot(snapshot)
+
+        result = _snapshot_final_game(game_pk)
+        if result.get("status") not in {"snapshotted", "existing"}:
+            raise HTTPException(status_code=404, detail="Final snapshot is not available for this game")
+
+        with Session() as session:
+            snapshot = get_final_snapshot(session, game_pk)
+            if snapshot is None:
+                raise HTTPException(status_code=404, detail="Final snapshot is not available for this game")
+            return serialize_snapshot(snapshot)
 
     @app.get("/live/game/{game_pk}")
     def live_game_state(game_pk: int) -> Dict[str, Any]:
@@ -2841,77 +2982,11 @@ def create_app():
 
     @app.get("/live/game/{game_pk}/boxscore")
     def live_game_boxscore(game_pk: int) -> Dict[str, Any]:
-        """In-game pitcher lines and batter lines."""
+        """Complete Away/Home batting and pitching lines for every participant."""
         feed = _fetch_live_feed(game_pk)
         if feed is None:
             raise HTTPException(status_code=502, detail="Could not fetch live game feed")
-
-        game_data = feed.get("gameData", {})
-        live_data = feed.get("liveData", {})
-
-        teams = game_data.get("teams", {})
-        boxscore = live_data.get("boxscore", {})
-        boxscore_teams = boxscore.get("teams", {})
-
-        def parse_team(side: str) -> Dict[str, Any]:
-            team = teams.get(side) or {}
-            team_box = boxscore_teams.get(side) or {}
-            players = team_box.get("players") or {}
-
-            batters = []
-            pitchers = []
-
-            for player_key, player_row in players.items():
-                person = player_row.get("person") or {}
-                stats = player_row.get("stats") or {}
-
-                batting = stats.get("batting") or {}
-                pitching = stats.get("pitching") or {}
-
-                if batting:
-                    batters.append(
-                        {
-                            "id": person.get("id"),
-                            "name": person.get("fullName"),
-                            "ab": batting.get("atBats"),
-                            "h": batting.get("hits"),
-                            "r": batting.get("runs"),
-                            "rbi": batting.get("rbi"),
-                            "bb": batting.get("baseOnBalls"),
-                            "k": batting.get("strikeOuts"),
-                            "hr": batting.get("homeRuns"),
-                        }
-                    )
-
-                if pitching:
-                    pitchers.append(
-                        {
-                            "id": person.get("id"),
-                            "name": person.get("fullName"),
-                            "ip": pitching.get("inningsPitched"),
-                            "h": pitching.get("hits"),
-                            "r": pitching.get("runs"),
-                            "er": pitching.get("earnedRuns"),
-                            "bb": pitching.get("baseOnBalls"),
-                            "k": pitching.get("strikeOuts"),
-                            "hr": pitching.get("homeRuns"),
-                            "pitches": pitching.get("pitchesThrown"),
-                            "strikes": pitching.get("strikes"),
-                        }
-                    )
-
-            return {
-                "team_id": team.get("id"),
-                "name": team.get("name"),
-                "batters": batters,
-                "pitchers": pitchers,
-            }
-
-        return {
-            "game_pk": game_pk,
-            "away": parse_team("away"),
-            "home": parse_team("home"),
-        }
+        return build_game_boxscore_payload(feed)
 
     @app.get("/live/game/{game_pk}/plays")
     def live_game_plays(game_pk: int, limit: int = Query(25, ge=1, le=100)) -> Dict[str, Any]:

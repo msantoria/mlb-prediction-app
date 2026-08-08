@@ -1,5 +1,5 @@
 import React from 'react'
-import { BrowserRouter, Routes, Route, NavLink, useParams } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, NavLink, useLocation, useParams } from 'react-router-dom'
 import './styles/bet105-mobile.css'
 import HomePage from './pages/HomePage'
 import LandingV2Page from './pages/LandingV2Page'
@@ -13,6 +13,8 @@ import YesterdayTodayPage from './pages/YesterdayTodayPage'
 import AIPage from './pages/AIPage'
 import LiveScoreboardPage from './pages/LiveScoreboardPage'
 import LiveGamePageRestored from './pages/LiveGamePageRestored'
+import FinalScoreboardPage from './pages/FinalScoreboardPage'
+import FinalGamePage from './pages/FinalGamePage'
 import DailyOddsPage from './pages/DailyOddsPage'
 import Bet105SportsbookPage from './pages/Bet105SportsbookPage'
 import ModelProjectionsPage from './pages/ModelProjectionsPage'
@@ -47,6 +49,57 @@ function MatchupRoute() {
 
 const navLinkClass = ({ isActive }) => `app-nav-link${isActive ? ' active' : ''}`
 
+const NAV_GROUPS = [
+  {
+    label: 'Research',
+    items: [
+      { to: '/models/projections', label: 'Model Projections' },
+      { to: '/model-tracker', label: 'Model Tracker' },
+      { to: '/ai-data-assistant', label: 'AI Data Assistant' },
+    ],
+  },
+  {
+    label: 'Markets',
+    items: [
+      { to: '/daily-odds', label: 'Daily Odds' },
+      { to: '/sportsbook/bet105', label: 'Bet105 Sportsbook' },
+    ],
+  },
+  {
+    label: 'Reference',
+    items: [
+      { to: '/pitcher', label: 'Pitchers' },
+      { to: '/batter', label: 'Batters' },
+      { to: '/team', label: 'Teams' },
+      { to: '/standings', label: 'Standings' },
+      { to: '/calendar', label: 'Calendar' },
+      { to: '/news', label: 'News' },
+    ],
+  },
+]
+
+function NavGroup({ label, items }) {
+  const location = useLocation()
+  const active = items.some(item => location.pathname === item.to || location.pathname.startsWith(`${item.to}/`))
+  return (
+    <details className={`app-nav-group${active ? ' active' : ''}`}>
+      <summary>{label}<span aria-hidden="true">⌄</span></summary>
+      <div className="app-nav-menu">
+        {items.map(item => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            className={({ isActive }) => `app-nav-menu-link${isActive ? ' active' : ''}`}
+            onClick={event => event.currentTarget.closest('details')?.removeAttribute('open')}
+          >
+            {item.label}
+          </NavLink>
+        ))}
+      </div>
+    </details>
+  )
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -57,19 +110,10 @@ export default function App() {
             <span>MLB Prediction Engine</span>
           </NavLink>
           <NavLink to="/" end className={navLinkClass}>Matchups</NavLink>
-          <NavLink to="/daily-odds" className={navLinkClass}>Daily Odds</NavLink>
-          <NavLink to="/sportsbook/bet105" className={navLinkClass}>Bet105 Sportsbook</NavLink>
-          <NavLink to="/news" className={navLinkClass}>News</NavLink>
-          <NavLink to="/models/projections" className={navLinkClass}>Model Projections</NavLink>
-          <NavLink to="/my-dashboard" className={navLinkClass}>My Dashboard</NavLink>
-          <NavLink to="/standings" className={navLinkClass}>Standings</NavLink>
-          <NavLink to="/pitcher" className={navLinkClass}>Pitcher</NavLink>
-          <NavLink to="/batter" className={navLinkClass}>Batter</NavLink>
-          <NavLink to="/team" className={navLinkClass}>Team</NavLink>
-          <NavLink to="/calendar" className={navLinkClass}>Calendar</NavLink>
-          <NavLink to="/ai-data-assistant" className={navLinkClass}>AI Data Assistant</NavLink>
           <NavLink to="/live" className={navLinkClass}>Live</NavLink>
-          <NavLink to="/model-tracker" className={navLinkClass}>Model Tracker</NavLink>
+          <NavLink to="/final" className={navLinkClass}>Final</NavLink>
+          <NavLink to="/my-dashboard" className={navLinkClass}>My Dashboard</NavLink>
+          {NAV_GROUPS.map(group => <NavGroup key={group.label} {...group} />)}
         </nav>
         <main className="app-main">
           <Routes>
@@ -98,6 +142,8 @@ export default function App() {
             <Route path="/ai-data-assistant" element={<AIPage />} />
             <Route path="/live" element={<LiveScoreboardPage />} />
             <Route path="/live/:game_pk" element={<LiveGamePageRestored />} />
+            <Route path="/final" element={<FinalScoreboardPage />} />
+            <Route path="/final/:game_pk" element={<FinalGamePage />} />
           </Routes>
         </main>
       </div>
