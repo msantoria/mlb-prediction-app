@@ -6,10 +6,10 @@ function value(input) {
   return input === undefined || input === null || input === '' ? '—' : String(input)
 }
 
-function DataTable({ headers, rows, renderRow }) {
+function DataTable({ headers, rows, renderRow, label, variant = 'standard' }) {
   return (
-    <div className="final-table-scroll">
-      <table className="final-table">
+    <div className="final-table-scroll" role="region" aria-label={label} tabIndex="0">
+      <table className={`final-table final-table-${variant}`}>
         <thead><tr>{headers.map(header => <th key={header}>{header}</th>)}</tr></thead>
         <tbody>
           {rows.map((row, index) => (
@@ -34,6 +34,8 @@ function Linescore({ data }) {
     <section className="final-panel">
       <div className="final-section-title">Linescore</div>
       <DataTable
+        label="Game linescore"
+        variant="linescore"
         headers={['Team', ...innings.map(inning => inning.num), 'R', 'H', 'E', 'LOB']}
         rows={rows}
         renderRow={row => [
@@ -65,6 +67,8 @@ function TeamBoxScore({ team, label }) {
       </header>
       <div className="final-section-title">Batting</div>
       <DataTable
+        label={`${team?.name || label} batting box score`}
+        variant="batting"
         headers={['#', 'Batter', 'POS', 'AB', 'R', 'H', 'RBI', 'HR', 'BB', 'K', 'AVG', 'OPS']}
         rows={batters}
         renderRow={batter => [
@@ -76,6 +80,8 @@ function TeamBoxScore({ team, label }) {
       />
       <div className="final-section-title final-pitching-title">Pitching</div>
       <DataTable
+        label={`${team?.name || label} pitching box score`}
+        variant="pitching"
         headers={['Pitcher', 'IP', 'H', 'R', 'ER', 'BB', 'K', 'HR', 'PC-ST', 'ERA']}
         rows={pitchers}
         renderRow={pitcher => [
@@ -152,4 +158,3 @@ export default function FinalGamePage() {
     </div>
   )
 }
-

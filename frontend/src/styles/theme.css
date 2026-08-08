@@ -381,6 +381,7 @@ input:focus, select:focus, textarea:focus {
 .final-detail-page {
   display: grid;
   gap: 18px;
+  min-width: 0;
 }
 
 .final-back-link {
@@ -395,6 +396,7 @@ input:focus, select:focus, textarea:focus {
 .final-panel,
 .final-team-box,
 .final-summary-panel {
+  min-width: 0;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   background: linear-gradient(180deg, rgba(22, 31, 48, 0.96), rgba(13, 19, 32, 0.96));
@@ -513,13 +515,21 @@ input:focus, select:focus, textarea:focus {
 }
 
 .final-table-scroll {
+  width: 100%;
   max-width: 100%;
+  min-width: 0;
   overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  -webkit-overflow-scrolling: touch;
   margin-top: 10px;
+  border-radius: var(--radius-sm);
+  scrollbar-width: thin;
 }
 
 .final-table {
+  display: table;
   width: 100%;
+  max-width: none;
   min-width: 760px;
   border-collapse: collapse;
   font-size: 12px;
@@ -921,7 +931,8 @@ input:focus, select:focus, textarea:focus {
 
   .final-score-hero {
     grid-template-columns: 1fr 1fr;
-    padding: 20px;
+    gap: 14px 10px;
+    padding: 16px;
   }
 
   .final-score-state {
@@ -929,12 +940,21 @@ input:focus, select:focus, textarea:focus {
     grid-row: 1;
   }
 
+  .final-score-state small {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
   .final-score-team {
     grid-row: 2;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .final-score-team h1 {
     font-size: 16px;
+    line-height: 1.15;
+    overflow-wrap: anywhere;
   }
 
   .final-score-team strong {
@@ -944,6 +964,68 @@ input:focus, select:focus, textarea:focus {
   .final-team-heading,
   .final-scoring-list > div {
     align-items: flex-start;
+  }
+
+  .final-summary-panel,
+  .final-panel,
+  .final-team-box {
+    padding: 16px;
+  }
+
+  .final-team-heading {
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+  }
+
+  .final-table {
+    font-size: 11px;
+  }
+
+  .final-table th,
+  .final-table td {
+    padding: 8px 7px;
+  }
+
+  .final-table-linescore {
+    min-width: 620px;
+  }
+
+  .final-table-pitching {
+    min-width: 650px;
+  }
+
+  .final-table-batting {
+    min-width: 720px;
+  }
+
+  .final-table-batting th:nth-child(2),
+  .final-table-batting td:nth-child(2),
+  .final-table-pitching th:first-child,
+  .final-table-pitching td:first-child,
+  .final-table-linescore th:first-child,
+  .final-table-linescore td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: #0f1726;
+    box-shadow: 1px 0 0 rgba(148, 163, 184, 0.16);
+  }
+
+  .final-table-batting th:first-child,
+  .final-table-batting td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    width: 30px;
+    min-width: 30px;
+    background: #0f1726;
+  }
+
+  .final-table-batting th:nth-child(2),
+  .final-table-batting td:nth-child(2) {
+    left: 30px;
   }
 
   .final-scoring-list > div {
