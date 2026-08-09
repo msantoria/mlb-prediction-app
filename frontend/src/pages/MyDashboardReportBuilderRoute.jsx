@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import MyDashboardReportBuilderPage from './MyDashboardReportBuilderPage'
-import { normalizeVisibleMyDashboardObject } from '../lib/myDashboardVisibleReportTypes.mjs'
 
 const BUILDER_KEY = 'mlbgpt-report-builder:v3'
 const LEGACY_LABELS = new Set(['Teams', 'Totals', 'Overall Players'])
@@ -37,17 +36,6 @@ function readBuilderState() {
   } catch {
     return {}
   }
-}
-
-function normalizePersistedLegacySelection() {
-  if (typeof window === 'undefined') return
-  try {
-    const persisted = readBuilderState()
-    const activeObject = normalizeVisibleMyDashboardObject(persisted.activeObject)
-    if (activeObject !== persisted.activeObject) {
-      window.localStorage.setItem(BUILDER_KEY, JSON.stringify({ ...persisted, activeObject }))
-    }
-  } catch {}
 }
 
 function filterFacts(state) {
@@ -99,8 +87,15 @@ function ReportFilterSummary({ state }) {
   </div>
 }
 
+function removeLegacyPopulationCopy(root) {
+  root.querySelectorAll('span, div').forEach(element => {
+    if (element.children.length === 0 && element.textContent?.trim() === 'Legacy report population') {
+      element.textContent = 'Report population'
+    }
+  })
+}
+
 export default function MyDashboardReportBuilderRoute() {
-  normalizePersistedLegacySelection()
   const [reportHeader, setReportHeader] = useState(null)
   const [reportState, setReportState] = useState(() => readBuilderState())
 
@@ -110,6 +105,9 @@ export default function MyDashboardReportBuilderRoute() {
         const label = button.querySelector('strong')?.textContent?.trim()
         if (LEGACY_LABELS.has(label)) button.style.display = 'none'
       })
+
+      const route = document.querySelector('.my-dashboard-route')
+      if (route) removeLegacyPopulationCopy(route)
 
       const header = document.querySelector('.my-dashboard-route [role="dialog"][aria-modal="true"] header')
       setReportHeader(current => current === header ? current : header)
