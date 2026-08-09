@@ -418,7 +418,64 @@ def test_comparator_attaches_pitcher_projection_readiness():
     assert projections["authoritative"] is False
     assert projections[
         "authoritative_source"
-    ] == "legacy"
+    ] == "mixed"
+    assert projections[
+        "pitcher_projections_authoritative"
+    ] is True
+    assert projections[
+        "batter_projections_authoritative"
+    ] is False
+
+    authority = shadow[
+        "pitcher_projection_authority"
+    ]
+
+    assert authority["status"] == "activated"
+    assert authority[
+        "production_activation"
+    ] is True
+    assert authority[
+        "authority_scope"
+    ] == "pitcher_rows_only"
+    assert authority[
+        "production_authority_changed"
+    ] is True
+
+    pitcher_rows = [
+        row
+        for row in projections["players"]
+        if row["player_type"] == "pitcher"
+    ]
+    batter_rows = [
+        row
+        for row in projections["players"]
+        if row["player_type"] == "batter"
+    ]
+
+    assert pitcher_rows
+    assert all(
+        row["authoritative"] is True
+        for row in pitcher_rows
+    )
+    assert all(
+        row["authoritative_source"]
+        == (
+            "canonical_event_driven_"
+            "pitcher_projection"
+        )
+        for row in pitcher_rows
+    )
+
+    assert batter_rows
+    assert all(
+        row["authoritative"] is False
+        for row in batter_rows
+    )
+    assert all(
+        row["authoritative_source"]
+        == "legacy"
+        for row in batter_rows
+    )
     assert result[
         "away_win_probability"
     ] == legacy["away_win_probability"]
@@ -434,3 +491,122 @@ def test_comparator_attaches_pitcher_projection_readiness():
         readiness["production_authority_changed"]
         is False
     )
+
+def test_pitcher_projection_authority_rolls_back_with_flag(
+    monkeypatch,
+):
+    monkeypatch.setenv(
+        "MLB_CANONICAL_PITCHER_PROJECTIONS_ENABLED",
+        "false",
+    )
+
+    legacy = legacy_payload()
+
+    result = (
+        model_projections
+        ._attach_production_shadow_comparison(
+            legacy_result=legacy,
+            production_execution=executed_shadow(
+                simulation_count=100,
+            ),
+        )
+    )
+
+    shadow = result["diagnostics"][
+        "canonical_shadow"
+    ]
+    readiness = shadow[
+        "pitcher_projection_activation_readiness"
+    ]
+    authority = shadow[
+        "pitcher_projection_authority"
+    ]
+    projections = shadow["player_projections"]
+
+    # The evidence remains ready, but the immediate
+    # environment rollback retains legacy authority.
+    assert readiness["status"] == "ready"
+    assert readiness["decision"][
+        "production_activation_allowed"
+    ] is True
+
+    assert authority["status"] == "fallback"
+    assert authority[
+        "activation_requested"
+    ] is False
+    assert authority[
+        "production_activation"
+    ] is False
+    assert authority["fallback_reason"] == (
+        "rollback_flag_disabled"
+    )
+    assert authority[
+        "production_authority_changed"
+    ] is False
+
+    assert projections[
+        "pitcher_projections_authoritative"
+    ] is False
+    assert projections[
+        "authoritative_source"
+    ] == "legacy"
+
+    pitcher_rows = [
+        row
+        for row in projections["players"]
+        if row["player_type"] == "pitcher"
+    ]
+
+    assert pitcher_rows
+    assert all(
+        row["authoritative"] is False
+        for row in pitcher_rows
+    )
+    assert all(
+        row["authoritative_source"]
+        == "legacy"
+        for row in pitcher_rows
+    )
+
+    # Game-level outputs are not part of 6SZ.
+    assert shadow["authoritative_source"] == "legacy"
+    assert result[
+        "away_win_probability"
+    ] == legacy["away_win_probability"]
+    assert result[
+        "home_win_probability"
+    ] == legacy["home_win_probability"]
+
+
+def test_low_evidence_run_fails_closed_to_legacy():
+    result = (
+        model_projections
+        ._attach_production_shadow_comparison(
+            legacy_result=legacy_payload(),
+            production_execution=executed_shadow(
+                simulation_count=2,
+            ),
+        )
+    )
+
+    shadow = result["diagnostics"][
+        "canonical_shadow"
+    ]
+    readiness = shadow[
+        "pitcher_projection_activation_readiness"
+    ]
+    authority = shadow[
+        "pitcher_projection_authority"
+    ]
+
+    if readiness["status"] != "ready":
+        assert authority["status"] == "fallback"
+        assert authority[
+            "production_activation"
+        ] is False
+        assert authority["fallback_reason"] == (
+            "pitcher_projection_readiness_blocked"
+        )
+        assert authority[
+            "authoritative_source"
+        ] == "legacy"
