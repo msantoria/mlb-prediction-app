@@ -19,7 +19,7 @@ import DailyOddsPage from './pages/DailyOddsPage'
 import Bet105SportsbookPage from './pages/Bet105SportsbookPage'
 import ModelProjectionsPage from './pages/ModelProjectionsPage'
 import NewsPageClean from './pages/NewsPageClean'
-import MyDashboardReportBuilderPage from './pages/MyDashboardReportBuilderPage'
+import MyDashboardReportBuilderRoute from './pages/MyDashboardReportBuilderRoute'
 import AdminControlCenterPage from './pages/AdminControlCenterPage'
 import ModelTrackerPage from './pages/ModelTrackerPage'
 
@@ -124,7 +124,7 @@ export default function App() {
             <Route path="/news" element={<NewsPageClean />} />
             <Route path="/models/projections" element={<ModelProjectionsPage />} />
             <Route path="/model-tracker" element={<ModelTrackerPage />} />
-            <Route path="/my-dashboard" element={<MyDashboardReportBuilderPage />} />
+            <Route path="/my-dashboard" element={<MyDashboardReportBuilderRoute />} />
             <Route path="/admin" element={<AdminControlCenterPage />} />
             <Route path="/matchup/:game_pk" element={<MatchupRoute />} />
             <Route path="/matchup/:game_pk/competitive" element={<CompetitiveAnalysisPage />} />
