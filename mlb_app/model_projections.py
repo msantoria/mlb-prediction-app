@@ -5,6 +5,9 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
+from mlb_app.simulation.projections.pitcher_projection_authority import (
+    apply_canonical_pitcher_projection_authority,
+)
 from mlb_app.simulation.shadow.canonical_pitcher_projection_activation_readiness import (
     audit_canonical_pitcher_projection_activation_readiness,
 )
@@ -858,6 +861,57 @@ def _attach_production_shadow_comparison(
     shadow[
         "pitcher_projection_activation_readiness"
     ] = readiness
+
+    try:
+        activated_projection_rows = (
+            apply_canonical_pitcher_projection_authority(
+                projection_rows=shadow[
+                    "player_projections"
+                ],
+                readiness=readiness,
+            )
+        )
+    except Exception as exc:
+        authority = {
+            "schema_version": (
+                "canonical_pitcher_projection_"
+                "authority_v1"
+            ),
+            "status": "error",
+            "activation_requested": True,
+            "readiness_allows_activation":
+                False,
+            "production_activation": False,
+            "fallback_used": True,
+            "fallback_reason": (
+                "authority_application_error"
+            ),
+            "error_type": (
+                exc.__class__.__name__
+            ),
+            "error_message": str(exc),
+            "authority_scope": (
+                "pitcher_rows_only"
+            ),
+            "database_writes_performed":
+                False,
+            "production_authority_changed":
+                False,
+            "authoritative_source": "legacy",
+        }
+    else:
+        shadow["player_projections"] = (
+            activated_projection_rows
+        )
+        authority = (
+            activated_projection_rows[
+                "pitcher_projection_authority"
+            ]
+        )
+
+    shadow[
+        "pitcher_projection_authority"
+    ] = authority
 
     return result
 

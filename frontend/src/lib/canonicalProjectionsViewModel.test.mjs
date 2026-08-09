@@ -32,7 +32,17 @@ function payload() {
           simulation_count: 25,
           identity_enrichment_applied: false,
           authoritative: false,
-          authoritative_source: 'legacy',
+          authoritative_source: 'mixed',
+          authority_scope: 'mixed',
+          pitcher_projections_authoritative: true,
+          batter_projections_authoritative: false,
+          pitcher_projection_authority: {
+            status: 'activated',
+            authoritative_source: (
+              'canonical_event_driven_'
+              + 'pitcher_projection'
+            ),
+          },
           players: [
             {
               player_id: 'b-1',
@@ -61,6 +71,11 @@ function payload() {
               player_type: 'pitcher',
               team_side: 'home',
               pitcher_role: 'starter',
+              authoritative: true,
+              authoritative_source: (
+                'canonical_event_driven_'
+                + 'pitcher_projection'
+              ),
               metrics: {
                 batters_faced: metric(24),
                 outs_recorded: metric(
@@ -108,7 +123,20 @@ test('builds same-run projection metadata', () => {
   assert.equal(view.authoritative, false)
   assert.equal(
     view.authoritativeSource,
-    'legacy',
+    'mixed',
+  )
+  assert.equal(view.authorityScope, 'mixed')
+  assert.equal(
+    view.pitcherProjectionsAuthoritative,
+    true,
+  )
+  assert.equal(
+    view.batterProjectionsAuthoritative,
+    false,
+  )
+  assert.equal(
+    view.pitcherAuthoritativeSource,
+    'canonical_event_driven_pitcher_projection',
   )
 })
 
@@ -153,6 +181,11 @@ test('derives pitcher innings from canonical outs recorded', () => {
   )
   assert.equal(pitcher.inningsPitchedP90, 7)
   assert.equal(pitcher.battersFaced, 24)
+  assert.equal(pitcher.authoritative, true)
+  assert.equal(
+    pitcher.authoritativeSource,
+    'canonical_event_driven_pitcher_projection',
+  )
   assert.equal(pitcher.dfsMean, 18)
   assert.equal(pitcher.dfsFloor, 8)
   assert.equal(pitcher.dfsMedian, 17)

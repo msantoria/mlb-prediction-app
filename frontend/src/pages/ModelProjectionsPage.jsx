@@ -1016,7 +1016,10 @@ function ProjectionsTab({ game }) {
 
         <Tag
           tone={
-            view.authoritative
+            (
+              view.authoritative ||
+              view.pitcherProjectionsAuthoritative
+            )
               ? 'success'
               : 'diagnostic'
           }
@@ -1024,7 +1027,11 @@ function ProjectionsTab({ game }) {
           {
             view.authoritative
               ? 'Authoritative production'
-              : 'Non-authoritative shadow'
+              : (
+                  view.pitcherProjectionsAuthoritative
+                    ? 'Pitchers authoritative'
+                    : 'Non-authoritative shadow'
+                )
           }
         </Tag>
       </div>
@@ -1062,6 +1069,29 @@ function ProjectionsTab({ game }) {
           <StatRow
             k="Authoritative Source"
             v={view.authoritativeSource}
+            format="text"
+          />
+          <StatRow
+            k="Authority Scope"
+            v={view.authorityScope}
+            format="text"
+          />
+          <StatRow
+            k="Pitcher Authority"
+            v={
+              view.pitcherProjectionsAuthoritative
+                ? view.pitcherAuthoritativeSource
+                : 'legacy'
+            }
+            format="text"
+          />
+          <StatRow
+            k="Batter Authority"
+            v={
+              view.batterProjectionsAuthoritative
+                ? view.authoritativeSource
+                : 'legacy'
+            }
             format="text"
           />
           <StatRow

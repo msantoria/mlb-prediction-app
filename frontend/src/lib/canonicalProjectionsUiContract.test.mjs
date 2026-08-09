@@ -54,7 +54,27 @@ test('projections tab describes same-run coherence', async () => {
   )
   assert.match(
     source,
+    /Pitchers authoritative/,
+  )
+  assert.match(
+    source,
     /Non-authoritative shadow/,
+  )
+  assert.match(
+    source,
+    /view\.pitcherProjectionsAuthoritative/,
+  )
+})
+
+test('projections tab describes mixed row authority', async () => {
+  const source = await pageSource()
+
+  assert.match(source, /Authority Scope/)
+  assert.match(source, /Pitcher Authority/)
+  assert.match(source, /Batter Authority/)
+  assert.match(
+    source,
+    /view\.pitcherAuthoritativeSource/,
   )
 })
 

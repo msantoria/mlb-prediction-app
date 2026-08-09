@@ -191,6 +191,10 @@ function pitcherRow(row) {
     pitcherRoleLabel: pitcherRoleLabel(
       row?.pitcher_role,
     ),
+    authoritative: row?.authoritative === true,
+    authoritativeSource: (
+      row?.authoritative_source || 'legacy'
+    ),
     battersFaced: metricValue(
       row,
       'batters_faced',
@@ -473,6 +477,23 @@ export function buildCanonicalProjectionsViewModel(
     authoritativeSource: (
       projections.authoritative_source ||
       shadow.authoritative_source ||
+      'legacy'
+    ),
+    authorityScope: (
+      projections.authority_scope || 'legacy'
+    ),
+    pitcherProjectionsAuthoritative: (
+      projections
+        .pitcher_projections_authoritative === true
+    ),
+    batterProjectionsAuthoritative: (
+      projections
+        .batter_projections_authoritative === true
+    ),
+    pitcherAuthoritativeSource: (
+      projections
+        .pitcher_projection_authority
+        ?.authoritative_source ||
       'legacy'
     ),
     identityEnrichmentApplied: (
