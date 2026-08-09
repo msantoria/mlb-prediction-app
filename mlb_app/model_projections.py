@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from copy import deepcopy
+
 import datetime
 from typing import Any, Dict, List, Optional
 
@@ -10,6 +12,9 @@ from mlb_app.simulation.projections.pitcher_projection_authority import (
 )
 from mlb_app.simulation.shadow.canonical_pitcher_projection_activation_readiness import (
     audit_canonical_pitcher_projection_activation_readiness,
+)
+from mlb_app.simulation.shadow.canonical_pitcher_projection_pool_and_workload_calibration import (
+    audit_canonical_pitcher_projection_pool_and_workload_calibration,
 )
 from mlb_app.simulation.shadow.canonical_pitcher_role_and_innings_attribution_audit import (
     audit_canonical_pitcher_role_and_innings_attribution,
@@ -742,10 +747,69 @@ def _canonical_probability_payload(matchup: Dict[str, Any], projection_sim: Opti
     }
 
 
+def _canonical_pitcher_pool_audit_input(
+    bullpen_discovery: Any,
+) -> Dict[str, Any]:
+    """
+    Preserve private same-process eligibility evidence for 6TA.
+
+    CanonicalShadowBullpenDiscovery.to_diagnostics() deliberately
+    redacts pitcher identifiers and record-level evidence. This
+    adapter is consumed only by the read-only projection audit and
+    does not alter or publish the underlying discovery object.
+    """
+
+    result: Dict[str, Any] = {}
+
+    for team_side in ("away", "home"):
+        side = getattr(
+            bullpen_discovery,
+            team_side,
+            None,
+        )
+
+        if side is None:
+            result[team_side] = {}
+            continue
+
+        eligibility = getattr(
+            side,
+            "eligibility",
+            None,
+        )
+
+        result[team_side] = {
+            "starter_id": getattr(
+                side,
+                "starter_id",
+                None,
+            ),
+            "bullpen_pitcher_ids": list(
+                getattr(
+                    side,
+                    "bullpen_pitcher_ids",
+                    (),
+                )
+                or ()
+            ),
+            "eligibility": (
+                deepcopy(eligibility)
+                if isinstance(
+                    eligibility,
+                    dict,
+                )
+                else {}
+            ),
+        }
+
+    return result
+
+
 def _attach_production_shadow_comparison(
     *,
     legacy_result: Dict[str, Any],
     production_execution: Any,
+    bullpen_discovery: Any = None,
 ) -> Dict[str, Any]:
     """
     Attach executed canonical material to the existing shadow comparator.
@@ -912,6 +976,72 @@ def _attach_production_shadow_comparison(
     shadow[
         "pitcher_projection_authority"
     ] = authority
+
+    try:
+        pool_and_workload_audit = (
+            audit_canonical_pitcher_projection_pool_and_workload_calibration(
+                projections=shadow[
+                    "player_projections"
+                ],
+                appearance_audit=(
+                    material
+                    .pitcher_appearance_sequence_audit
+                ),
+                bullpen_discovery=(
+                    bullpen_discovery
+                    if isinstance(
+                        bullpen_discovery,
+                        dict,
+                    )
+                    else {}
+                ),
+            )
+        )
+    except Exception as exc:
+        pool_and_workload_audit = {
+            "schema_version": (
+                "canonical_pitcher_projection_"
+                "pool_and_workload_calibration_v1"
+            ),
+            "status": "error",
+            "audited": False,
+            "blockers": [
+                "pool_and_workload_audit_error",
+            ],
+            "error_type": (
+                exc.__class__.__name__
+            ),
+            "error_message": str(exc),
+            "safety_checks": {
+                "projection_values_unchanged": True,
+                "pitcher_pools_unchanged": True,
+                "pitching_plans_unchanged": True,
+                "event_streams_unchanged": True,
+                "database_writes_performed":
+                    False,
+                "production_authority_changed":
+                    False,
+            },
+            "decision": {
+                "pitcher_pool_change_allowed":
+                    False,
+                "workload_calibration_change_allowed":
+                    False,
+                "production_activation_allowed":
+                    False,
+                "recommended_next_slice": (
+                    "resolve_canonical_pitcher_"
+                    "projection_pool_audit_error"
+                ),
+            },
+            "database_writes_performed": False,
+            "production_authority_changed": False,
+        }
+
+    shadow[
+        "pitcher_projection_pool_and_"
+        "workload_calibration"
+    ] = pool_and_workload_audit
 
     return result
 
@@ -1456,6 +1586,11 @@ def build_model_projection_payload(
                     legacy_result=shared_simulation,
                     production_execution=(
                         canonical_production_shadow_execution
+                    ),
+                    bullpen_discovery=(
+                        _canonical_pitcher_pool_audit_input(
+                            canonical_shadow_bullpen_discovery
+                        )
                     ),
                 )
             )
