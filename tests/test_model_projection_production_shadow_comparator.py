@@ -147,7 +147,7 @@ def fallback_discovery():
     )
 
 
-def executed_shadow():
+def executed_shadow(*, simulation_count=2):
     return run_canonical_production_shadow(
         game_pk=123,
         lineups=lineups(),
@@ -158,7 +158,7 @@ def executed_shadow():
             fallback_discovery()
         ),
         bootstrap_ready=True,
-        simulation_count=2,
+        simulation_count=simulation_count,
     )
 
 
@@ -376,4 +376,61 @@ def test_realism_payload_exposes_frontend_capability_aliases():
         "steals_projection_wiring_status"
     ] == (
         "canonical_event_driven_production_authority"
+    )
+
+def test_comparator_attaches_pitcher_projection_readiness():
+    legacy = legacy_payload()
+
+    result = (
+        model_projections
+        ._attach_production_shadow_comparison(
+            legacy_result=legacy,
+            production_execution=executed_shadow(
+                simulation_count=100,
+            ),
+        )
+    )
+
+    shadow = result["diagnostics"][
+        "canonical_shadow"
+    ]
+    readiness = shadow[
+        "pitcher_projection_activation_readiness"
+    ]
+    projections = shadow["player_projections"]
+
+    assert readiness["status"] == "ready"
+    assert readiness["blockers"] == []
+    assert readiness["decision"][
+        "pitcher_projection_activation_allowed"
+    ] is True
+    assert readiness["decision"][
+        "production_activation_allowed"
+    ] is True
+    assert (
+        readiness["dynamic_workload_pitcher_count"]
+        > 0
+    )
+
+    # 6SY only surfaces the readiness verdict.
+    # Legacy production authority remains untouched.
+    assert shadow["authoritative_source"] == "legacy"
+    assert projections["authoritative"] is False
+    assert projections[
+        "authoritative_source"
+    ] == "legacy"
+    assert result[
+        "away_win_probability"
+    ] == legacy["away_win_probability"]
+    assert result[
+        "home_win_probability"
+    ] == legacy["home_win_probability"]
+
+    assert (
+        readiness["database_writes_performed"]
+        is False
+    )
+    assert (
+        readiness["production_authority_changed"]
+        is False
     )

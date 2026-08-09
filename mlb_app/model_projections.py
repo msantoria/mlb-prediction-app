@@ -5,6 +5,12 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
+from mlb_app.simulation.shadow.canonical_pitcher_projection_activation_readiness import (
+    audit_canonical_pitcher_projection_activation_readiness,
+)
+from mlb_app.simulation.shadow.canonical_pitcher_role_and_innings_attribution_audit import (
+    audit_canonical_pitcher_role_and_innings_attribution,
+)
 from mlb_app.simulation.shadow.production_monitoring_ledger import (
     CANONICAL_BASERUNNING_PRODUCTION_AUTHORITY,
     CanonicalBaserunningProductionMonitoringRecord,
@@ -760,7 +766,7 @@ def _attach_production_shadow_comparison(
     if material is None:
         return legacy_result
 
-    return attach_canonical_shadow(
+    result = attach_canonical_shadow(
         legacy_result=legacy_result,
         enabled=True,
         canonical_payload=(
@@ -779,6 +785,81 @@ def _attach_production_shadow_comparison(
             .pitcher_appearance_sequence_audit
         ),
     )
+
+    shadow = (
+        result
+        .get("diagnostics", {})
+        .get("canonical_shadow", {})
+    )
+
+    try:
+        appearance_audit = (
+            material
+            .pitcher_appearance_sequence_audit
+        )
+        pitching_plans = appearance_audit[
+            "pitching_plans"
+        ]
+
+        role_and_innings_audit = (
+            audit_canonical_pitcher_role_and_innings_attribution(
+                projection_payload=(
+                    material.canonical_payload
+                ),
+                away_pitching_plan=(
+                    pitching_plans["away"]
+                ),
+                home_pitching_plan=(
+                    pitching_plans["home"]
+                ),
+            )
+        )
+
+        readiness = (
+            audit_canonical_pitcher_projection_activation_readiness(
+                projection_rows=shadow[
+                    "player_projections"
+                ],
+                appearance_audit=appearance_audit,
+                role_and_innings_audit=(
+                    role_and_innings_audit
+                ),
+            )
+        )
+    except Exception as exc:
+        readiness = {
+            "schema_version": (
+                "canonical_pitcher_projection_"
+                "activation_readiness_v1"
+            ),
+            "status": "error",
+            "audited": False,
+            "blockers": [
+                "readiness_audit_error",
+            ],
+            "error_type": (
+                exc.__class__.__name__
+            ),
+            "error_message": str(exc),
+            "decision": {
+                "pitcher_projection_activation_allowed":
+                    False,
+                "production_activation_allowed":
+                    False,
+                "recommended_next_slice": (
+                    "resolve_canonical_pitcher_"
+                    "projection_readiness_blockers"
+                ),
+            },
+            "database_writes_performed": False,
+            "production_authority_changed": False,
+        }
+
+    shadow[
+        "pitcher_projection_activation_readiness"
+    ] = readiness
+
+    return result
 
 
 def _enrich_game_workspace_player_projections(
