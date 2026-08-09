@@ -7,6 +7,9 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
+from mlb_app.simulation.projections.pitcher_pool_role_reconciliation import (
+    reconcile_canonical_pitcher_projection_pool_roles,
+)
 from mlb_app.simulation.projections.pitcher_projection_authority import (
     apply_canonical_pitcher_projection_authority,
 )
@@ -858,6 +861,57 @@ def _attach_production_shadow_comparison(
         .get("diagnostics", {})
         .get("canonical_shadow", {})
     )
+
+    try:
+        reconciled_projection_rows = (
+            reconcile_canonical_pitcher_projection_pool_roles(
+                payload=shadow[
+                    "player_projections"
+                ],
+                appearance_audit=(
+                    material
+                    .pitcher_appearance_sequence_audit
+                ),
+                bullpen_discovery=(
+                    bullpen_discovery
+                    if isinstance(
+                        bullpen_discovery,
+                        dict,
+                    )
+                    else {}
+                ),
+            )
+        )
+    except Exception as exc:
+        pool_role_reconciliation = {
+            "schema_version": (
+                "canonical_pitcher_projection_"
+                "pool_role_reconciliation_v1"
+            ),
+            "status": "error",
+            "error_type": (
+                exc.__class__.__name__
+            ),
+            "error_message": str(exc),
+            "typical_role_inference_used": False,
+            "unknown_evidence_fails_open": True,
+            "projection_rows_preserved": True,
+            "database_writes_performed": False,
+            "production_authority_changed": False,
+        }
+    else:
+        shadow["player_projections"] = (
+            reconciled_projection_rows
+        )
+        pool_role_reconciliation = (
+            reconciled_projection_rows[
+                "pitcher_pool_role_reconciliation"
+            ]
+        )
+
+    shadow[
+        "pitcher_projection_pool_role_reconciliation"
+    ] = pool_role_reconciliation
 
     try:
         appearance_audit = (

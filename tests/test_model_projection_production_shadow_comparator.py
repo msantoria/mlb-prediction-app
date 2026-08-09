@@ -681,3 +681,291 @@ def test_low_evidence_run_fails_closed_to_legacy():
         assert authority[
             "authoritative_source"
         ] == "legacy"
+
+def test_comparator_reconciles_pitcher_projection_pool_roles():
+    legacy = legacy_payload()
+
+    result = (
+        model_projections
+        ._attach_production_shadow_comparison(
+            legacy_result=legacy,
+            production_execution=executed_shadow(
+                simulation_count=100,
+            ),
+            bullpen_discovery=(
+                model_projections
+                ._canonical_pitcher_pool_audit_input(
+                    bullpens()
+                )
+            ),
+        )
+    )
+
+    shadow = result["diagnostics"][
+        "canonical_shadow"
+    ]
+    projections = shadow["player_projections"]
+    reconciliation = shadow[
+        "pitcher_projection_pool_role_reconciliation"
+    ]
+
+    assert reconciliation["status"] == "reconciled"
+    assert reconciliation[
+        "schema_version"
+    ] == (
+        "canonical_pitcher_projection_"
+        "pool_role_reconciliation_v1"
+    )
+    assert reconciliation[
+        "excluded_pitcher_count"
+    ] == 0
+    assert reconciliation[
+        "unknown_evidence_fails_open"
+    ] is True
+    assert reconciliation[
+        "typical_role_inference_used"
+    ] is False
+    assert reconciliation[
+        "game_probability_authority_changed"
+    ] is False
+    assert reconciliation[
+        "database_writes_performed"
+    ] is False
+    assert reconciliation[
+        "production_authority_changed"
+    ] is False
+
+    pitcher_rows = {
+        row["player_id"]: row
+        for row in projections["players"]
+        if row["player_type"] == "pitcher"
+    }
+
+    starter_rows = [
+        row
+        for row in pitcher_rows.values()
+        if row["planned_pitcher_role"]
+        == "starter"
+    ]
+    reliever_rows = [
+        row
+        for row in pitcher_rows.values()
+        if row["planned_pitcher_role"]
+        == "reliever"
+    ]
+
+    assert starter_rows
+    assert reliever_rows
+
+    assert all(
+        row["pitcher_projection_group"]
+        == "starter"
+        for row in starter_rows
+    )
+    assert all(
+        row["game_availability_status"]
+        == "planned_primary_pitcher"
+        for row in starter_rows
+    )
+
+    # Production currently has active-roster
+    # candidate evidence, not verified same-game
+    # role or availability evidence.
+    assert all(
+        row["pitcher_projection_group"]
+        == "bullpen"
+        for row in reliever_rows
+    )
+    assert all(
+        row["typical_bullpen_role"] is None
+        for row in reliever_rows
+    )
+    assert all(
+        row["typical_role_inference_used"]
+        is False
+        for row in reliever_rows
+    )
+    assert all(
+        row["game_availability_status"]
+        == "active_roster_candidate_unknown"
+        for row in reliever_rows
+    )
+
+    assert all(
+        row["appearance_probability"]
+        is not None
+        and 0.0
+        <= row["appearance_probability"]
+        <= 1.0
+        for row in pitcher_rows.values()
+    )
+
+    assert projections[
+        "pitcher_pool_role_reconciliation_applied"
+    ] is True
+    assert projections[
+        "pitcher_projections_authoritative"
+    ] is True
+    assert projections[
+        "batter_projections_authoritative"
+    ] is False
+
+    authority = shadow[
+        "pitcher_projection_authority"
+    ]
+
+    assert authority["status"] == "activated"
+    assert authority[
+        "authority_scope"
+    ] == "pitcher_rows_only"
+
+    assert result[
+        "away_win_probability"
+    ] == legacy["away_win_probability"]
+    assert result[
+        "home_win_probability"
+    ] == legacy["home_win_probability"]
+
+def test_comparator_applies_explicit_pitcher_pool_role_evidence():
+    from copy import deepcopy
+
+    legacy = legacy_payload()
+    discovery = deepcopy(
+        model_projections
+        ._canonical_pitcher_pool_audit_input(
+            bullpens()
+        )
+    )
+
+    discovery["away"]["eligibility"] = {
+        "records": [
+            {
+                "pitcher_id": "101",
+                "retained": True,
+                "decision_reason":
+                    "explicitly_eligible",
+                "planned_pitcher": False,
+                "evidence_present": True,
+                "evidence_valid": True,
+                "evidence_status":
+                    "eligible",
+                "pitcher_role": "closer",
+                "evidence_source":
+                    "pregame_role_evidence_v1",
+            },
+        ],
+    }
+    discovery["home"]["eligibility"] = {
+        "records": [
+            {
+                "pitcher_id": "201",
+                "retained": False,
+                "decision_reason":
+                    "probable_starter_not_in_plan",
+                "planned_pitcher": False,
+                "evidence_present": True,
+                "evidence_valid": True,
+                "evidence_status":
+                    "ineligible",
+                "pitcher_role":
+                    "probable_starter",
+                "evidence_source":
+                    "pregame_role_evidence_v1",
+            },
+        ],
+    }
+
+    result = (
+        model_projections
+        ._attach_production_shadow_comparison(
+            legacy_result=legacy,
+            production_execution=executed_shadow(
+                simulation_count=100,
+            ),
+            bullpen_discovery=discovery,
+        )
+    )
+
+    shadow = result["diagnostics"][
+        "canonical_shadow"
+    ]
+    projections = shadow[
+        "player_projections"
+    ]
+    reconciliation = shadow[
+        "pitcher_projection_pool_role_reconciliation"
+    ]
+
+    pitcher_rows = {
+        row["player_id"]: row
+        for row in projections["players"]
+        if row["player_type"] == "pitcher"
+    }
+    batter_rows = [
+        row
+        for row in projections["players"]
+        if row["player_type"] == "batter"
+    ]
+
+    assert set(pitcher_rows) == {
+        "100",
+        "101",
+        "200",
+    }
+    assert pitcher_rows["101"][
+        "typical_bullpen_role"
+    ] == "closer"
+    assert pitcher_rows["101"][
+        "game_availability_status"
+    ] == "explicitly_eligible"
+    assert pitcher_rows["101"][
+        "pitcher_pool_membership_status"
+    ] == "included_explicitly_eligible"
+
+    assert "201" not in pitcher_rows
+    assert reconciliation[
+        "excluded_pitcher_ids"
+    ] == ["201"]
+    assert reconciliation[
+        "explicitly_ineligible_pitcher_count"
+    ] == 1
+    assert reconciliation[
+        "production_authority_changed"
+    ] is True
+    assert reconciliation[
+        "game_probability_authority_changed"
+    ] is False
+    assert reconciliation[
+        "typical_role_inference_used"
+    ] is False
+    assert reconciliation[
+        "database_writes_performed"
+    ] is False
+
+    assert len(batter_rows) == 18
+
+    authority = shadow[
+        "pitcher_projection_authority"
+    ]
+
+    assert authority["status"] == "activated"
+    assert authority[
+        "production_activation"
+    ] is True
+    assert authority[
+        "authority_scope"
+    ] == "pitcher_rows_only"
+
+    assert projections[
+        "pitcher_projections_authoritative"
+    ] is True
+    assert projections[
+        "batter_projections_authoritative"
+    ] is False
+
+    assert result[
+        "away_win_probability"
+    ] == legacy["away_win_probability"]
+    assert result[
+        "home_win_probability"
+    ] == legacy["home_win_probability"]
