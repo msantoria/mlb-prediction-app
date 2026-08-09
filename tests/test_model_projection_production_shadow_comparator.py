@@ -388,6 +388,12 @@ def test_comparator_attaches_pitcher_projection_readiness():
             production_execution=executed_shadow(
                 simulation_count=100,
             ),
+            bullpen_discovery=(
+                model_projections
+                ._canonical_pitcher_pool_audit_input(
+                    bullpens()
+                )
+            ),
         )
     )
 
@@ -429,6 +435,71 @@ def test_comparator_attaches_pitcher_projection_readiness():
     authority = shadow[
         "pitcher_projection_authority"
     ]
+    pool_audit = shadow[
+        "pitcher_projection_pool_and_"
+        "workload_calibration"
+    ]
+
+    assert pool_audit["status"] == "observed"
+    assert pool_audit["audited"] is True
+    assert pool_audit["trial_count"] == 100
+    assert (
+        pool_audit["pitcher_projection_count"]
+        == 4
+    )
+    assert pool_audit[
+        "historical_calibration_required"
+    ] is True
+    assert pool_audit["interpretation"][
+        "unconditional_distribution_"
+        "includes_nonappearances"
+    ] is True
+    assert pool_audit["interpretation"][
+        "conditional_distribution_"
+        "excludes_nonappearances"
+    ] is True
+    assert pool_audit["interpretation"][
+        "typical_bullpen_roles_inferred"
+    ] is False
+    assert pool_audit["interpretation"][
+        "starter_p90_calibration_claimed"
+    ] is False
+    assert pool_audit[
+        "database_writes_performed"
+    ] is False
+    assert pool_audit[
+        "production_authority_changed"
+    ] is False
+
+    starter_rows = [
+        row
+        for row in pool_audit["pitchers"]
+        if row["planned_role"] == "starter"
+    ]
+    reliever_rows = [
+        row
+        for row in pool_audit["pitchers"]
+        if row["planned_role"] == "reliever"
+    ]
+
+    assert starter_rows
+    assert reliever_rows
+
+    assert all(
+        row["appearance_rate"] == 1.0
+        for row in starter_rows
+    )
+    assert all(
+        row[
+            "conditional_on_appearance_outs"
+        ] is not None
+        for row in starter_rows
+    )
+    assert all(
+        row["typical_role_inference_used"]
+        is False
+        for row in reliever_rows
+    )
 
     assert authority["status"] == "activated"
     assert authority[
