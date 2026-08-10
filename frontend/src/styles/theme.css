@@ -1109,3 +1109,161 @@ input:focus, select:focus, textarea:focus {
     font-size: 20px;
   }
 }
+
+
+/* MLBGPT four-block data loading experience */
+.mlbgpt-loader {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 320px;
+  padding: clamp(36px, 7vw, 72px) 24px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(circle at 50% 18%, rgba(90, 167, 255, 0.12), transparent 18rem),
+    linear-gradient(180deg, rgba(17, 24, 39, 0.94), rgba(8, 12, 19, 0.96));
+  color: var(--text-secondary);
+  text-align: center;
+  box-shadow: var(--shadow-card);
+}
+
+.mlbgpt-loader-blocks {
+  position: relative;
+  width: 96px;
+  height: 82px;
+  margin-bottom: 4px;
+}
+
+.mlbgpt-loader-block {
+  position: absolute;
+  width: 54px;
+  height: 16px;
+  border-radius: 4px;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  animation: mlbgpt-jenga-build 1.7s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.mlbgpt-loader-block-red {
+  top: 57px;
+  left: 8px;
+  background: #ef4444;
+  animation-delay: 0s;
+}
+
+.mlbgpt-loader-block-blue {
+  top: 38px;
+  left: 33px;
+  background: #3b82f6;
+  animation-delay: 0.14s;
+}
+
+.mlbgpt-loader-block-yellow {
+  top: 19px;
+  left: 5px;
+  background: #facc15;
+  animation-delay: 0.28s;
+}
+
+.mlbgpt-loader-block-green {
+  top: 0;
+  left: 30px;
+  background: #22c55e;
+  animation-delay: 0.42s;
+}
+
+.mlbgpt-loader-kicker {
+  margin: 2px 0 0;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.mlbgpt-loader-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: clamp(22px, 3vw, 30px);
+  letter-spacing: -0.04em;
+}
+
+.mlbgpt-loader-stages {
+  display: grid;
+  gap: 7px;
+  width: min(100%, 440px);
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.mlbgpt-loader-stages li {
+  animation: mlbgpt-loader-stage 3.6s ease-in-out infinite;
+}
+
+.mlbgpt-loader-stages li:nth-child(2) { animation-delay: 0.6s; }
+.mlbgpt-loader-stages li:nth-child(3) { animation-delay: 1.2s; }
+.mlbgpt-loader-stages li:nth-child(4) { animation-delay: 1.8s; }
+.mlbgpt-loader-stages li:nth-child(5) { animation-delay: 2.4s; }
+.mlbgpt-loader-stages li:nth-child(6) { animation-delay: 3s; }
+
+.mlbgpt-loader-stages li::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 9px;
+  border-radius: 2px;
+  background: currentColor;
+  vertical-align: 1px;
+}
+
+.mlbgpt-loader-note {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.mlbgpt-loader-compact {
+  grid-template-columns: auto 1fr;
+  justify-items: start;
+  align-items: center;
+  gap: 14px;
+  min-height: 0;
+  padding: 18px;
+  text-align: left;
+  box-shadow: none;
+}
+
+.mlbgpt-loader-compact .mlbgpt-loader-blocks {
+  width: 52px;
+  height: 44px;
+  margin: 0;
+  transform: scale(0.52);
+  transform-origin: left center;
+}
+
+.mlbgpt-loader-compact-label {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+@keyframes mlbgpt-jenga-build {
+  0%, 100% { opacity: 0.45; transform: translateY(-7px) scaleX(0.9); }
+  42%, 68% { opacity: 1; transform: translateY(0) scaleX(1); }
+}
+
+@keyframes mlbgpt-loader-stage {
+  0%, 100% { color: var(--text-muted); opacity: 0.55; }
+  12%, 28% { color: var(--text-primary); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mlbgpt-loader-block,
+  .mlbgpt-loader-stages li {
+    animation: none;
+  }
+}
