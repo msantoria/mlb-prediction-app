@@ -751,7 +751,27 @@ export default function MatchupDetailPage() {
       })
   }, [game_pk])
 
-  if (loading) return <div style={t.loader}>Loading matchup…</div>
+  if (loading) return (
+    <section className="mlbgpt-loader" role="status" aria-live="polite" aria-label="Loading advanced matchup detail">
+      <div className="mlbgpt-loader-blocks" aria-hidden="true">
+        <span className="mlbgpt-loader-block mlbgpt-loader-block-red" />
+        <span className="mlbgpt-loader-block mlbgpt-loader-block-blue" />
+        <span className="mlbgpt-loader-block mlbgpt-loader-block-yellow" />
+        <span className="mlbgpt-loader-block mlbgpt-loader-block-green" />
+      </div>
+      <p className="mlbgpt-loader-kicker">Assembling game intelligence</p>
+      <h2 className="mlbgpt-loader-title">Loading Advanced Matchup Detail</h2>
+      <ul className="mlbgpt-loader-stages">
+        <li>Loading the game and probable starters</li>
+        <li>Reading pitcher profiles and arsenals</li>
+        <li>Checking starting lineups</li>
+        <li>Comparing hitters against pitch types</li>
+        <li>Loading Statcast and recent performance</li>
+        <li>Matching projections, weather, and market context</li>
+      </ul>
+      <p className="mlbgpt-loader-note">This page combines several deeper research datasets.</p>
+    </section>
+  )
   if (error) return <div style={t.error}>{error}</div>
   if (!matchup) return null
 
@@ -831,7 +851,17 @@ export default function MatchupDetailPage() {
 
       <div style={t.section}>
         <div style={t.sectionTitle}>Bet105 Market Snapshot</div>
-        {oddsLoading && <div style={t.noData}>Loading Bet105 odds…</div>}
+        {oddsLoading && (
+          <div className="mlbgpt-loader mlbgpt-loader-compact" role="status" aria-live="polite">
+            <div className="mlbgpt-loader-blocks" aria-hidden="true">
+              <span className="mlbgpt-loader-block mlbgpt-loader-block-red" />
+              <span className="mlbgpt-loader-block mlbgpt-loader-block-blue" />
+              <span className="mlbgpt-loader-block mlbgpt-loader-block-yellow" />
+              <span className="mlbgpt-loader-block mlbgpt-loader-block-green" />
+            </div>
+            <span className="mlbgpt-loader-compact-label">Matching current Bet105 markets…</span>
+          </div>
+        )}
         {!oddsLoading && oddsError && <div style={t.error}>Bet105 odds unavailable: {oddsError}</div>}
         {!oddsLoading && !oddsError && !bet105Event && <div style={t.noData}>No matching Bet105 event is currently available.</div>}
         {!oddsLoading && !oddsError && bet105Event && (
