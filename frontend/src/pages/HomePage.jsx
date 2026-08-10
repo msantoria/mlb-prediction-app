@@ -199,10 +199,25 @@ export default function HomePage() {
       </header>
 
       {loading && (
-        <div className="state-panel">
-          <div className="skeleton-line" style={{ maxWidth: 420, margin: '0 auto 12px' }} />
-          <div className="skeleton-line" style={{ maxWidth: 300, margin: '0 auto' }} />
-        </div>
+        <section className="mlbgpt-loader" role="status" aria-live="polite" aria-label="Loading daily matchups">
+          <div className="mlbgpt-loader-blocks" aria-hidden="true">
+            <span className="mlbgpt-loader-block mlbgpt-loader-block-red" />
+            <span className="mlbgpt-loader-block mlbgpt-loader-block-blue" />
+            <span className="mlbgpt-loader-block mlbgpt-loader-block-yellow" />
+            <span className="mlbgpt-loader-block mlbgpt-loader-block-green" />
+          </div>
+          <p className="mlbgpt-loader-kicker">Building today’s MLB slate</p>
+          <h2 className="mlbgpt-loader-title">Loading Daily Matchups</h2>
+          <ul className="mlbgpt-loader-stages">
+            <li>Loading the MLB schedule</li>
+            <li>Checking probable starters</li>
+            <li>Reading confirmed lineups</li>
+            <li>Loading model projections</li>
+            <li>Adding weather and park context</li>
+            <li>Matching current odds</li>
+          </ul>
+          <p className="mlbgpt-loader-note">Warm data appears immediately. Cold data may take a few more seconds.</p>
+        </section>
       )}
       {error && <div className="state-panel error">Matchup data unavailable: {error}</div>}
       {!loading && !error && matchups.length === 0 && (
