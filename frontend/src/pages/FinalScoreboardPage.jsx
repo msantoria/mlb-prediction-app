@@ -2,6 +2,39 @@ import React, { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { API_BASE, addIsoDays, getMlbToday } from '../lib/api'
 
+function FourBlockLoader({ title, kicker, stages, note, compact = false }) {
+  if (compact) {
+    return (
+      <div className="mlbgpt-loader mlbgpt-loader-compact" role="status" aria-live="polite">
+        <div className="mlbgpt-loader-blocks" aria-hidden="true">
+          <span className="mlbgpt-loader-block mlbgpt-loader-block-red" />
+          <span className="mlbgpt-loader-block mlbgpt-loader-block-blue" />
+          <span className="mlbgpt-loader-block mlbgpt-loader-block-yellow" />
+          <span className="mlbgpt-loader-block mlbgpt-loader-block-green" />
+        </div>
+        <span className="mlbgpt-loader-compact-label">{title}</span>
+      </div>
+    )
+  }
+
+  return (
+    <section className="mlbgpt-loader" role="status" aria-live="polite" aria-label={title}>
+      <div className="mlbgpt-loader-blocks" aria-hidden="true">
+        <span className="mlbgpt-loader-block mlbgpt-loader-block-red" />
+        <span className="mlbgpt-loader-block mlbgpt-loader-block-blue" />
+        <span className="mlbgpt-loader-block mlbgpt-loader-block-yellow" />
+        <span className="mlbgpt-loader-block mlbgpt-loader-block-green" />
+      </div>
+      <p className="mlbgpt-loader-kicker">{kicker}</p>
+      <h2 className="mlbgpt-loader-title">{title}</h2>
+      <ul className="mlbgpt-loader-stages">
+        {stages.map(stage => <li key={stage}>{stage}</li>)}
+      </ul>
+      {note && <p className="mlbgpt-loader-note">{note}</p>}
+    </section>
+  )
+}
+
 function yesterday() {
   return addIsoDays(getMlbToday(), -1)
 }
@@ -82,7 +115,17 @@ export default function FinalScoreboardPage() {
         )}
       </div>
 
-      {loading && <section className="state-panel">Building the completed-game review…</section>}
+      {loading && <FourBlockLoader
+        kicker="Reviewing completed games"
+        title="Loading Final Scoreboard"
+        stages={[
+          'Loading completed games',
+          'Confirming final linescores',
+          'Reading winning and losing pitchers',
+          'Organizing final results',
+        ]}
+        note="Completed games are assembled into the daily final review."
+      />}
       {error && <section className="state-panel error">Final games could not be loaded: {error}</section>}
       {!loading && !error && games.length === 0 && (
         <section className="state-panel">No completed games are available for {date}.</section>
