@@ -5,6 +5,39 @@ import {
   Legend, ResponsiveContainer, ReferenceLine,
 } from 'recharts'
 
+function FourBlockLoader({ title, kicker, stages, note, compact = false }) {
+  if (compact) {
+    return (
+      <div className="mlbgpt-loader mlbgpt-loader-compact" role="status" aria-live="polite">
+        <div className="mlbgpt-loader-blocks" aria-hidden="true">
+          <span className="mlbgpt-loader-block mlbgpt-loader-block-red" />
+          <span className="mlbgpt-loader-block mlbgpt-loader-block-blue" />
+          <span className="mlbgpt-loader-block mlbgpt-loader-block-yellow" />
+          <span className="mlbgpt-loader-block mlbgpt-loader-block-green" />
+        </div>
+        <span className="mlbgpt-loader-compact-label">{title}</span>
+      </div>
+    )
+  }
+
+  return (
+    <section className="mlbgpt-loader" role="status" aria-live="polite" aria-label={title}>
+      <div className="mlbgpt-loader-blocks" aria-hidden="true">
+        <span className="mlbgpt-loader-block mlbgpt-loader-block-red" />
+        <span className="mlbgpt-loader-block mlbgpt-loader-block-blue" />
+        <span className="mlbgpt-loader-block mlbgpt-loader-block-yellow" />
+        <span className="mlbgpt-loader-block mlbgpt-loader-block-green" />
+      </div>
+      <p className="mlbgpt-loader-kicker">{kicker}</p>
+      <h2 className="mlbgpt-loader-title">{title}</h2>
+      <ul className="mlbgpt-loader-stages">
+        {stages.map(stage => <li key={stage}>{stage}</li>)}
+      </ul>
+      {note && <p className="mlbgpt-loader-note">{note}</p>}
+    </section>
+  )
+}
+
 const API = import.meta.env.VITE_API_BASE_URL || ''
 
 const C = {
@@ -204,7 +237,17 @@ function LeaderboardNotes({ data }) {
 }
 
 function LeaderboardDashboard({ data, loading }) {
-  if (loading) return <div style={s.loader}>Loading leaderboards…</div>
+  if (loading) return <FourBlockLoader
+    kicker="Scanning qualified hitters"
+    title="Loading Batter Leaderboards"
+    stages={[
+      'Loading qualified batter populations',
+      'Reading contact quality and expected results',
+      'Comparing plate discipline',
+      'Ranking damage and pitch-type performance',
+    ]}
+    note="The boards apply minimum samples before ranking hitters."
+  />
   if (!data) return null
 
   const leaderboards = data.leaderboards || {}
@@ -562,7 +605,18 @@ export default function BatterPage() {
       {/* ── Player profile ── */}
       {id && (
         <>
-          {loading && <div style={s.loader}>Loading…</div>}
+          {loading && <FourBlockLoader
+        kicker="Building hitter intelligence"
+        title="Loading Batter Profile"
+        stages={[
+          'Resolving player identity and team',
+          'Loading Statcast contact metrics',
+          'Reading plate discipline and expected results',
+          'Building pitch-type and zone views',
+          'Loading recent performance',
+        ]}
+        note="This profile combines multiple hitter research datasets."
+      />}
           {error && <div style={{ color: C.red, padding: '24px', background: '#1f1116', borderRadius: '8px' }}>{error}</div>}
 
           {data && (

@@ -1,6 +1,39 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 
+function FourBlockLoader({ title, kicker, stages, note, compact = false }) {
+  if (compact) {
+    return (
+      <div className="mlbgpt-loader mlbgpt-loader-compact" role="status" aria-live="polite">
+        <div className="mlbgpt-loader-blocks" aria-hidden="true">
+          <span className="mlbgpt-loader-block mlbgpt-loader-block-red" />
+          <span className="mlbgpt-loader-block mlbgpt-loader-block-blue" />
+          <span className="mlbgpt-loader-block mlbgpt-loader-block-yellow" />
+          <span className="mlbgpt-loader-block mlbgpt-loader-block-green" />
+        </div>
+        <span className="mlbgpt-loader-compact-label">{title}</span>
+      </div>
+    )
+  }
+
+  return (
+    <section className="mlbgpt-loader" role="status" aria-live="polite" aria-label={title}>
+      <div className="mlbgpt-loader-blocks" aria-hidden="true">
+        <span className="mlbgpt-loader-block mlbgpt-loader-block-red" />
+        <span className="mlbgpt-loader-block mlbgpt-loader-block-blue" />
+        <span className="mlbgpt-loader-block mlbgpt-loader-block-yellow" />
+        <span className="mlbgpt-loader-block mlbgpt-loader-block-green" />
+      </div>
+      <p className="mlbgpt-loader-kicker">{kicker}</p>
+      <h2 className="mlbgpt-loader-title">{title}</h2>
+      <ul className="mlbgpt-loader-stages">
+        {stages.map(stage => <li key={stage}>{stage}</li>)}
+      </ul>
+      {note && <p className="mlbgpt-loader-note">{note}</p>}
+    </section>
+  )
+}
+
 const API = import.meta.env.VITE_API_BASE_URL || ''
 
 const TEAMS = [
@@ -148,7 +181,18 @@ export default function TeamPage() {
         </div>
       )}
 
-      {loading && <div style={s.loader}>Loading…</div>}
+      {loading && <FourBlockLoader
+        kicker="Building team intelligence"
+        title="Loading Team Profile"
+        stages={[
+          'Resolving team identity and record',
+          'Loading hitting splits',
+          'Reading pitching performance',
+          'Checking roster and probable starters',
+          'Loading recent team results',
+        ]}
+        note="Team profiles combine standings, splits, players, and recent performance."
+      />}
       {error && <div style={s.error}>{error}</div>}
 
       {!loading && !error && !data && !urlId && (

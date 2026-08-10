@@ -2,6 +2,39 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { API_BASE, getMlbLiveDate, addIsoDays } from '../lib/api'
 
+function FourBlockLoader({ title, kicker, stages, note, compact = false }) {
+  if (compact) {
+    return (
+      <div className="mlbgpt-loader mlbgpt-loader-compact" role="status" aria-live="polite">
+        <div className="mlbgpt-loader-blocks" aria-hidden="true">
+          <span className="mlbgpt-loader-block mlbgpt-loader-block-red" />
+          <span className="mlbgpt-loader-block mlbgpt-loader-block-blue" />
+          <span className="mlbgpt-loader-block mlbgpt-loader-block-yellow" />
+          <span className="mlbgpt-loader-block mlbgpt-loader-block-green" />
+        </div>
+        <span className="mlbgpt-loader-compact-label">{title}</span>
+      </div>
+    )
+  }
+
+  return (
+    <section className="mlbgpt-loader" role="status" aria-live="polite" aria-label={title}>
+      <div className="mlbgpt-loader-blocks" aria-hidden="true">
+        <span className="mlbgpt-loader-block mlbgpt-loader-block-red" />
+        <span className="mlbgpt-loader-block mlbgpt-loader-block-blue" />
+        <span className="mlbgpt-loader-block mlbgpt-loader-block-yellow" />
+        <span className="mlbgpt-loader-block mlbgpt-loader-block-green" />
+      </div>
+      <p className="mlbgpt-loader-kicker">{kicker}</p>
+      <h2 className="mlbgpt-loader-title">{title}</h2>
+      <ul className="mlbgpt-loader-stages">
+        {stages.map(stage => <li key={stage}>{stage}</li>)}
+      </ul>
+      {note && <p className="mlbgpt-loader-note">{note}</p>}
+    </section>
+  )
+}
+
 const REFRESH_INTERVAL_MS = 30_000
 
 const STATUS_COLORS = {
@@ -252,7 +285,18 @@ export default function LiveScoreboardPage() {
     }
   }, [date])
 
-  if (loading) return <div style={{ color: '#8b949e', padding: '40px' }}>Loading scoreboard…</div>
+  if (loading) return <FourBlockLoader
+    kicker="Connecting to today’s games"
+    title="Loading Live Scoreboard"
+    stages={[
+      'Loading the live MLB schedule',
+      'Checking game states and start times',
+      'Reading current linescores',
+      'Loading active pitchers and matchups',
+      'Connecting automatic score updates',
+    ]}
+    note="Live games refresh automatically as MLB updates the feed."
+  />
   if (error) return <div style={{ color: '#f85149', padding: '40px' }}>Error: {error}</div>
 
   const games = data?.games || []

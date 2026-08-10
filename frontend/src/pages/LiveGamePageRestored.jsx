@@ -2,6 +2,39 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { API_BASE } from '../lib/api'
 
+function FourBlockLoader({ title, kicker, stages, note, compact = false }) {
+  if (compact) {
+    return (
+      <div className="mlbgpt-loader mlbgpt-loader-compact" role="status" aria-live="polite">
+        <div className="mlbgpt-loader-blocks" aria-hidden="true">
+          <span className="mlbgpt-loader-block mlbgpt-loader-block-red" />
+          <span className="mlbgpt-loader-block mlbgpt-loader-block-blue" />
+          <span className="mlbgpt-loader-block mlbgpt-loader-block-yellow" />
+          <span className="mlbgpt-loader-block mlbgpt-loader-block-green" />
+        </div>
+        <span className="mlbgpt-loader-compact-label">{title}</span>
+      </div>
+    )
+  }
+
+  return (
+    <section className="mlbgpt-loader" role="status" aria-live="polite" aria-label={title}>
+      <div className="mlbgpt-loader-blocks" aria-hidden="true">
+        <span className="mlbgpt-loader-block mlbgpt-loader-block-red" />
+        <span className="mlbgpt-loader-block mlbgpt-loader-block-blue" />
+        <span className="mlbgpt-loader-block mlbgpt-loader-block-yellow" />
+        <span className="mlbgpt-loader-block mlbgpt-loader-block-green" />
+      </div>
+      <p className="mlbgpt-loader-kicker">{kicker}</p>
+      <h2 className="mlbgpt-loader-title">{title}</h2>
+      <ul className="mlbgpt-loader-stages">
+        {stages.map(stage => <li key={stage}>{stage}</li>)}
+      </ul>
+      {note && <p className="mlbgpt-loader-note">{note}</p>}
+    </section>
+  )
+}
+
 const REFRESH_LIVE_MS = 15000
 const MLB_LIVE_BASE = 'https://statsapi.mlb.com/api/v1.1/game'
 
@@ -375,7 +408,18 @@ export default function LiveGamePageRestored() {
     return <LiveTab state={state} />
   }, [activeTab, state, boxscore, plays, linescore])
 
-  if (loading) return <div style={{ color: '#8b949e', padding: 40 }}>Loading game data...</div>
+  if (loading) return <FourBlockLoader
+    kicker="Connecting to the live game"
+    title="Loading Live Game"
+    stages={[
+      'Reading the current inning and score',
+      'Loading the active batter and pitcher',
+      'Building live batting and pitching lines',
+      'Loading scoring plays and game events',
+      'Connecting automatic feed updates',
+    ]}
+    note="Live game data refreshes automatically throughout play."
+  />
   if (error) return <div style={{ padding: 40 }}><Link to="/live" style={s.link}>← Scoreboard</Link><div style={{ color: '#f85149', marginTop: 12 }}>Error: {error}</div></div>
 
   return <div>

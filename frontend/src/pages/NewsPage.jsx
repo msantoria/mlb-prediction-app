@@ -3,6 +3,39 @@ import { Link } from 'react-router-dom'
 import { API_BASE, getMlbLiveDate } from '../lib/api'
 import './NewsPage.css'
 
+function FourBlockLoader({ title, kicker, stages, note, compact = false }) {
+  if (compact) {
+    return (
+      <div className="mlbgpt-loader mlbgpt-loader-compact" role="status" aria-live="polite">
+        <div className="mlbgpt-loader-blocks" aria-hidden="true">
+          <span className="mlbgpt-loader-block mlbgpt-loader-block-red" />
+          <span className="mlbgpt-loader-block mlbgpt-loader-block-blue" />
+          <span className="mlbgpt-loader-block mlbgpt-loader-block-yellow" />
+          <span className="mlbgpt-loader-block mlbgpt-loader-block-green" />
+        </div>
+        <span className="mlbgpt-loader-compact-label">{title}</span>
+      </div>
+    )
+  }
+
+  return (
+    <section className="mlbgpt-loader" role="status" aria-live="polite" aria-label={title}>
+      <div className="mlbgpt-loader-blocks" aria-hidden="true">
+        <span className="mlbgpt-loader-block mlbgpt-loader-block-red" />
+        <span className="mlbgpt-loader-block mlbgpt-loader-block-blue" />
+        <span className="mlbgpt-loader-block mlbgpt-loader-block-yellow" />
+        <span className="mlbgpt-loader-block mlbgpt-loader-block-green" />
+      </div>
+      <p className="mlbgpt-loader-kicker">{kicker}</p>
+      <h2 className="mlbgpt-loader-title">{title}</h2>
+      <ul className="mlbgpt-loader-stages">
+        {stages.map(stage => <li key={stage}>{stage}</li>)}
+      </ul>
+      {note && <p className="mlbgpt-loader-note">{note}</p>}
+    </section>
+  )
+}
+
 const BUCKETS = ['hourly', 'daily', 'weekly', 'monthly', 'beat', 'betting']
 const API = API_BASE
 const TWITTER_TIMEOUT_MS = 15000
@@ -135,7 +168,7 @@ function TweetCard({ item }) {
 
 function TeamIntel({ boards, loading }) {
   const rows = Object.values(boards || {})
-  if (loading) return <div style={s.loading}>Loading team intel board...</div>
+  if (loading) return <FourBlockLoader compact title="Loading team intelligence…" stages={[]} />
   if (!rows.length) return <div style={s.empty}>No team intel board available yet.</div>
   return <div style={s.grid}>{rows.map(board => <div key={board.team} style={s.card}>
     <div style={s.row}><strong style={{ color: '#e6edf3' }}>{board.team}</strong><span style={s.badge}>{statusLabel(board.confidence_provider_status)}</span></div>
@@ -203,7 +236,7 @@ function MatchupTwitterIntel({ date, teams }) {
     {mode === 'team' && <div style={{ ...s.filters, marginTop: 12 }}><label><div style={s.label}>Team</div><select style={s.select} value={team} onChange={e => setTeam(e.target.value)}>{asArray(teams).map(t => <option key={t} value={t}>{t}</option>)}</select></label><div style={{ display: 'flex', alignItems: 'end' }}><button type="button" style={s.button} onClick={() => loadTwitter()}>Search Team</button></div></div>}
     {mode === 'search' && <div style={{ ...s.filters, marginTop: 12 }}><label><div style={s.label}>Keyword Search</div><input style={s.input} value={query} onChange={e => setQuery(e.target.value)} placeholder="Cubs lineup, MLB sharp money" /></label><div style={{ display: 'flex', alignItems: 'end' }}><button type="button" style={s.button} onClick={() => loadTwitter()}>Search X/Twitter</button></div></div>}
     {!hasLoaded && !loading && <div style={{ ...s.empty, marginTop: 12 }}>Twitter Intel ready. Click Load Twitter Intel.</div>}
-    {loading && <div style={{ ...s.loading, marginTop: 12 }}>Loading Twitter Intel...</div>}
+    {loading && <div style={{ marginTop: 12 }}><FourBlockLoader compact title="Loading Twitter intelligence…" stages={[]} /></div>}
     {error && <div style={{ ...s.error, marginTop: 12 }}>{error}</div>}
     {disabled && <div style={{ ...s.empty, marginTop: 12 }}>Twitter/X provider is disabled or missing credentials. Configure NEWS_X_PROVIDER=apify, APIFY_TOKEN, and TWITTER_X_ACTOR_ID to enable matchup intel.</div>}
     {!disabled && message && <div style={{ ...s.error, marginTop: 12 }}>{message}</div>}
@@ -326,7 +359,7 @@ export default function NewsPage() {
     </section>
     <section style={s.section}>
       <div style={s.row}><div><div style={s.sectionTitle}>Terminal Buckets</div><div style={s.meta}>Exclusive buckets prevent national wire spam from flooding every section.</div></div><div style={s.tabs}>{[...BUCKETS, 'team_intel'].map(bucket => <button key={bucket} type="button" style={s.tab(activeBucket === bucket)} onClick={() => setActiveBucket(bucket)}>{bucket.replace('_', ' ')}</button>)}</div></div>
-      {activeBucket === 'team_intel' ? <TeamIntel boards={intel?.team_intel} loading={intelLoading && !intel} /> : newsLoading && !payload ? <div style={s.loading}>Loading news bucket...</div> : visible.length === 0 ? <div style={s.empty}>{emptyMessage(payload)}</div> : <div style={s.grid}>{visible.map(item => <NewsCard key={dedupeKey(item)} item={item} />)}</div>}
+      {activeBucket === 'team_intel' ? <TeamIntel boards={intel?.team_intel} loading={intelLoading && !intel} /> : newsLoading && !payload ? <FourBlockLoader kicker="Connecting the MLB news wire" title="Loading MLB News" stages={['Loading current MLB headlines', 'Reading official and trusted sources', 'Organizing team and betting coverage', 'Checking breaking-news status', 'Building the live news wire']} note="News is grouped by recency, team, source, and subject." /> : visible.length === 0 ? <div style={s.empty}>{emptyMessage(payload)}</div> : <div style={s.grid}>{visible.map(item => <NewsCard key={dedupeKey(item)} item={item} />)}</div>}
     </section>
   </div>
 }
