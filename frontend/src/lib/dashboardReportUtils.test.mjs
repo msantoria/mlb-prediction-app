@@ -1,11 +1,17 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { buildReportCsv, csvEscape, mlbDateIso, safeFilenamePart } from './dashboardReportUtils.mjs'
+import { buildReportCsv, csvEscape, formatEasternDateTime, mlbDateIso, safeFilenamePart } from './dashboardReportUtils.mjs'
 
 test('mlbDateIso uses the MLB Eastern business date instead of UTC', () => {
   assert.equal(mlbDateIso(new Date('2026-07-14T02:30:00.000Z')), '2026-07-13')
   assert.equal(mlbDateIso(new Date('2026-07-14T05:00:00.000Z')), '2026-07-14')
+})
+
+test('formatEasternDateTime renders an explicit Eastern Time value', () => {
+  const formatted = formatEasternDateTime('2026-07-14T02:30:00.000Z')
+  assert.match(formatted, /Jul 13, 2026/)
+  assert.match(formatted, /10:30 PM ET$/)
 })
 
 test('csvEscape protects commas, quotes, and line breaks', () => {

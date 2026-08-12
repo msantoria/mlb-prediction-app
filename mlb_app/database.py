@@ -327,7 +327,7 @@ class AppUserDirectoryProfile(Base):
     is_locked: bool = Column(Boolean, nullable=False, default=False, index=True)
     locale: str = Column(String(32), nullable=False, default="en_US")
     language: str = Column(String(16), nullable=False, default="en")
-    timezone: str = Column(String(64), nullable=False, default="UTC")
+    timezone: str = Column(String(64), nullable=False, default="America/New_York")
     session_version: int = Column(Integer, nullable=False, default=1)
     last_login_at: Optional[datetime] = Column(DateTime, nullable=True)
     created_by_user_id: Optional[int] = Column(Integer, nullable=True)

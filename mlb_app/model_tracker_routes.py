@@ -40,6 +40,7 @@ from .model_tracker import (
     refresh_tracker_results,
 )
 from .model_tracker_safe_snapshot import build_tracker_snapshot_safe
+from .my_dashboard_dataset_runtime import mlb_business_date
 
 router = APIRouter(tags=["model-tracker", "my-dashboard"])
 
@@ -121,7 +122,7 @@ class DashboardItemCreateRequest(BaseModel):
     folder_id: int
     source_tab: str
     source_type: str
-    title: str
+    title: str = Field(min_length=1, max_length=255)
     subtitle: Optional[str] = None
     payload_json: Dict[str, Any]
     filter_json: Optional[Dict[str, Any]] = None
@@ -163,7 +164,7 @@ def _session_factory():
 
 
 def _target_date(value: Optional[str]) -> str:
-    target = (value or dt.date.today().isoformat())[:10]
+    target = (value or mlb_business_date().isoformat())[:10]
     try:
         dt.date.fromisoformat(target)
     except ValueError as exc:
@@ -320,7 +321,7 @@ def _build_seed_payload(component: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _get_or_create_today_folder(session, user_id: int) -> AppDashboardFolder:
-    today = dt.date.today()
+    today = mlb_business_date()
     folder = (
         session.query(AppDashboardFolder)
         .filter(AppDashboardFolder.user_id == user_id, AppDashboardFolder.folder_date == today)
@@ -965,7 +966,7 @@ def my_dashboard_create_item(
             folder_id=folder.id,
             source_tab=request.source_tab,
             source_type=request.source_type,
-            title=request.title,
+            title=_validated_dashboard_name(request.title),
             subtitle=request.subtitle,
             payload_json=request.payload_json,
             filter_json=request.filter_json,

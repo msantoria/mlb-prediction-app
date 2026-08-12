@@ -24,12 +24,19 @@ export const DEFAULT_FIELDS_BY_OBJECT = {
   model_projections: ['game_pk', 'away_team_name', 'home_team_name', 'away_win_probability', 'home_win_probability', 'projected_total'],
   model_projection_players: ['full_name', 'player_type', 'team_name', 'projected_dfs_points', 'dfs_floor', 'dfs_ceiling'],
   model_tracker: ['snapshot_date', 'pick_label', 'model_name', 'score', 'grade', 'result_status'],
-  batter_arsenal: ['batter_name', 'pitcher_pitch_name', 'pitcher_usage_pct', 'pitches_seen', 'xwoba', 'edge_score', 'matchup_confidence'],
+  batter_arsenal: ['batter_name', 'team_name', 'opposing_team_name', 'pitcher_pitch_name', 'pitcher_usage_pct', 'pitches_seen', 'xwoba', 'edge_score', 'matchup_confidence'],
   player_trends: ['rank', 'player_name', 'team', 'metric_label', 'current_value', 'baseline_value', 'absolute_change', 'trend_direction'],
 }
 
 export function defaultFieldsForObject(objectKey) {
   return [...(DEFAULT_FIELDS_BY_OBJECT[objectKey] || LEGACY_DEFAULT_FIELDS)]
+}
+
+export function defaultReportSaveAsDraft({ label, date, folderId }) {
+  return {
+    title: `${String(label || 'Report').trim()} Report | ${date}`,
+    folder_id: folderId == null ? '' : String(folderId),
+  }
 }
 
 export function initialFieldsByObject(objects, persisted = {}) {

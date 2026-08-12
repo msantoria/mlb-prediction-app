@@ -489,6 +489,50 @@ def test_profile_and_workspace_keep_existing_contract_and_add_access(auth_store)
     assert workspace["user"]["capabilities"] == list(admin_access.USER_CAPABILITIES)
 
 
+def test_save_as_requires_a_name_and_persists_to_the_selected_folder(auth_store):
+    Session, ids = auth_store
+    now = _now()
+    with Session() as session:
+        folder = AppDashboardFolder(
+            user_id=ids["standard"],
+            folder_name="Scouting Reports",
+            is_default=False,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(folder)
+        session.flush()
+        folder_id = folder.id
+        _add_session(session, ids["standard"], "save-as-token")
+        session.commit()
+
+    request_data = {
+        "folder_id": folder_id,
+        "source_tab": "my-dashboard",
+        "source_type": "report_view",
+        "subtitle": "Batter vs Arsenal",
+        "payload_json": {"schema_version": 4},
+    }
+    with pytest.raises(HTTPException) as blank:
+        routes.my_dashboard_create_item(
+            routes.DashboardItemCreateRequest(title="   ", **request_data),
+            mlb_dashboard_session=None,
+            x_dashboard_session="save-as-token",
+        )
+    assert blank.value.status_code == 400
+
+    created = routes.my_dashboard_create_item(
+        routes.DashboardItemCreateRequest(
+            title="  Cubs vs Cardinals Arsenal  ",
+            **request_data,
+        ),
+        mlb_dashboard_session=None,
+        x_dashboard_session="save-as-token",
+    )
+    assert created["item"]["title"] == "Cubs vs Cardinals Arsenal"
+    assert created["item"]["folder_id"] == folder_id
+
+
 def test_admin_user_list_is_explicitly_minimized(auth_store):
     Session, ids = auth_store
     now = _now()
@@ -583,6 +627,25 @@ def test_object_manager_response_is_derived_from_server_registry(monkeypatch):
             "supported": bool(expected_sort_count),
             "field_count": expected_sort_count,
         }
+
+
+def test_object_manager_exposes_batter_arsenal_team_directory_fields(monkeypatch):
+    objects = list_report_types()
+    monkeypatch.setattr(admin_routes, "list_report_types", lambda: objects)
+    payload = admin_routes.admin_objects(_principal())
+    arsenal = next(
+        item
+        for item in payload["objects"]
+        if item["api_name"] == "competitive_batter_arsenal"
+    )
+    fields = {field["name"]: field for field in arsenal["fields"]}
+    assert fields["team_name"]["label"] == "Team Name"
+    assert fields["opposing_team_name"]["label"] == "Opposing Team Name"
+    assert fields["team_name"]["field_directory"] == "canonical_player_directory"
+    assert (
+        fields["opposing_team_name"]["relationship_path"]
+        == "opposing_pitcher.current_team"
+    )
 
 
 def test_application_registry_response_is_code_owned(monkeypatch):

@@ -34,7 +34,7 @@ export function userEditorValues(user = {}) {
     company: directory.company || '',
     locale: directory.locale || 'en_US',
     language: directory.language || 'en',
-    timezone: directory.timezone || 'UTC',
+    timezone: directory.timezone || 'America/New_York',
     is_active: directory.is_active !== false,
     is_locked: Boolean(directory.is_locked),
     is_admin: user.role === 'admin',

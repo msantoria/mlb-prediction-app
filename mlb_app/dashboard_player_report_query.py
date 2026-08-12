@@ -9,7 +9,12 @@ from sqlalchemy import Float, and_, case, cast, func, or_
 from sqlalchemy.orm import Session
 
 from .dashboard_object_models import DashboardPlayerCurrent
-from .dashboard_report_types import FIELD_CATALOG, REPORT_TYPES, describe_report_type
+from .dashboard_report_types import (
+    FIELD_CATALOG,
+    PLAYER_PROFILE_STATCAST_FIELD_DIRECTORY,
+    REPORT_TYPES,
+    describe_report_type,
+)
 
 
 DEFAULT_PAGE_SIZE = 50
@@ -27,14 +32,8 @@ FIELD_COLUMNS = {
 }
 
 JSON_METRIC_SOURCES = {
-    "batting_average": ("batting_average", "AVG"),
-    "average_velocity": ("average_velocity", "Velocity"),
-    "average_spin_rate": ("average_spin_rate", "Spin Rate"),
-    "horizontal_break": ("horizontal_break",),
-    "vertical_break": ("vertical_break",),
-    "release_position_x": ("release_position_x",),
-    "release_position_z": ("release_position_z",),
-    "release_extension": ("release_extension",),
+    name: tuple(definition["json_keys"])
+    for name, definition in PLAYER_PROFILE_STATCAST_FIELD_DIRECTORY.items()
 }
 
 

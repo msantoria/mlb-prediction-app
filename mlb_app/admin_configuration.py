@@ -17,6 +17,7 @@ from .database import (
 
 PROFILE_OWNER = "owner_administrator"
 PROFILE_STANDARD = "standard_user"
+EASTERN_TIME_ZONE = "America/New_York"
 
 PROFILE_DEFINITIONS: Dict[str, Dict[str, str]] = {
     PROFILE_OWNER: {
@@ -50,8 +51,8 @@ SETTING_DEFINITIONS: Dict[Tuple[str, str], Dict[str, Any]] = {
     },
     ("identity", "default_timezone"): {
         "value_type": "string",
-        "default": "UTC",
-        "description": "Default timezone for newly materialized directory profiles.",
+        "default": EASTERN_TIME_ZONE,
+        "description": "Default Eastern Time zone for newly materialized directory profiles.",
         "validation": {
             "allowed": [
                 "UTC",
@@ -149,14 +150,24 @@ def get_or_create_directory_profile(
         .first()
     )
     if profile is not None:
+        # UTC was the original application default. Converge those legacy
+        # directory rows to the product-wide Eastern Time contract while still
+        # preserving any explicitly selected non-UTC timezone.
+        if profile.timezone in (None, "", "UTC"):
+            profile.timezone = EASTERN_TIME_ZONE
+            profile.updated_by_user_id = actor_user_id
+            profile.updated_at = _utcnow()
         return profile
     defaults = resolved_setting_values(session)
     now = _utcnow()
+    default_timezone = defaults[("identity", "default_timezone")]
+    if default_timezone in (None, "", "UTC"):
+        default_timezone = EASTERN_TIME_ZONE
     profile = AppUserDirectoryProfile(
         user_id=user_id,
         locale=defaults[("identity", "default_locale")],
         language=defaults[("identity", "default_language")],
-        timezone=defaults[("identity", "default_timezone")],
+        timezone=default_timezone,
         created_by_user_id=actor_user_id,
         updated_by_user_id=actor_user_id,
         created_at=now,

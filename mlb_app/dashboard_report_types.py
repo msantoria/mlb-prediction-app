@@ -113,6 +113,103 @@ def _current_player_fields(
     return fields
 
 
+PLAYER_PROFILE_STATCAST_FIELD_DIRECTORY: Dict[str, Dict[str, Any]] = {
+    "batting_average": {
+        "player_types": ("hitter",),
+        "json_keys": ("batting_average", "AVG"),
+        "label": "Batting Average",
+        "data_type": "double",
+        "group": "Production",
+        "description": "Current batting average from the approved hitter aggregate.",
+        "weight_aliases": ["AVG"],
+    },
+    "average_velocity": {
+        "player_types": ("pitcher",),
+        "json_keys": ("average_velocity", "Velocity"),
+        "label": "Average Velocity",
+        "data_type": "double",
+        "group": "Pitch Characteristics",
+        "description": "Average pitch velocity from the approved pitcher aggregate.",
+        "weight_aliases": ["Velocity"],
+    },
+    "average_spin_rate": {
+        "player_types": ("pitcher",),
+        "json_keys": ("average_spin_rate", "Spin Rate"),
+        "label": "Average Spin Rate",
+        "data_type": "double",
+        "group": "Pitch Characteristics",
+        "description": "Average spin rate from the approved pitcher aggregate.",
+        "weight_aliases": ["Spin Rate"],
+    },
+    "horizontal_break": {
+        "player_types": ("pitcher",),
+        "json_keys": ("horizontal_break",),
+        "label": "Average Horizontal Break",
+        "data_type": "double",
+        "group": "Pitch Movement",
+        "description": "Average horizontal pitch break from the approved pitcher aggregate.",
+    },
+    "vertical_break": {
+        "player_types": ("pitcher",),
+        "json_keys": ("vertical_break",),
+        "label": "Average Vertical Break",
+        "data_type": "double",
+        "group": "Pitch Movement",
+        "description": "Average vertical pitch break from the approved pitcher aggregate.",
+    },
+    "release_position_x": {
+        "player_types": ("pitcher",),
+        "json_keys": ("release_position_x",),
+        "label": "Average Release Position X",
+        "data_type": "double",
+        "group": "Release",
+        "description": "Average horizontal release position from the approved pitcher aggregate.",
+    },
+    "release_position_z": {
+        "player_types": ("pitcher",),
+        "json_keys": ("release_position_z",),
+        "label": "Average Release Position Z",
+        "data_type": "double",
+        "group": "Release",
+        "description": "Average vertical release position from the approved pitcher aggregate.",
+    },
+    "release_extension": {
+        "player_types": ("pitcher",),
+        "json_keys": ("release_extension",),
+        "label": "Average Release Extension",
+        "data_type": "double",
+        "group": "Release",
+        "description": "Average release extension from the approved pitcher aggregate.",
+    },
+}
+
+
+def _player_profile_statcast_fields(player_type: str) -> List[Dict[str, Any]]:
+    """Build report fields from the player-profile metric directory.
+
+    The Control Center and MyDashboard both read FIELD_CATALOG, so registering a
+    scalar Statcast profile metric here makes it available to both surfaces and
+    to the validated player report query without a second field declaration.
+    """
+
+    fields: List[Dict[str, Any]] = []
+    for name, definition in PLAYER_PROFILE_STATCAST_FIELD_DIRECTORY.items():
+        if player_type not in definition["player_types"]:
+            continue
+        field = _field(
+            name,
+            definition["label"],
+            definition["data_type"],
+            definition["group"],
+            description=definition["description"],
+            source_object="dashboard_player_current",
+            weight_aliases=definition.get("weight_aliases"),
+        )
+        field["field_directory"] = "player_profile_statcast"
+        fields.append(field)
+    return fields
+
+
 _CURRENT_PLAYER_IDENTITY_FIELDS = [
     "mlb_player_id",
     "full_name",
@@ -148,18 +245,7 @@ HITTER_CURRENT_FIELDS = _current_player_fields(
     ]
     + _CURRENT_PLAYER_AUDIT_FIELDS,
 )
-HITTER_CURRENT_FIELDS.insert(
-    -4,
-    _field(
-        "batting_average",
-        "Batting Average",
-        "double",
-        "Production",
-        description="Current batting average from the approved hitter aggregate.",
-        source_object="dashboard_player_current",
-        weight_aliases=["AVG"],
-    ),
-)
+HITTER_CURRENT_FIELDS[-4:-4] = _player_profile_statcast_fields("hitter")
 
 PITCHER_CURRENT_FIELDS = _current_player_fields(
     _CURRENT_PLAYER_IDENTITY_FIELDS
@@ -199,66 +285,7 @@ PITCHER_CURRENT_FIELDS = _current_player_fields(
         },
     },
 )
-PITCHER_CURRENT_FIELDS[-4:-4] = [
-        _field(
-            "average_velocity",
-            "Average Velocity",
-            "double",
-            "Pitch Characteristics",
-            description="Average pitch velocity from the approved pitcher aggregate.",
-            source_object="dashboard_player_current",
-            weight_aliases=["Velocity"],
-        ),
-        _field(
-            "average_spin_rate",
-            "Average Spin Rate",
-            "double",
-            "Pitch Characteristics",
-            description="Average spin rate from the approved pitcher aggregate.",
-            source_object="dashboard_player_current",
-            weight_aliases=["Spin Rate"],
-        ),
-        _field(
-            "horizontal_break",
-            "Average Horizontal Break",
-            "double",
-            "Pitch Movement",
-            description="Average horizontal pitch break from the approved pitcher aggregate.",
-            source_object="dashboard_player_current",
-        ),
-        _field(
-            "vertical_break",
-            "Average Vertical Break",
-            "double",
-            "Pitch Movement",
-            description="Average vertical pitch break from the approved pitcher aggregate.",
-            source_object="dashboard_player_current",
-        ),
-        _field(
-            "release_position_x",
-            "Average Release Position X",
-            "double",
-            "Release",
-            description="Average horizontal release position from the approved pitcher aggregate.",
-            source_object="dashboard_player_current",
-        ),
-        _field(
-            "release_position_z",
-            "Average Release Position Z",
-            "double",
-            "Release",
-            description="Average vertical release position from the approved pitcher aggregate.",
-            source_object="dashboard_player_current",
-        ),
-        _field(
-            "release_extension",
-            "Average Release Extension",
-            "double",
-            "Release",
-            description="Average release extension from the approved pitcher aggregate.",
-            source_object="dashboard_player_current",
-        ),
-]
+PITCHER_CURRENT_FIELDS[-4:-4] = _player_profile_statcast_fields("pitcher")
 
 
 LINEUP_HISTORY_FIELDS: List[Dict[str, Any]] = [
@@ -576,6 +603,36 @@ MODEL_TRACKER_FIELDS = [
 COMPETITIVE_ARSENAL_FIELDS = deepcopy(ARSENAL_SPLIT_FIELDS)
 for field in COMPETITIVE_ARSENAL_FIELDS:
     field["freshness"] = "competitive_matchup_snapshot"
+COMPETITIVE_ARSENAL_FIELDS.extend([
+    {
+        **_field(
+            "team_name",
+            "Team Name",
+            "string",
+            "Team",
+            operators=["eq", "neq", "contains", "in"],
+            description="Current team name resolved from the batter's canonical player directory record.",
+            freshness="canonical",
+            source_object="dashboard_players",
+        ),
+        "field_directory": "canonical_player_directory",
+        "relationship_path": "batter.current_team",
+    },
+    {
+        **_field(
+            "opposing_team_name",
+            "Opposing Team Name",
+            "string",
+            "Team",
+            operators=["eq", "neq", "contains", "in"],
+            description="Current opposing team name resolved from the opposing pitcher's canonical player directory record.",
+            freshness="canonical",
+            source_object="dashboard_players",
+        ),
+        "field_directory": "canonical_player_directory",
+        "relationship_path": "opposing_pitcher.current_team",
+    },
+])
 COMPETITIVE_ARSENAL_FIELDS.extend([
     _runtime_field(name, label, data_type, group, "pitch_arsenal", description, freshness="competitive_matchup_snapshot")
     for name, label, data_type, group, description in [
