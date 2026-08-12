@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from sqlalchemy import func
@@ -11,8 +12,8 @@ from .db_utils import (
     _calculate_batter_stats,
     _dedupe_terminal_pas,
     _is_true_ab_event,
-    _ordered_batter_terminal_query,
     get_batter_data_quality,
+    load_canonical_batter_events,
 )
 
 STATCAST_ROLLING_SOURCE = "postgres_statcast_events_deduped_terminal_pa"
@@ -44,21 +45,50 @@ def parse_window_list(raw: Optional[str], defaults: Iterable[int], *, minimum: i
 def _quality_with_source(session: Session, batter_id: int, removed: int = 0) -> Dict[str, Any]:
     quality = dict(get_batter_data_quality(session, batter_id) or {})
     quality["source"] = STATCAST_ROLLING_SOURCE
-    quality["dedupe_policy"] = "terminal PA identity: game_pk + at_bat_number + pitcher_id + batter_id"
+    quality["dedupe_policy"] = "canonical MLB pitch identity, then terminal PA identity"
     quality["duplicate_terminal_pa_rows_removed_in_window"] = removed
+    quality["duplicate_terminal_pa_rows_removed_in_warehouse"] = removed
     warnings = list(quality.get("warnings") or [])
     if removed:
-        warnings.append(f"Removed {removed} duplicate terminal PA row(s) before calculating this rolling window.")
+        warnings.append(
+            f"Ignored {removed} duplicate terminal PA row(s) in the warehouse before calculating this window."
+        )
     quality["warnings"] = warnings
     return quality
 
 
 def _clean_terminal_events(session: Session, batter_id: int, requested: int, *, multiplier: int = 4) -> Tuple[List[StatcastEvent], int]:
-    raw_limit = max(requested * multiplier, requested + 50)
-    raw_events = _ordered_batter_terminal_query(session, batter_id).limit(raw_limit).all()
-    deduped = _dedupe_terminal_pas(raw_events)
-    removed = max(len(raw_events) - len(deduped), 0)
-    return deduped, removed
+    del multiplier  # Kept in the signature for callers using the older contract.
+    canonical_events, _ = load_canonical_batter_events(session, batter_id)
+    canonical_events = [
+        event for event in canonical_events if event.events in TERMINAL_EVENTS
+    ]
+    canonical_events.sort(
+        key=lambda event: (
+            event.game_date or datetime.date.min,
+            int(event.game_pk or 0),
+            int(event.at_bat_number or 0),
+            int(event.pitch_number or 0),
+            int(event.id or 0),
+        ),
+        reverse=True,
+    )
+    deduped = _dedupe_terminal_pas(canonical_events)
+    raw_terminal_cache_key = f"raw_batter_terminal_count:{int(batter_id)}"
+    raw_terminal_count = session.info.get(raw_terminal_cache_key)
+    if raw_terminal_count is None:
+        raw_terminal_count = int(
+            session.query(func.count(StatcastEvent.id))
+            .filter(
+                StatcastEvent.batter_id == batter_id,
+                StatcastEvent.events.in_(TERMINAL_EVENTS),
+            )
+            .scalar()
+            or 0
+        )
+        session.info[raw_terminal_cache_key] = raw_terminal_count
+    removed = max(raw_terminal_count - len(deduped), 0)
+    return deduped[:requested], removed
 
 
 def clean_rolling_by_pa(session: Session, batter_id: int, n_pa: int) -> Optional[Dict[str, Any]]:
@@ -115,20 +145,28 @@ def clean_rolling_by_games(session: Session, batter_id: int, n_games: int) -> Op
     if not game_rows:
         return None
     game_pks = [row.game_pk for row in game_rows]
-    raw_events = (
-        session.query(StatcastEvent)
+    raw_event_count = int(
+        session.query(func.count(StatcastEvent.id))
         .filter(
             StatcastEvent.batter_id == batter_id,
             StatcastEvent.game_pk.in_(game_pks),
             StatcastEvent.events.in_(TERMINAL_EVENTS),
         )
-        .all()
+        .scalar()
+        or 0
     )
-    events = _dedupe_terminal_pas(raw_events)
-    removed = max(len(raw_events) - len(events), 0)
+    canonical_events, _ = load_canonical_batter_events(session, batter_id)
+    events = _dedupe_terminal_pas(
+        [
+            event
+            for event in canonical_events
+            if event.game_pk in game_pks and event.events in TERMINAL_EVENTS
+        ]
+    )
+    removed = max(raw_event_count - len(events), 0)
     if not events:
         return None
-    stats = _calculate_batter_stats(events, raw_event_count=len(raw_events))
+    stats = _calculate_batter_stats(events, raw_event_count=raw_event_count)
     stats.update({
         "actual_games": len(game_pks),
         "requested_games": n_games,

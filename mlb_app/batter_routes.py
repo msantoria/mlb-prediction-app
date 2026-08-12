@@ -28,6 +28,7 @@ from .db_utils import (
     get_batter_data_quality,
     get_batter_leaderboards,
     get_batter_multi_season,
+    get_batter_statcast_profile,
     get_player_splits_multi_season,
 )
 from .pitcher_intelligence import MLB_TIMEZONE, build_pitcher_intelligence_profile
@@ -108,6 +109,9 @@ def _fetch_batter_live_data(player_id: int, season: int) -> Dict[str, Any]:
         pa = s.get("plateAppearances") or 0
         k = s.get("strikeOuts") or 0
         bb = s.get("baseOnBalls") or 0
+        batting_avg = _safe_float(s.get("avg"))
+        on_base_pct = _safe_float(s.get("obp"))
+        slugging_pct = _safe_float(s.get("slg"))
         return {
             "g": s.get("gamesPlayed"),
             "ab": s.get("atBats"),
@@ -121,13 +125,18 @@ def _fetch_batter_live_data(player_id: int, season: int) -> Dict[str, Any]:
             "sb": s.get("stolenBases"),
             "bb": bb,
             "k": k,
-            "batting_avg": _safe_float(s.get("avg")),
-            "on_base_pct": _safe_float(s.get("obp")),
-            "slugging_pct": _safe_float(s.get("slg")),
+            "batting_avg": batting_avg,
+            "on_base_pct": on_base_pct,
+            "slugging_pct": slugging_pct,
             "ops": _safe_float(s.get("ops")),
             "k_pct": round(k / pa, 3) if pa > 0 else None,
             "bb_pct": round(bb / pa, 3) if pa > 0 else None,
             "home_runs": s.get("homeRuns"),
+            # Stable aliases retained for existing profile clients.
+            "avg": batting_avg,
+            "obp": on_base_pct,
+            "slg": slugging_pct,
+            "plate_appearances": pa,
         }
 
     try:
@@ -177,6 +186,68 @@ def _aggregate_to_dict(agg) -> Optional[Dict[str, Any]]:
     if not agg:
         return None
     return {"avg_exit_velocity": agg.avg_exit_velocity, "avg_launch_angle": agg.avg_launch_angle, "hard_hit_pct": agg.hard_hit_pct, "barrel_pct": agg.barrel_pct, "k_pct": agg.k_pct, "bb_pct": agg.bb_pct, "batting_avg": agg.batting_avg, "end_date": agg.end_date.isoformat() if agg.end_date else None, "window": agg.window, "source": "postgres_batter_aggregates"}
+
+
+def _statcast_profile_to_aggregate(profile: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not profile:
+        return None
+    fields = (
+        "avg_exit_velocity",
+        "avg_launch_angle",
+        "hard_hit_pct",
+        "barrel_pct",
+        "k_pct",
+        "bb_pct",
+        "batting_avg",
+        "end_date",
+        "window",
+        "source",
+        "actual_pa",
+        "canonical_pitch_rows",
+        "duplicate_rows_removed",
+    )
+    return {field: profile.get(field) for field in fields}
+
+
+def _canonical_multi_season_rows(
+    session,
+    batter_id: int,
+    seasons: list[int],
+    current_season: int,
+    current_profile: Optional[Dict[str, Any]],
+) -> list[Dict[str, Any]]:
+    stored_by_season = {
+        int(row["season"]): row
+        for row in get_batter_multi_season(session, batter_id, seasons)
+        if row.get("season") is not None
+    }
+    rows: list[Dict[str, Any]] = []
+    for profile_season in seasons:
+        profile = current_profile if profile_season == current_season else get_batter_statcast_profile(
+            session,
+            batter_id,
+            start_date=datetime.date(profile_season, 1, 1),
+            end_date=datetime.date(profile_season, 12, 31),
+        )
+        if not profile:
+            rows.append(stored_by_season.get(profile_season, {"season": profile_season, "label": str(profile_season)}))
+            continue
+        rows.append(
+            {
+                "season": profile_season,
+                "label": "YTD (90d)" if profile_season == current_season else str(profile_season),
+                "avg_exit_velocity": profile.get("avg_exit_velocity"),
+                "avg_launch_angle": profile.get("avg_launch_angle"),
+                "hard_hit_pct": profile.get("hard_hit_pct"),
+                "barrel_pct": profile.get("barrel_pct"),
+                "k_pct": profile.get("k_pct"),
+                "bb_pct": profile.get("bb_pct"),
+                "batting_avg": profile.get("batting_avg"),
+                "actual_pa": profile.get("actual_pa"),
+                "source": profile.get("source"),
+            }
+        )
+    return rows
 
 
 @router.get("/data/freshness")
@@ -237,8 +308,35 @@ def batter_profile(id: int, season: Optional[int] = None) -> Dict[str, Any]:
         season = datetime.datetime.now(MLB_TIMEZONE).year
     Session = _get_session()
     with Session() as session:
-        agg, agg_label = get_batter_aggregate_with_fallback(session, id, season)
+        today = datetime.datetime.now(MLB_TIMEZONE).date()
+        season_start = datetime.date(season, 1, 1)
+        season_end = min(datetime.date(season, 12, 31), today)
+        data_quality = get_batter_data_quality(session, id)
+        latest_text = data_quality.get("latest_event_date")
+        latest_date = datetime.date.fromisoformat(latest_text) if latest_text else None
+        profile_end = (
+            latest_date
+            if latest_date is not None and season_start <= latest_date <= season_end
+            else season_end
+        )
+        profile_start = max(season_start, profile_end - datetime.timedelta(days=89))
+        statcast_profile = get_batter_statcast_profile(
+            session,
+            id,
+            start_date=profile_start,
+            end_date=profile_end,
+        )
+        stored_agg, stored_agg_label = get_batter_aggregate_with_fallback(session, id, season)
+        aggregate = _statcast_profile_to_aggregate(statcast_profile) or _aggregate_to_dict(stored_agg)
+        agg_label = "Canonical Statcast · Last 90 Days" if statcast_profile else stored_agg_label
         seasons = [season, season - 1, season - 2]
+        multi_season = _canonical_multi_season_rows(
+            session,
+            id,
+            seasons,
+            season,
+            statcast_profile,
+        )
         live = _fetch_batter_live_data(id, season)
         local_splits = get_player_splits_multi_season(session, id, seasons)
         splits = local_splits or live.get("splits")
@@ -251,16 +349,18 @@ def batter_profile(id: int, season: Optional[int] = None) -> Dict[str, Any]:
             "season_stats_warnings": live.get("season_stats_warnings", []),
             "season_stats_contract": "Official season hitting line only. Do not replace with local Statcast aggregate semantics.",
             "aggregate_label": agg_label,
-            "aggregate": _aggregate_to_dict(agg),
-            "aggregate_source": "postgres_batter_aggregates",
-            "multi_season": dedupe_rows(get_batter_multi_season(session, id, seasons), ["season", "label"]),
-            "multi_season_source": "postgres_batter_aggregates",
+            "aggregate": aggregate,
+            "aggregate_source": aggregate.get("source") if aggregate else None,
+            "statcast": statcast_profile,
+            "statcast_source": statcast_profile.get("source") if statcast_profile else None,
+            "multi_season": dedupe_rows(multi_season, ["season", "label"]),
+            "multi_season_source": "postgres_statcast_events_canonical_pitch_identity",
             "splits": splits,
             "splits_source": LOCAL_SPLITS_SOURCE if local_splits else live.get("splits_source"),
             "year_by_year": dedupe_rows(live.get("year_by_year", []), ["season"]),
             "year_by_year_source": live.get("year_by_year_source"),
             "rolling_sources": {"pa": STATCAST_ROLLING_SOURCE, "ab": STATCAST_ROLLING_SOURCE, "games": STATCAST_ROLLING_SOURCE, "splits": STATCAST_ROLLING_SOURCE, "pitch_types": STATCAST_ROLLING_SOURCE},
-            "data_quality": get_batter_data_quality(session, id),
+            "data_quality": data_quality,
         }
 
 
