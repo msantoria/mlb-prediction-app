@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 
 import {
   buildReportRequest,
+  buildExecutionDefinition,
   canonicalBootstrapMessage,
   defaultReportSaveAsDraft,
   defaultFieldsForObject,
@@ -11,6 +12,7 @@ import {
   normalizeCanonicalPage,
   reportExecutionFacts,
   reportFieldsForMode,
+  reconcileSelectedFields,
   savedReportExecutionMode,
   selectableRequestFields,
 } from './dashboardReportBuilderState.mjs'
@@ -129,8 +131,8 @@ test('primary objects own independent default column selections', () => {
 
 test('batter arsenal defaults show both canonical teams and save-as has an explicit destination', () => {
   assert.deepEqual(
-    defaultFieldsForObject('batter_arsenal').slice(0, 3),
-    ['batter_name', 'team_name', 'opposing_team_name'],
+    defaultFieldsForObject('batter_arsenal').slice(0, 4),
+    ['batter_name', 'team_name', 'opposing_team_name', 'opposing_pitcher_name'],
   )
   assert.deepEqual(defaultReportSaveAsDraft({
     label: 'Batter vs Arsenal',
@@ -144,6 +146,45 @@ test('batter arsenal defaults show both canonical teams and save-as has an expli
   assert.match(workspaceSource, />Save As<\/button>/)
   assert.match(workspaceSource, />Folder selection<\/div>/)
   assert.match(workspaceSource, /folder_id: destination\.id/)
+})
+
+test('older persisted field selections receive new defaults once and reconcile to the server catalog', () => {
+  const migrated = initialFieldsByObject([{ key: 'batter_arsenal' }], {
+    selectedFieldsByObject: { batter_arsenal: ['batter_name', 'xwoba', 'removed_field'] },
+  })
+  assert.equal(migrated.batter_arsenal.includes('opposing_pitcher_name'), true)
+  assert.deepEqual(reconcileSelectedFields(migrated.batter_arsenal, [
+    { accessor: 'batter_name', selectable: true },
+    { accessor: 'opposing_pitcher_name', selectable: true },
+    { accessor: 'xwoba', selectable: true },
+  ], defaultFieldsForObject('batter_arsenal')), [
+    'batter_name',
+    'xwoba',
+    'opposing_pitcher_name',
+  ])
+})
+
+test('an execution definition remains tied to server-applied filters after the builder draft changes', () => {
+  const draft = {
+    logic: 'and',
+    conditions: [{ field: 'team_name', operator: 'eq', value: 'Chicago Cubs' }],
+  }
+  const definition = buildExecutionDefinition({
+    objectKey: 'batter_arsenal',
+    reportType: 'competitive_batter_arsenal',
+    requestPayload: { filters: draft, weights: {}, selected_fields: ['batter_name', 'opposing_pitcher_name'], page_size: 50, as_of_date: '2026-08-12' },
+    result: {
+      records: [{ batter_name: 'Alpha', opposing_pitcher_name: 'Opponent Arm' }],
+      filters_applied: [{ field: 'team_name', operator: 'eq', value: 'Chicago Cubs' }],
+      filter_logic: 'and',
+      query: { selected_fields: ['batter_name', 'opposing_pitcher_name'], sort_by: 'pitches_seen', sort_direction: 'desc' },
+    },
+    query,
+    displayFields: ['batter_name', 'opposing_pitcher_name'],
+  })
+  draft.conditions[0].value = 'New York Yankees'
+  assert.equal(definition.filters.conditions[0].value, 'Chicago Cubs')
+  assert.deepEqual(definition.selected_fields, ['batter_name', 'opposing_pitcher_name'])
 })
 
 test('projection, tracker, and competitive objects use safe registered sort defaults', () => {

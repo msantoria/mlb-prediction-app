@@ -12,7 +12,7 @@ export const FILTER_LOGIC_OPTIONS = [
 ]
 
 export function filterableReportFields(fields = []) {
-  return fields.filter(field => field?.filterable === true && field?.selectable !== false)
+  return fields.filter(field => field?.filterable === true)
 }
 
 export function defaultOperator(field) {

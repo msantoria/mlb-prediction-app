@@ -640,6 +640,7 @@ def test_object_manager_exposes_batter_arsenal_team_directory_fields(monkeypatch
     )
     fields = {field["name"]: field for field in arsenal["fields"]}
     assert fields["team_name"]["label"] == "Team Name"
+    assert fields["opposing_pitcher_name"]["label"] == "Opposing Pitcher Name"
     assert fields["opposing_team_name"]["label"] == "Opposing Team Name"
     assert fields["team_name"]["field_directory"] == "canonical_player_directory"
     assert (

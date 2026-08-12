@@ -13,6 +13,8 @@ export const CANONICAL_REPORT_TYPES = {
   player_trends: 'player_trends',
 }
 
+export const REPORT_BUILDER_SCHEMA_VERSION = 4
+
 const LEGACY_DEFAULT_FIELDS = ['rank', 'entity_name', 'team', 'opponent', 'score', 'confidence']
 
 export const DEFAULT_FIELDS_BY_OBJECT = {
@@ -24,7 +26,7 @@ export const DEFAULT_FIELDS_BY_OBJECT = {
   model_projections: ['game_pk', 'away_team_name', 'home_team_name', 'away_win_probability', 'home_win_probability', 'projected_total'],
   model_projection_players: ['full_name', 'player_type', 'team_name', 'projected_dfs_points', 'dfs_floor', 'dfs_ceiling'],
   model_tracker: ['snapshot_date', 'pick_label', 'model_name', 'score', 'grade', 'result_status'],
-  batter_arsenal: ['batter_name', 'team_name', 'opposing_team_name', 'pitcher_pitch_name', 'pitcher_usage_pct', 'pitches_seen', 'xwoba', 'edge_score', 'matchup_confidence'],
+  batter_arsenal: ['batter_name', 'team_name', 'opposing_team_name', 'opposing_pitcher_name', 'pitcher_pitch_name', 'pitcher_usage_pct', 'pitches_seen', 'xwoba', 'edge_score', 'matchup_confidence'],
   player_trends: ['rank', 'player_name', 'team', 'metric_label', 'current_value', 'baseline_value', 'absolute_change', 'trend_direction'],
 }
 
@@ -41,12 +43,29 @@ export function defaultReportSaveAsDraft({ label, date, folderId }) {
 
 export function initialFieldsByObject(objects, persisted = {}) {
   const defaults = Object.fromEntries(objects.map(object => [object.key, defaultFieldsForObject(object.key)]))
+  const migrateDefaults = Number(persisted.schema_version || 0) < REPORT_BUILDER_SCHEMA_VERSION
   if (persisted.selectedFieldsByObject && typeof persisted.selectedFieldsByObject === 'object') {
     Object.entries(persisted.selectedFieldsByObject).forEach(([key, fields]) => {
-      if (Array.isArray(fields) && fields.length) defaults[key] = fields
+      if (Array.isArray(fields) && fields.length) {
+        defaults[key] = migrateDefaults
+          ? [...new Set([...fields, ...defaultFieldsForObject(key)])]
+          : [...fields]
+      }
     })
   }
   return defaults
+}
+
+export function reconcileSelectedFields(selectedFields = [], availableFields = [], fallbackFields = []) {
+  const allowed = new Set(
+    availableFields
+      .filter(field => field?.accessor && field.selectable !== false)
+      .map(field => field.accessor),
+  )
+  if (selectedFields.includes('rank') || fallbackFields.includes('rank')) allowed.add('rank')
+  const reconciled = selectedFields.filter(field => allowed.has(field))
+  if (reconciled.length) return [...new Set(reconciled)]
+  return fallbackFields.filter(field => allowed.has(field))
 }
 
 export function reportFieldsForMode({ objectKey, activeLineupsOnly, selectedFields }) {
@@ -62,6 +81,60 @@ export function selectableRequestFields(selectedFields = [], availableFields = [
       .map(field => field.accessor),
   )
   return selectedFields.filter(field => allowed.has(field))
+}
+
+export function buildExecutionDefinition({
+  objectKey,
+  reportType,
+  result = {},
+  requestPayload = {},
+  query = {},
+  generatedForDate,
+  generatedAt,
+  displayFields = [],
+  trendConfig,
+}) {
+  const resultQuery = result?.query || {}
+  const serverSelectedFields = Array.isArray(resultQuery.selected_fields)
+    ? resultQuery.selected_fields
+    : Array.isArray(requestPayload.selected_fields)
+      ? requestPayload.selected_fields
+      : []
+  const selectedFields = displayFields.filter(field => (
+    serverSelectedFields.includes(field)
+    || safeResultRows(result).some(row => Object.prototype.hasOwnProperty.call(row || {}, field))
+  ))
+  const canonicalFilters = {
+    logic: result?.filter_logic === 'or' ? 'or' : 'and',
+    conditions: Array.isArray(result?.filters_applied)
+      ? result.filters_applied.map(condition => ({ ...condition }))
+      : Array.isArray(requestPayload?.filters?.conditions)
+        ? requestPayload.filters.conditions.map(condition => ({ ...condition }))
+        : [],
+    weights: { ...(requestPayload.weights || {}) },
+  }
+  return {
+    component: objectKey,
+    report_type: reportType || null,
+    selected_fields: selectedFields.length ? selectedFields : [...serverSelectedFields],
+    query_selected_fields: [...serverSelectedFields],
+    filters: reportType ? canonicalFilters : { ...(requestPayload.filters || {}) },
+    active_lineups_only: Boolean(requestPayload.confirmed_lineups_only),
+    sort: {
+      by: resultQuery.sort_by || query.sort_by || 'score',
+      direction: resultQuery.sort_direction || query.sort_direction || 'desc',
+    },
+    page_size: Number(result?.page_info?.page_size || requestPayload.page_size || query.page_size || 50),
+    as_of_date: generatedForDate || requestPayload.as_of_date || requestPayload.date || null,
+    generated_at: generatedAt || result?.provenance?.generated_at || null,
+    trend_config: objectKey === 'player_trends' ? { ...(trendConfig || requestPayload.trend_config || {}) } : undefined,
+  }
+}
+
+function safeResultRows(result = {}) {
+  if (Array.isArray(result.records)) return result.records
+  if (Array.isArray(result.items)) return result.items
+  return []
 }
 
 export function canonicalSortField(field, objectKey) {

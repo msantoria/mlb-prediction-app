@@ -8,7 +8,7 @@ const studioSource = readFileSync(new URL('../components/QueryStudioPanel.jsx', 
 const adminSource = readFileSync(new URL('../pages/AdminControlCenterPage.jsx', import.meta.url), 'utf8')
 
 test('/my-dashboard resolves to the current Report Builder workspace', () => {
-  assert.match(appSource, /path="\/my-dashboard" element={<MyDashboardReportBuilderPage\s*\/>}/)
+  assert.match(appSource, /path="\/my-dashboard" element={<MyDashboardReportBuilderRoute\s*\/>}/)
   assert.doesNotMatch(appSource, /MyDashboardWorkbenchPage/)
 })
 
@@ -27,7 +27,7 @@ test('the authenticated saved-report shelf receives the declared selection sette
 test('registered report objects use the server catalog and persist match-all or match-any logic', () => {
   assert.match(workspaceSource, /FILTER_LOGIC_OPTIONS/)
   assert.match(workspaceSource, /filterableReportFields\(fields\)/)
-  assert.match(workspaceSource, /normalizeSavedFilters\(definition\.filters/)
+  assert.match(workspaceSource, /normalizeSavedFilters\(executionDefinition\.filters/)
   assert.match(workspaceSource, /schema_version: 4/)
   assert.match(adminSource, />Report</)
   assert.match(adminSource, /object\.filtering\?\.logic/)
@@ -36,6 +36,15 @@ test('registered report objects use the server catalog and persist match-all or 
   assert.match(workspaceSource, /key: 'model_tracker'/)
   assert.match(workspaceSource, /key: 'batter_arsenal'/)
   assert.match(workspaceSource, /WEIGHTED_OBJECTS\.has\(objectKey\)/)
+})
+
+test('completed reports render and save their frozen execution contract', () => {
+  assert.match(workspaceSource, /execution_definition: executionDefinition/)
+  assert.match(workspaceSource, /const frozenDefinition = reportResult\?\.execution_definition/)
+  assert.match(workspaceSource, />Applied Filters</)
+  assert.match(workspaceSource, /function setBasic\(objectKey, key, value\) \{ invalidateGeneratedReport\(objectKey\)/)
+  assert.match(workspaceSource, /function setSelectedFields\(next\)|const setSelectedFields = next => \{/)
+  assert.doesNotMatch(workspaceSource, /const field = available\.find\([^\n]+\) \|\| available\[0\]/)
 })
 
 test('Query Studio visibility is capability-derived and the server remains the execution boundary', () => {

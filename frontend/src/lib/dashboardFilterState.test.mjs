@@ -16,14 +16,16 @@ const fields = [
   { accessor: 'full_name', dataType: 'string', filterable: true, selectable: true, supportedOperators: ['eq', 'contains'] },
   { accessor: 'model_score', dataType: 'double', filterable: true, selectable: true, supportedOperators: ['eq', 'gte'] },
   { accessor: 'updated_at', dataType: 'datetime', filterable: true, selectable: true, supportedOperators: ['gte'] },
+  { accessor: 'eligibility_status', dataType: 'string', filterable: true, selectable: false, supportedOperators: ['eq'] },
   { accessor: 'metrics', dataType: 'json', filterable: false, selectable: false, supportedOperators: [] },
 ]
 
-test('uses only explicitly filterable and selectable server fields', () => {
+test('uses every explicitly filterable server field even when it is not a report column', () => {
   assert.deepEqual(filterableReportFields(fields).map(field => field.accessor), [
     'full_name',
     'model_score',
     'updated_at',
+    'eligibility_status',
   ])
   assert.deepEqual(newFilterCondition(fields), {
     field: 'full_name',
