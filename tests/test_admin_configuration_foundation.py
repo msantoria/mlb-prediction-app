@@ -105,6 +105,24 @@ def test_required_feature_flags_default_false_without_rows(admin_store):
     assert all(item["authorization_effect"] == "none" for item in flags)
 
 
+def test_directory_profiles_default_and_legacy_utc_rows_converge_to_eastern(admin_store):
+    Session, ids = admin_store
+    with Session() as session:
+        created = admin_configuration.get_or_create_directory_profile(
+            session,
+            ids["owner"],
+        )
+        assert created.timezone == "America/New_York"
+        created.timezone = "UTC"
+        session.commit()
+    with Session() as session:
+        existing = admin_configuration.get_or_create_directory_profile(
+            session,
+            ids["owner"],
+        )
+        assert existing.timezone == "America/New_York"
+
+
 def test_profile_catalog_is_code_owned_and_owner_only_capabilities_extend_user(admin_store):
     payload = admin_routes.admin_profiles(_principal())
     assert [item["key"] for item in payload["profiles"]] == [

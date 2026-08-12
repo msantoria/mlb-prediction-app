@@ -142,6 +142,25 @@ def test_competitive_batter_arsenal_query_supports_pitcher_usage_and_hitter_samp
     ]
 
 
+def test_competitive_batter_arsenal_exposes_canonical_team_directory_fields():
+    plan = workbench_query.parse_workbench_statement(
+        "SELECT batter_name, team_name, opposing_team_name "
+        "FROM competitive_batter_arsenal "
+        "WHERE team_name = 'Chicago Cubs' "
+        "ORDER BY opposing_team_name ASC LIMIT 50"
+    )
+    assert plan.selected_fields == [
+        "batter_name",
+        "team_name",
+        "opposing_team_name",
+    ]
+    assert plan.filters == [{
+        "field": "team_name",
+        "operator": "eq",
+        "value": "Chicago Cubs",
+    }]
+
+
 def test_request_contract_rejects_submitted_authorization_fields():
     with pytest.raises(ValidationError):
         my_dashboard_routes.QueryStudioRequest(

@@ -6,7 +6,11 @@ from sqlalchemy.orm import sessionmaker
 
 from mlb_app.dashboard_object_models import DashboardPlayerCurrent
 from mlb_app.dashboard_player_report_query import query_player_report
-from mlb_app.dashboard_report_types import describe_report_type, list_report_types
+from mlb_app.dashboard_report_types import (
+    PLAYER_PROFILE_STATCAST_FIELD_DIRECTORY,
+    describe_report_type,
+    list_report_types,
+)
 from mlb_app.database import Base
 
 
@@ -322,6 +326,26 @@ def test_hitter_catalog_does_not_advertise_pitcher_only_aggregate_fields():
         "release_position_z",
         "release_extension",
     }.isdisjoint(names)
+
+
+def test_player_profile_statcast_directory_drives_object_manager_fields():
+    hitter_fields = {
+        field["name"]: field
+        for field in describe_report_type("all_active_hitters")["fields"]
+    }
+    pitcher_fields = {
+        field["name"]: field
+        for field in describe_report_type("all_active_pitchers")["fields"]
+    }
+    for name, definition in PLAYER_PROFILE_STATCAST_FIELD_DIRECTORY.items():
+        for player_type, catalog in (
+            ("hitter", hitter_fields),
+            ("pitcher", pitcher_fields),
+        ):
+            if player_type in definition["player_types"]:
+                assert catalog[name]["field_directory"] == "player_profile_statcast"
+            else:
+                assert name not in catalog
 
 
 @pytest.mark.parametrize("report_type", ["all_active_hitters", "all_active_pitchers"])

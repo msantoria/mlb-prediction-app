@@ -30,6 +30,7 @@ test('user editor values flatten only safe directory fields', () => {
   })
   assert.equal(values.username, 'owner')
   assert.equal(values.display_name, 'Owner')
+  assert.equal(values.timezone, 'America/New_York')
   assert.equal(values.is_active, true)
   assert.equal('role' in values, false)
 })

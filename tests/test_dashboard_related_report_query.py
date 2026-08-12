@@ -20,9 +20,18 @@ def make_session():
     return sessionmaker(bind=engine, future=True)()
 
 
-def player(player_id, name, appearances, player_type="hitter", active=True):
+def player(
+    player_id,
+    name,
+    appearances,
+    player_type="hitter",
+    active=True,
+    team_name=None,
+):
     return DashboardPlayer(
         mlb_player_id=player_id, full_name=name, player_type=player_type,
+        current_team_id=player_id * 10,
+        current_team_name=team_name,
         is_active=active, active_status_reason="recent_confirmed_lineup",
         first_tracked_date=DATE - dt.timedelta(days=30), last_tracked_date=DATE,
         most_recent_lineup_date=DATE, most_recent_game_date=DATE,
@@ -96,7 +105,16 @@ def test_related_reports_reject_unsupported_fields_weights_and_filters():
 
 def test_competitive_batter_arsenal_is_the_registered_matchup_object_and_supports_or():
     session = make_session()
-    session.add(player(1, "Alpha", 3))
+    session.add_all([
+        player(1, "Alpha", 3, team_name="Chicago Cubs"),
+        player(
+            9,
+            "Opponent Arm",
+            0,
+            player_type="pitcher",
+            team_name="St. Louis Cardinals",
+        ),
+    ])
     session.add_all([
         BatterPitchTypeMatchup(batter_id=1, batter_name="Alpha", opposing_pitcher_id=9, pitch_type="FF", target_date=DATE, pitches_seen=80, xwoba=0.41),
         BatterPitchTypeMatchup(batter_id=1, batter_name="Alpha", opposing_pitcher_id=9, pitch_type="SL", target_date=DATE, pitches_seen=20, xwoba=0.31),
@@ -125,8 +143,30 @@ def test_competitive_batter_arsenal_is_the_registered_matchup_object_and_support
     fastball = next(row for row in result["records"] if row["pitch_type"] == "FF")
     assert fastball["pitcher_pitch_name"] == "Four-Seam Fastball"
     assert fastball["pitcher_usage_pct"] == pytest.approx(0.5)
+    assert fastball["team_name"] == "Chicago Cubs"
+    assert fastball["opposing_team_name"] == "St. Louis Cardinals"
     assert fastball["edge_score"] is not None
     assert fastball["matchup_confidence"] is not None
+    team_filtered = query_related_report(
+        session,
+        "competitive_batter_arsenal",
+        as_of_date=DATE,
+        filters=[{
+            "field": "opposing_team_name",
+            "operator": "contains",
+            "value": "Cardinals",
+        }],
+    )
+    assert team_filtered["totalSize"] == 2
+    fields = {
+        field["name"]: field
+        for field in describe_report_type("competitive_batter_arsenal")["fields"]
+    }
+    assert fields["team_name"]["relationship_path"] == "batter.current_team"
+    assert (
+        fields["opposing_team_name"]["relationship_path"]
+        == "opposing_pitcher.current_team"
+    )
 
 
 def test_model_tracker_report_exposes_safe_scalar_columns_only():

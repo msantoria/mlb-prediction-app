@@ -1,9 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 
 import {
   buildReportRequest,
   canonicalBootstrapMessage,
+  defaultReportSaveAsDraft,
   defaultFieldsForObject,
   initialFieldsByObject,
   normalizeCanonicalPage,
@@ -123,6 +125,25 @@ test('primary objects own independent default column selections', () => {
   assert.deepEqual(fields.pitchers, ['rank', 'full_name', 'team_name', 'model_score', 'confidence'])
   fields.hitters.push('xwoba')
   assert.equal(fields.pitchers.includes('xwoba'), false)
+})
+
+test('batter arsenal defaults show both canonical teams and save-as has an explicit destination', () => {
+  assert.deepEqual(
+    defaultFieldsForObject('batter_arsenal').slice(0, 3),
+    ['batter_name', 'team_name', 'opposing_team_name'],
+  )
+  assert.deepEqual(defaultReportSaveAsDraft({
+    label: 'Batter vs Arsenal',
+    date: '2026-08-12',
+    folderId: 42,
+  }), {
+    title: 'Batter vs Arsenal Report | 2026-08-12',
+    folder_id: '42',
+  })
+  const workspaceSource = readFileSync(new URL('../pages/MyDashboardReportBuilderPage.jsx', import.meta.url), 'utf8')
+  assert.match(workspaceSource, />Save As<\/button>/)
+  assert.match(workspaceSource, />Folder selection<\/div>/)
+  assert.match(workspaceSource, /folder_id: destination\.id/)
 })
 
 test('projection, tracker, and competitive objects use safe registered sort defaults', () => {

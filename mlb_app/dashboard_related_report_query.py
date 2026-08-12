@@ -7,11 +7,16 @@ import math
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from sqlalchemy import and_, case, func, or_
+from sqlalchemy.orm import aliased
 
 from .dashboard_object_models import DashboardPlayer
 from .dashboard_report_types import FIELD_CATALOG, REPORT_TYPES, describe_report_type
 from .database import BatterPitchTypeMatchup, PitchArsenal
 from .model_tracker import ModelTrackerSnapshot
+
+
+BATTER_DIRECTORY = aliased(DashboardPlayer, name="batter_directory")
+OPPOSING_PITCHER_DIRECTORY = aliased(DashboardPlayer, name="opposing_pitcher_directory")
 
 
 MODELS = {
@@ -35,6 +40,7 @@ COLUMN_NAMES = {
     ),
     "competitive_batter_arsenal": (
         "id", "batter_id", "batter_name", "batter_team_id", "opposing_pitcher_id",
+        "team_name", "opposing_team_name",
         "pitch_type", "game_pk", "target_date", "date_end", "pitches_seen", "pa_ended",
         "xwoba", "xba", "avg_exit_velocity", "avg_launch_angle", "hard_hit_pct",
         "whiff_pct", "k_pct", "source", "refreshed_at", "pitcher_pitch_name",
@@ -87,6 +93,8 @@ def _columns(report_type: str) -> Dict[str, Any]:
             if hasattr(BatterPitchTypeMatchup, name)
         }
         columns.update({
+            "team_name": BATTER_DIRECTORY.current_team_name,
+            "opposing_team_name": OPPOSING_PITCHER_DIRECTORY.current_team_name,
             "pitcher_pitch_name": PitchArsenal.pitch_name,
             "pitcher_pitch_count": PitchArsenal.pitch_count,
             "pitcher_usage_pct": PitchArsenal.usage_pct,
@@ -238,19 +246,30 @@ def query_related_report(
             )
             .subquery()
         )
+        player_directory = (
+            BATTER_DIRECTORY
+            if report_type == "competitive_batter_arsenal"
+            else DashboardPlayer
+        )
         query = session.query(model).join(
             latest_matchup,
             BatterPitchTypeMatchup.id == latest_matchup.c.matchup_id,
         ).join(
-            DashboardPlayer, DashboardPlayer.mlb_player_id == BatterPitchTypeMatchup.batter_id
+            player_directory,
+            player_directory.mlb_player_id == BatterPitchTypeMatchup.batter_id,
         ).filter(
-            DashboardPlayer.is_active.is_(True),
-            DashboardPlayer.identity_resolution_status == "resolved",
-            DashboardPlayer.player_type == "hitter",
+            player_directory.is_active.is_(True),
+            player_directory.identity_resolution_status == "resolved",
+            player_directory.player_type == "hitter",
         )
         default_sort = "pitches_seen"
         tie_column = BatterPitchTypeMatchup.id
         if report_type == "competitive_batter_arsenal":
+            query = query.outerjoin(
+                OPPOSING_PITCHER_DIRECTORY,
+                OPPOSING_PITCHER_DIRECTORY.mlb_player_id
+                == BatterPitchTypeMatchup.opposing_pitcher_id,
+            )
             arsenal_season = (as_of_date or dt.date.today()).year
             latest_arsenal = (
                 session.query(

@@ -11,6 +11,7 @@ from .ai_data_assistant import (
     score_projection_edges,
 )
 from .ai_data_assistant_performance import apply_performance_patch, cached_build_model_projection_payload
+from .my_dashboard_dataset_runtime import mlb_business_date
 
 SUPPORTED_COMPONENTS = {"hitters", "pitchers", "teams", "totals", "overall_players"}
 
@@ -26,7 +27,7 @@ CONFIDENCE_ORDER = {"low": 1, "medium": 2, "high": 3}
 
 
 def today() -> str:
-    return dt.date.today().isoformat()
+    return mlb_business_date().isoformat()
 
 
 def confidence_label(value: Any) -> str:

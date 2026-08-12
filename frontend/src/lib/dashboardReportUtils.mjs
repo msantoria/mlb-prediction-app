@@ -11,6 +11,21 @@ export function mlbDateIso(date = new Date()) {
   return `${values.year}-${values.month}-${values.day}`
 }
 
+export function formatEasternDateTime(value) {
+  if (!value) return '—'
+  const date = value instanceof Date ? value : new Date(value)
+  if (!Number.isFinite(date.getTime())) return String(value)
+  const formatted = new Intl.DateTimeFormat('en-US', {
+    timeZone: MLB_TIME_ZONE,
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date)
+  return `${formatted} ET`
+}
+
 export function csvEscape(value) {
   if (value === null || value === undefined) return ''
   const text = typeof value === 'object' ? JSON.stringify(value) : String(value)
