@@ -3,10 +3,12 @@ from __future__ import annotations
 import datetime as dt
 from collections import defaultdict
 from typing import Any, Dict, Iterable, Optional
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
 from mlb_app.database import PitcherAggregate, StatcastEvent
+from mlb_app.statcast_event_identity import load_canonical_statcast_events
 
 SWINGS = {
     "swinging_strike",
@@ -47,6 +49,7 @@ BUCKET_DEFINITIONS = {
     "heart": "abs(plate_x) <= 0.33 and 2.10 <= plate_z <= 3.30",
     "barrel_approximation": "launch_speed >= 98 and 8 <= launch_angle <= 50",
 }
+MLB_TIMEZONE = ZoneInfo("America/New_York")
 
 
 def _float(value: Any) -> Optional[float]:
@@ -291,24 +294,22 @@ def _release_profile(session: Session, pitcher_id: int, season: int) -> Dict[str
 
 
 def build_pitcher_intelligence_profile(session: Session, pitcher_id: int, season: int, days_back: int = 365) -> Dict[str, Any]:
-    today = dt.datetime.utcnow().date()
-    start_date = max(dt.date(int(season), 1, 1), today - dt.timedelta(days=max(int(days_back), 1)))
-    raw_events = session.query(StatcastEvent).filter(
+    today = dt.datetime.now(MLB_TIMEZONE).date()
+    season_start = dt.date(int(season), 1, 1)
+    end_date = min(today, dt.date(int(season), 12, 31))
+    start_date = max(season_start, end_date - dt.timedelta(days=max(int(days_back), 1)))
+    events, identity_diagnostics = load_canonical_statcast_events(
+        session,
         StatcastEvent.pitcher_id == int(pitcher_id),
         StatcastEvent.game_date >= start_date,
-        StatcastEvent.game_date <= today,
-    ).all()
-
-    seen = set()
-    events = []
-    for event in raw_events:
-        key = (event.game_pk, event.at_bat_number, event.pitch_number, event.pitcher_id, event.batter_id, event.pitch_type)
-        if event.game_pk is None or event.at_bat_number is None or event.pitch_number is None:
-            key = id(event)
-        if key in seen:
-            continue
-        seen.add(key)
-        events.append(event)
+        StatcastEvent.game_date <= end_date,
+        order_by=(
+            StatcastEvent.game_date.asc(),
+            StatcastEvent.game_pk.asc(),
+            StatcastEvent.at_bat_number.asc(),
+            StatcastEvent.pitch_number.asc(),
+        ),
+    )
 
     overall = _empty_counter()
     by_pitch = defaultdict(_empty_counter)
@@ -362,12 +363,27 @@ def build_pitcher_intelligence_profile(session: Session, pitcher_id: int, season
         "season": int(season),
         "days_back": int(days_back),
         "data_window": {"date_start": start_date.isoformat(), "date_end": max(dates).isoformat() if dates else None},
-        "sample_size": {"raw_rows": len(raw_events), "deduped_pitch_rows": len(events), "pitch_types": len(arsenal), "batted_balls": summary["batted_balls"], "pa_ended": summary["pa_ended"]},
+        "sample_size": {
+            "raw_rows": identity_diagnostics["raw_rows"],
+            "deduped_pitch_rows": len(events),
+            "canonical_pitch_rows": identity_diagnostics["canonical_pitch_rows"],
+            "legacy_pitch_rows": identity_diagnostics["legacy_pitch_rows"],
+            "incomplete_identity_rows": identity_diagnostics["incomplete_identity_rows"],
+            "duplicate_rows_removed": identity_diagnostics["duplicate_rows_removed"],
+            "pitch_types": len(arsenal),
+            "batted_balls": summary["batted_balls"],
+            "pa_ended": summary["pa_ended"],
+        },
         "summary": {**summary, "pitch_types_used": [row["pitch_type"] for row in arsenal], "best_pitch": _best(arsenal, "quality_score", True, 20), "riskiest_pitch": _best(arsenal, "damage_score", True, 20)},
         "arsenal": arsenal,
         "location_profile": {"source": "plate_x_plate_z", "bucket_definitions": BUCKET_DEFINITIONS, "buckets": location_rows, "most_attacked_location_bucket": _best(location_rows, "pitches", True, 1), "most_damaged_location_bucket": _best(location_rows, "damage_score", True, 5)},
         "release_profile": release,
         "missing_inputs": sorted(set(missing_inputs)),
-        "quality_flags": [flag for flag in ["no_statcast_events" if not events else None, "barrel_rate_is_internal_approximation" if summary["batted_balls"] else None] if flag],
-        "metadata": {"model_version": "pitcher_intelligence_v1", "location_source": "plate_x/plate_z", "release_source": "pitcher_aggregates", "barrel_definition": BUCKET_DEFINITIONS["barrel_approximation"]},
+        "quality_flags": [flag for flag in [
+            "no_statcast_events" if not events else None,
+            "legacy_duplicate_rows_removed" if identity_diagnostics["duplicate_rows_removed"] else None,
+            "incomplete_pitch_identity_rows_present" if identity_diagnostics["incomplete_identity_rows"] else None,
+            "barrel_rate_is_internal_approximation" if summary["batted_balls"] else None,
+        ] if flag],
+        "metadata": {"model_version": "pitcher_intelligence_v2", "pitch_identity": "game_pk/at_bat_number/pitch_number", "location_source": "plate_x/plate_z", "release_source": "pitcher_aggregates", "barrel_definition": BUCKET_DEFINITIONS["barrel_approximation"]},
     }

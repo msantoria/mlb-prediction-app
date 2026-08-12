@@ -84,6 +84,7 @@ from .db_utils import (
 )
 from .scoring import compute_win_probability, score_individual_matchup, get_park_factor
 from .statcast_utils import fetch_pitch_arsenal_leaderboard
+from .statcast_event_identity import dedupe_statcast_events as _dedupe_statcast_events
 from .hitting_matchups import build_batter_pitch_type_summary
 from .odds_provider import (
     fetch_draftkings_odds,
@@ -367,59 +368,6 @@ def _normalize_arsenal_to_dicts(raw_arsenal) -> List[Dict[str, Any]]:
         }
         for r in raw_arsenal
     ]
-
-
-def _dedupe_statcast_events(events: List[StatcastEvent]) -> List[StatcastEvent]:
-    """
-    Remove duplicate Statcast pitch rows before any matchup or player stat calculation.
-
-    Primary key uses MLB pitch identity when available:
-        game_pk + at_bat_number + pitch_number + pitcher_id + batter_id + pitch_type
-
-    Fallback key is intentionally conservative for older rows missing game ordering fields.
-    """
-    seen = set()
-    deduped: List[StatcastEvent] = []
-
-    for event in events:
-        if (
-            event.game_pk is not None
-            and event.at_bat_number is not None
-            and event.pitch_number is not None
-        ):
-            key = (
-                event.game_pk,
-                event.at_bat_number,
-                event.pitch_number,
-                event.pitcher_id,
-                event.batter_id,
-                event.pitch_type,
-            )
-        else:
-            key = (
-                event.game_date,
-                event.pitcher_id,
-                event.batter_id,
-                event.pitch_type,
-                event.events,
-                event.release_speed,
-                event.release_spin_rate,
-                event.launch_speed,
-                event.launch_angle,
-                event.balls,
-                event.strikes,
-                event.inning,
-                event.inning_topbot,
-                event.outs_when_up,
-            )
-
-        if key in seen:
-            continue
-
-        seen.add(key)
-        deduped.append(event)
-
-    return deduped
 
 
 def _terminal_events(events: List[StatcastEvent]) -> List[StatcastEvent]:

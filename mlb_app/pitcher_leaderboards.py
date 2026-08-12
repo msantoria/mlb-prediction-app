@@ -4,7 +4,7 @@ import datetime as dt
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import requests
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from mlb_app.database import PitchArsenal, PitcherAggregate, StatcastEvent
@@ -53,17 +53,61 @@ def _team(pid: int, identities: Dict[int, Dict[str, Optional[str]]]) -> Optional
 
 
 def _event_samples(session: Session, season: int) -> Dict[int, Dict[str, int]]:
+    season_start = dt.date(int(season), 1, 1)
+    season_end = dt.date(int(season), 12, 31)
+    canonical_pitches = (
+        session.query(
+            StatcastEvent.pitcher_id.label("pitcher_id"),
+            StatcastEvent.game_pk.label("game_pk"),
+            StatcastEvent.at_bat_number.label("at_bat_number"),
+            StatcastEvent.pitch_number.label("pitch_number"),
+            func.max(case((StatcastEvent.launch_speed.isnot(None), 1), else_=0)).label("is_bbe"),
+        )
+        .filter(
+            StatcastEvent.game_date >= season_start,
+            StatcastEvent.game_date <= season_end,
+            StatcastEvent.pitcher_id.isnot(None),
+            StatcastEvent.game_pk.isnot(None),
+            StatcastEvent.at_bat_number.isnot(None),
+            StatcastEvent.pitch_number.isnot(None),
+        )
+        .group_by(
+            StatcastEvent.pitcher_id,
+            StatcastEvent.game_pk,
+            StatcastEvent.at_bat_number,
+            StatcastEvent.pitch_number,
+        )
+        .subquery()
+    )
     rows = (
         session.query(
-            StatcastEvent.pitcher_id,
-            func.count(StatcastEvent.id),
-            func.count(StatcastEvent.launch_speed),
+            canonical_pitches.c.pitcher_id,
+            func.count(),
+            func.sum(canonical_pitches.c.is_bbe),
         )
-        .filter(StatcastEvent.game_date >= dt.date(int(season), 1, 1))
-        .group_by(StatcastEvent.pitcher_id)
+        .group_by(canonical_pitches.c.pitcher_id)
         .all()
     )
-    return {int(pid): {"pitches": int(pitches or 0), "batted_balls": int(bbe or 0)} for pid, pitches, bbe in rows if pid}
+    samples = {
+        int(pid): {"pitches": int(pitches or 0), "batted_balls": int(bbe or 0)}
+        for pid, pitches, bbe in rows
+        if pid
+    }
+
+    # The season arsenal is an independent Savant aggregate and is a safer
+    # minimum-sample fallback for pitchers whose legacy rows lack pitch IDs.
+    arsenal_rows = (
+        session.query(PitchArsenal.pitcher_id, func.sum(PitchArsenal.pitch_count))
+        .filter(PitchArsenal.season == int(season))
+        .group_by(PitchArsenal.pitcher_id)
+        .all()
+    )
+    for pitcher_id, pitch_count in arsenal_rows:
+        if not pitcher_id:
+            continue
+        sample = samples.setdefault(int(pitcher_id), {"pitches": 0, "batted_balls": 0})
+        sample["pitches"] = max(sample["pitches"], int(pitch_count or 0))
+    return samples
 
 
 def _latest_aggregates(session: Session, season: int) -> List[PitcherAggregate]:

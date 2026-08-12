@@ -30,7 +30,7 @@ from .db_utils import (
     get_batter_multi_season,
     get_player_splits_multi_season,
 )
-from .pitcher_intelligence import build_pitcher_intelligence_profile
+from .pitcher_intelligence import MLB_TIMEZONE, build_pitcher_intelligence_profile
 from .pitcher_leaderboards import build_pitcher_leaderboards
 
 MLB_STATS_BASE = "https://statsapi.mlb.com/api/v1"
@@ -225,7 +225,7 @@ def pitchers_leaderboards(season: Optional[int] = None, limit: int = Query(10, g
 @router.get("/pitcher/{id}/intelligence")
 def pitcher_intelligence(id: int, season: Optional[int] = None, days_back: int = Query(365, ge=1, le=3650)) -> Dict[str, Any]:
     if season is None:
-        season = datetime.date.today().year
+        season = datetime.datetime.now(MLB_TIMEZONE).year
     Session = _get_session()
     with Session() as session:
         return build_pitcher_intelligence_profile(session, id, season, days_back=days_back)
@@ -234,7 +234,7 @@ def pitcher_intelligence(id: int, season: Optional[int] = None, days_back: int =
 @router.get("/batter/{id}/profile")
 def batter_profile(id: int, season: Optional[int] = None) -> Dict[str, Any]:
     if season is None:
-        season = datetime.date.today().year
+        season = datetime.datetime.now(MLB_TIMEZONE).year
     Session = _get_session()
     with Session() as session:
         agg, agg_label = get_batter_aggregate_with_fallback(session, id, season)

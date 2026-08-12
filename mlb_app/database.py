@@ -75,6 +75,19 @@ class StatcastEvent(Base):
         Index("ix_statcast_events_date_pitcher", "game_date", "pitcher_id"),
         Index("ix_statcast_events_date_batter", "game_date", "batter_id"),
         Index("ix_statcast_events_batter_order", "batter_id", "game_date", "game_pk", "at_bat_number", "pitch_number"),
+        Index(
+            "ux_statcast_events_pitch_identity",
+            "game_pk",
+            "at_bat_number",
+            "pitch_number",
+            unique=True,
+            postgresql_where=text(
+                "game_pk IS NOT NULL AND at_bat_number IS NOT NULL AND pitch_number IS NOT NULL"
+            ),
+            sqlite_where=text(
+                "game_pk IS NOT NULL AND at_bat_number IS NOT NULL AND pitch_number IS NOT NULL"
+            ),
+        ),
     )
 
 

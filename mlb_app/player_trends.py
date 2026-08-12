@@ -8,6 +8,7 @@ from sqlalchemy import and_, case, func
 
 from .dashboard_object_models import DashboardPlayer, PlayerTrendSnapshot
 from .database import StatcastEvent
+from .statcast_event_identity import canonical_event_ids_subquery
 from .dashboard_report_types import describe_report_type
 from .db_utils import (
     HBP_EVENTS,
@@ -373,6 +374,13 @@ def _aggregate_pitcher_period(
     player_ids: List[int],
 ) -> Dict[int, Dict[str, Any]]:
     """Compute the pitcher rolling-page metrics in one grouped SQL query."""
+    filters = (
+        StatcastEvent.game_date >= start,
+        StatcastEvent.game_date <= end,
+        StatcastEvent.pitcher_id.isnot(None),
+        StatcastEvent.pitcher_id.in_(player_ids),
+    )
+    canonical_ids = canonical_event_ids_subquery(session, *filters)
     rows = (
         session.query(
             StatcastEvent.pitcher_id.label("player_id"),
@@ -397,12 +405,7 @@ def _aggregate_pitcher_period(
             func.avg(StatcastEvent.pfx_x).label("avg_horiz_break"),
             func.avg(StatcastEvent.pfx_z).label("avg_vert_break"),
         )
-        .filter(
-            StatcastEvent.game_date >= start,
-            StatcastEvent.game_date <= end,
-            StatcastEvent.pitcher_id.isnot(None),
-            StatcastEvent.pitcher_id.in_(player_ids),
-        )
+        .join(canonical_ids, StatcastEvent.id == canonical_ids.c.event_id)
         .group_by(StatcastEvent.pitcher_id)
         .all()
     )

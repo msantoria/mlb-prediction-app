@@ -43,6 +43,7 @@ from .statcast_utils import (
     calculate_batter_aggregates,
     build_pitch_arsenal_from_statcast,
 )
+from .statcast_event_identity import load_canonical_statcast_events
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -311,13 +312,31 @@ def _upsert_statcast_dataframe(
     fallback_pitcher_id: Optional[int] = None,
     commit_every: int = 1000,
 ) -> Dict[str, int]:
-    stats = {"inserted": 0, "updated": 0, "noop": 0, "skipped": 0}
+    stats = {"inserted": 0, "updated": 0, "noop": 0, "skipped": 0, "input_duplicates": 0}
     if df is None or df.empty:
         return stats
 
-    for idx, (_, row) in enumerate(df.iterrows(), start=1):
+    canonical_values: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
+    legacy_values: List[Dict[str, Any]] = []
+    for _, row in df.iterrows():
+        values = _event_values_from_row(row, fallback_pitcher_id)
+        primary = _primary_pitch_identity(values)
+        if primary is None:
+            legacy_values.append(values)
+            continue
+        existing_values = canonical_values.get(primary)
+        if existing_values is None:
+            canonical_values[primary] = values
+            continue
+        stats["input_duplicates"] += 1
+        for key, value in values.items():
+            if value is not None:
+                existing_values[key] = value
+
+    prepared_values = [*canonical_values.values(), *legacy_values]
+    for idx, values in enumerate(prepared_values, start=1):
         try:
-            status = _upsert_statcast_event(session, _event_values_from_row(row, fallback_pitcher_id))
+            status = _upsert_statcast_event(session, values)
             stats[status] = stats.get(status, 0) + 1
         except Exception as exc:
             log.debug("Statcast row upsert skipped: %s", exc)
@@ -435,15 +454,25 @@ def _query_statcast_events_for_window(
     pitcher_id: Optional[int] = None,
     batter_id: Optional[int] = None,
 ) -> List[StatcastEvent]:
-    query = session.query(StatcastEvent).filter(
+    filters = [
         StatcastEvent.game_date >= start_date,
         StatcastEvent.game_date <= end_date,
-    )
+    ]
     if pitcher_id is not None:
-        query = query.filter(StatcastEvent.pitcher_id == pitcher_id)
+        filters.append(StatcastEvent.pitcher_id == pitcher_id)
     if batter_id is not None:
-        query = query.filter(StatcastEvent.batter_id == batter_id)
-    return query.all()
+        filters.append(StatcastEvent.batter_id == batter_id)
+    events, _ = load_canonical_statcast_events(
+        session,
+        *filters,
+        order_by=(
+            StatcastEvent.game_date.asc(),
+            StatcastEvent.game_pk.asc(),
+            StatcastEvent.at_bat_number.asc(),
+            StatcastEvent.pitch_number.asc(),
+        ),
+    )
+    return events
 
 
 def _load_pitcher_aggregate(session, pitcher_id: int, df: pd.DataFrame, end_date: date) -> None:
