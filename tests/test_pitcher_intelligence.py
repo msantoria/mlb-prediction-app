@@ -1,12 +1,17 @@
 import datetime as dt
 
+from sqlalchemy import text
+
 from mlb_app.database import PitcherAggregate, StatcastEvent, create_tables, get_engine, get_session
 from mlb_app.pitcher_intelligence import build_pitcher_intelligence_profile, location_bucket
 
 
-def _session():
+def _session(*, allow_duplicates=False):
     engine = get_engine("sqlite:///:memory:")
     create_tables(engine)
+    if allow_duplicates:
+        with engine.begin() as connection:
+            connection.execute(text("DROP INDEX ux_statcast_events_pitch_identity"))
     Session = get_session(engine)
     return Session()
 
@@ -56,7 +61,7 @@ def test_pitcher_intelligence_returns_stable_shape_and_metrics():
     payload = build_pitcher_intelligence_profile(session, pitcher_id=100, season=dt.date.today().year, days_back=365)
 
     assert payload["source"] == "statcast_events"
-    assert payload["metadata"]["model_version"] == "pitcher_intelligence_v1"
+    assert payload["metadata"]["model_version"] == "pitcher_intelligence_v2"
     assert payload["sample_size"]["deduped_pitch_rows"] == 3
     assert len(payload["arsenal"]) == 2
     ff = next(row for row in payload["arsenal"] if row["pitch_type"] == "FF")
@@ -99,3 +104,50 @@ def test_pitcher_intelligence_reports_missing_plate_location():
 
     assert "plate_x_plate_z" in payload["missing_inputs"]
     assert payload["location_profile"]["buckets"] == []
+
+
+def test_pitcher_intelligence_uses_one_richest_canonical_pitch_and_ignores_shadowed_legacy_rows():
+    session = _session(allow_duplicates=True)
+    session.add_all([
+        _event(description=None, pitch_type="nan", release_speed=None),
+        _event(description="swinging_strike", pitch_type="FF", release_speed=99.0),
+        _event(game_pk=None, at_bat_number=None, pitch_number=None, description="swinging_strike"),
+        _event(game_pk=None, at_bat_number=None, pitch_number=None, description="swinging_strike"),
+    ])
+    session.commit()
+
+    payload = build_pitcher_intelligence_profile(
+        session,
+        pitcher_id=100,
+        season=dt.date.today().year,
+        days_back=365,
+    )
+
+    assert payload["sample_size"]["raw_rows"] == 4
+    assert payload["sample_size"]["deduped_pitch_rows"] == 1
+    assert payload["sample_size"]["canonical_pitch_rows"] == 1
+    assert payload["sample_size"]["incomplete_identity_rows"] == 2
+    assert payload["sample_size"]["duplicate_rows_removed"] == 3
+    assert payload["summary"]["pitches"] == 1
+    assert payload["summary"]["swings"] == 1
+    assert payload["arsenal"][0]["pitch_type"] == "FF"
+
+
+def test_pitcher_intelligence_caps_requested_season_at_december_31():
+    session = _session()
+    requested_season = dt.date.today().year - 1
+    session.add_all([
+        _event(game_date=dt.date(requested_season, 7, 1)),
+        _event(game_date=dt.date(requested_season + 1, 4, 1), game_pk=2),
+    ])
+    session.commit()
+
+    payload = build_pitcher_intelligence_profile(
+        session,
+        pitcher_id=100,
+        season=requested_season,
+        days_back=3650,
+    )
+
+    assert payload["sample_size"]["deduped_pitch_rows"] == 1
+    assert payload["data_window"]["date_end"] == f"{requested_season}-07-01"

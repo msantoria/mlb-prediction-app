@@ -15,6 +15,7 @@ from .database import (
     StatcastEvent,
     TeamSplit,
 )
+from .statcast_event_identity import dedupe_statcast_events
 
 HIT_EVENTS = {"single", "double", "triple", "home_run"}
 WALK_EVENTS = {"walk", "intent_walk"}
@@ -483,6 +484,7 @@ def get_pitcher_rolling_by_games(session: Session, pitcher_id: int, n_games: int
         .filter(StatcastEvent.pitcher_id == pitcher_id, StatcastEvent.game_date.in_(date_list))
         .all()
     )
+    events = dedupe_statcast_events(events)
     if not events:
         return None
 
@@ -735,17 +737,7 @@ def _pitch_event_identity(e: StatcastEvent) -> Tuple[Any, ...]:
 
 
 def _dedupe_pitch_events(events: List[StatcastEvent]) -> List[StatcastEvent]:
-    seen = set()
-    out: List[StatcastEvent] = []
-
-    for e in events:
-        key = _pitch_event_identity(e)
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(e)
-
-    return out
+    return dedupe_statcast_events(events)
 
 
 def _terminal_pa_identity(e: StatcastEvent) -> Tuple[Any, ...]:

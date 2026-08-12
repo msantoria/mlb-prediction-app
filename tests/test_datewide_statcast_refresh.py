@@ -137,6 +137,20 @@ def test_refresh_statcast_events_for_date_updates_existing_non_null_values(monke
         assert row.events == "strikeout"
 
 
+def test_refresh_collapses_duplicate_pitch_identities_inside_one_source_batch(monkeypatch, tmp_path):
+    Session = _session_factory(tmp_path)
+    duplicated = pd.concat([_sample_statcast_df(), _sample_statcast_df().iloc[[0]]], ignore_index=True)
+    monkeypatch.setattr(etl, "fetch_statcast_all_events", lambda start, end: duplicated)
+
+    with Session() as session:
+        result = etl.refresh_statcast_events_for_date(session, "2026-05-18")
+
+        assert result["rows_returned"] == 3
+        assert result["input_duplicates"] == 1
+        assert result["inserted"] == 2
+        assert session.query(StatcastEvent).count() == 2
+
+
 def test_recompute_recent_aggregates_from_events_creates_pitcher_and_batter_90d_rows(monkeypatch, tmp_path):
     Session = _session_factory(tmp_path)
     monkeypatch.setattr(etl, "fetch_statcast_all_events", lambda start, end: _sample_statcast_df())

@@ -102,6 +102,34 @@ def _event_metrics(session: Session, pitcher_id: int, season: int) -> Dict[str, 
     row = session.execute(
         text(
             """
+            WITH ranked_pitches AS (
+                SELECT statcast_events.*,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY game_pk, at_bat_number, pitch_number
+                           ORDER BY (
+                               CASE WHEN description IS NOT NULL AND LOWER(TRIM(description)) NOT IN ('', 'nan', 'none', 'null', 'na', 'n/a') THEN 1 ELSE 0 END +
+                               CASE WHEN events IS NOT NULL AND LOWER(TRIM(events)) NOT IN ('', 'nan', 'none', 'null', 'na', 'n/a') THEN 1 ELSE 0 END +
+                               CASE WHEN pitch_type IS NOT NULL AND LOWER(TRIM(pitch_type)) NOT IN ('', 'nan', 'none', 'null', 'na', 'n/a') THEN 1 ELSE 0 END +
+                               CASE WHEN release_speed IS NOT NULL THEN 1 ELSE 0 END +
+                               CASE WHEN release_spin_rate IS NOT NULL THEN 1 ELSE 0 END +
+                               CASE WHEN plate_x IS NOT NULL THEN 1 ELSE 0 END +
+                               CASE WHEN plate_z IS NOT NULL THEN 1 ELSE 0 END +
+                               CASE WHEN estimated_woba_using_speedangle IS NOT NULL THEN 1 ELSE 0 END +
+                               CASE WHEN estimated_ba_using_speedangle IS NOT NULL THEN 1 ELSE 0 END
+                           ) DESC,
+                           id DESC
+                       ) AS pitch_rank
+                FROM statcast_events
+                WHERE pitcher_id = :pitcher_id
+                  AND game_date >= :start_date
+                  AND game_date <= :end_date
+                  AND game_pk IS NOT NULL
+                  AND at_bat_number IS NOT NULL
+                  AND pitch_number IS NOT NULL
+            ),
+            canonical_pitches AS (
+                SELECT * FROM ranked_pitches WHERE pitch_rank = 1
+            )
             SELECT
                 SUM(CASE WHEN launch_speed IS NOT NULL THEN 1 ELSE 0 END) AS bbe,
                 AVG(estimated_woba_using_speedangle) AS xwoba_allowed,
@@ -117,10 +145,7 @@ def _event_metrics(session: Session, pitcher_id: int, season: int) -> Dict[str, 
                 SUM(CASE WHEN launch_angle < 10 THEN 1 ELSE 0 END) AS gb,
                 SUM(CASE WHEN launch_angle >= 25 THEN 1 ELSE 0 END) AS fb,
                 SUM(CASE WHEN events = 'home_run' THEN 1 ELSE 0 END) AS hr
-            FROM statcast_events
-            WHERE pitcher_id = :pitcher_id
-              AND game_date >= :start_date
-              AND game_date <= :end_date
+            FROM canonical_pitches
             """
         ),
         {"pitcher_id": pitcher_id, "start_date": f"{season}-01-01", "end_date": f"{season}-12-31"},
