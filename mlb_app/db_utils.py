@@ -15,7 +15,7 @@ from .database import (
     StatcastEvent,
     TeamSplit,
 )
-from .statcast_event_identity import dedupe_statcast_events
+from .statcast_event_identity import dedupe_statcast_events, load_canonical_statcast_events
 
 HIT_EVENTS = {"single", "double", "triple", "home_run"}
 WALK_EVENTS = {"walk", "intent_walk"}
@@ -400,23 +400,42 @@ def _freshness_from_latest(latest: Optional[datetime.date]) -> Dict[str, Any]:
     }
 
 
+def load_canonical_batter_events(
+    session: Session,
+    batter_id: int,
+) -> Tuple[List[StatcastEvent], Dict[str, int]]:
+    """Load a batter's canonical pitches once per request/session."""
+
+    cache_key = f"canonical_batter_events:{int(batter_id)}"
+    cached = session.info.get(cache_key)
+    if cached is not None:
+        return cached
+
+    loaded = load_canonical_statcast_events(
+        session,
+        StatcastEvent.batter_id == batter_id,
+    )
+    session.info[cache_key] = loaded
+    return loaded
+
+
 def get_batter_data_quality(session: Session, batter_id: int) -> Dict[str, Any]:
-    total = session.query(func.count(StatcastEvent.id)).filter(StatcastEvent.batter_id == batter_id).scalar() or 0
-    latest = (
-        session.query(func.max(StatcastEvent.game_date))
-        .filter(StatcastEvent.batter_id == batter_id)
-        .scalar()
+    quality_cache_key = f"canonical_batter_quality:{int(batter_id)}"
+    cached_quality = session.info.get(quality_cache_key)
+    if cached_quality is not None:
+        return dict(cached_quality)
+
+    events, diagnostics = load_canonical_batter_events(session, batter_id)
+    terminal_events = _dedupe_terminal_pas(events)
+    total = len(events)
+    terminal_count = len(terminal_events)
+    latest = max((event.game_date for event in events if event.game_date), default=None)
+    full_order = any(
+        event.game_pk is not None
+        and event.at_bat_number is not None
+        and event.pitch_number is not None
+        for event in events
     )
-    terminal_count = (
-        session.query(func.count(StatcastEvent.id))
-        .filter(
-            StatcastEvent.batter_id == batter_id,
-            StatcastEvent.events.in_(TERMINAL_EVENTS),
-        )
-        .scalar()
-        or 0
-    )
-    full_order = _has_full_event_order(session, batter_id)
     freshness = _freshness_from_latest(latest)
 
     warnings: List[str] = []
@@ -424,6 +443,13 @@ def get_batter_data_quality(session: Session, batter_id: int) -> Dict[str, Any]:
         warnings.append(
             f"Statcast data is stale: latest event is {freshness['latest_event_date'] or 'unavailable'}, "
             f"as-of date is {freshness['as_of_date']}."
+        )
+
+    duplicate_rows_removed = int(diagnostics.get("duplicate_rows_removed") or 0)
+    if duplicate_rows_removed:
+        warnings.append(
+            f"Ignored {duplicate_rows_removed} duplicate or shadow Statcast row(s); "
+            "counts below use canonical MLB pitch identity."
         )
 
     if total == 0:
@@ -435,9 +461,14 @@ def get_batter_data_quality(session: Session, batter_id: int) -> Dict[str, Any]:
         ordering_quality = "date_only"
         warnings.append("Rolling PA order is date-level only; intra-game PA order unavailable.")
 
-    return {
+    result = {
         "has_statcast": total > 0,
         "total_event_rows": total,
+        "raw_event_rows": int(diagnostics.get("raw_rows") or 0),
+        "canonical_pitch_rows": int(diagnostics.get("canonical_pitch_rows") or 0),
+        "legacy_pitch_rows": int(diagnostics.get("legacy_pitch_rows") or 0),
+        "incomplete_identity_rows": int(diagnostics.get("incomplete_identity_rows") or 0),
+        "duplicate_rows_removed": duplicate_rows_removed,
         "terminal_event_rows": terminal_count,
         "latest_event_date": freshness["latest_event_date"],
         "as_of_date": freshness["as_of_date"],
@@ -447,8 +478,82 @@ def get_batter_data_quality(session: Session, batter_id: int) -> Dict[str, Any]:
         "rolling_game_available": total > 0,
         "ordering_quality": ordering_quality,
         "warnings": warnings,
-        "source": "postgres_statcast_events",
+        "source": "postgres_statcast_events_canonical_pitch_identity",
     }
+    session.info[quality_cache_key] = result
+    return dict(result)
+
+
+def get_batter_statcast_profile(
+    session: Session,
+    batter_id: int,
+    *,
+    start_date: datetime.date,
+    end_date: datetime.date,
+) -> Optional[Dict[str, Any]]:
+    """Build a duplicate-safe batter profile directly from canonical pitches."""
+
+    all_events, _ = load_canonical_batter_events(session, batter_id)
+    events = [
+        event
+        for event in all_events
+        if event.game_date is not None and start_date <= event.game_date <= end_date
+    ]
+    events.sort(
+        key=lambda event: (
+            event.game_date,
+            int(event.game_pk or 0),
+            int(event.at_bat_number or 0),
+            int(event.pitch_number or 0),
+            int(event.id or 0),
+        )
+    )
+    if not events:
+        return None
+
+    raw_window_query = session.query(StatcastEvent).filter(
+        StatcastEvent.batter_id == batter_id,
+        StatcastEvent.game_date >= start_date,
+        StatcastEvent.game_date <= end_date,
+    )
+    raw_rows = int(raw_window_query.with_entities(func.count(StatcastEvent.id)).scalar() or 0)
+    complete_rows = int(
+        raw_window_query.with_entities(func.count(StatcastEvent.id))
+        .filter(
+            StatcastEvent.game_pk.isnot(None),
+            StatcastEvent.at_bat_number.isnot(None),
+            StatcastEvent.pitch_number.isnot(None),
+        )
+        .scalar()
+        or 0
+    )
+    canonical_rows = sum(
+        event.game_pk is not None
+        and event.at_bat_number is not None
+        and event.pitch_number is not None
+        for event in events
+    )
+    legacy_rows = len(events) - canonical_rows
+
+    stats = _calculate_batter_stats(events, raw_event_count=len(events))
+    stats.update(
+        {
+            "raw_event_rows": raw_rows,
+            "canonical_pitch_rows": canonical_rows,
+            "legacy_pitch_rows": legacy_rows,
+            "incomplete_identity_rows": max(raw_rows - complete_rows, 0),
+            "duplicate_rows_removed": max(raw_rows - len(events), 0),
+            "data_window": "Last 90 Days",
+            "window": "90d",
+            "start_date": start_date.isoformat(),
+            "end_date": max(
+                (event.game_date for event in events if event.game_date),
+                default=end_date,
+            ).isoformat(),
+            "source": "postgres_statcast_events_canonical_pitch_identity",
+        }
+    )
+    return stats
 
 
 def _ordered_batter_terminal_query(session: Session, batter_id: int):
@@ -643,12 +748,20 @@ def get_batter_at_bats(
     n: int = 50,
     offset: int = 0,
 ) -> Tuple[int, List[Dict[str, Any]]]:
-    base = session.query(StatcastEvent).filter(
-        StatcastEvent.batter_id == batter_id,
-        StatcastEvent.events.in_(TERMINAL_EVENTS),
+    canonical_events, _ = load_canonical_batter_events(session, batter_id)
+    canonical_events.sort(
+        key=lambda event: (
+            event.game_date or datetime.date.min,
+            int(event.game_pk or 0),
+            int(event.at_bat_number or 0),
+            int(event.pitch_number or 0),
+            int(event.id or 0),
+        ),
+        reverse=True,
     )
-    total = base.count()
-    events = _ordered_batter_terminal_query(session, batter_id).offset(offset).limit(n).all()
+    terminal_events = _dedupe_terminal_pas(canonical_events)
+    total = len(terminal_events)
+    events = terminal_events[offset : offset + n]
 
     rows = [
         {
@@ -1375,6 +1488,8 @@ __all__ = [
     "get_pitcher_aggregate_with_fallback",
     "get_batter_aggregate",
     "get_batter_aggregate_with_fallback",
+    "get_batter_statcast_profile",
+    "load_canonical_batter_events",
     "get_pitch_arsenal",
     "get_pitch_arsenal_with_fallback",
     "get_player_split",

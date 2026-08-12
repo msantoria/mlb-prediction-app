@@ -646,14 +646,14 @@ export default function BatterPage() {
                     Season Stats <span style={s.sourceBadge}>MLB Stats API</span>
                   </div>
                   <div style={s.statsGrid}>
-                    <StatCard label="AVG" value={fmt(ss.avg, 3)} />
-                    <StatCard label="OBP" value={fmt(ss.obp, 3)} />
-                    <StatCard label="SLG" value={fmt(ss.slg, 3)} />
+                    <StatCard label="AVG" value={fmt(ss.batting_avg ?? ss.avg, 3)} />
+                    <StatCard label="OBP" value={fmt(ss.on_base_pct ?? ss.obp, 3)} />
+                    <StatCard label="SLG" value={fmt(ss.slugging_pct ?? ss.slg, 3)} />
                     <StatCard label="OPS" value={fmt(ss.ops, 3)} />
                     <StatCard label="HR" value={num(ss.hr)} />
                     <StatCard label="RBI" value={num(ss.rbi)} />
                     <StatCard label="SB" value={num(ss.sb)} />
-                    <StatCard label="PA" value={num(ss.plate_appearances)} />
+                    <StatCard label="PA" value={num(ss.pa ?? ss.plate_appearances)} />
                   </div>
                 </div>
               )}
