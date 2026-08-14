@@ -162,3 +162,197 @@ def test_repeated_population_is_idempotent_for_identity_and_activity_counts():
     player = session.query(DashboardPlayer).one()
     assert player.lineup_appearance_count == 1
     assert player.most_recent_lineup_date == AS_OF
+
+
+def test_active_roster_materializes_season_pitching_usage():
+    calls = []
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "roster": [
+                    {
+                        "person": {
+                            "id": 101,
+                            "fullName": "Relief Pitcher",
+                            "stats": [
+                                {
+                                    "splits": [
+                                        {
+                                            "stat": {
+                                                "gamesPitched": 30,
+                                                "gamesStarted": 2,
+                                            },
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                        "position": {
+                            "type": "Pitcher",
+                            "abbreviation": "P",
+                        },
+                    },
+                    {
+                        "person": {
+                            "id": 102,
+                            "fullName": "Starting Pitcher",
+                            "stats": [
+                                {
+                                    "splits": [
+                                        {
+                                            "stat": {
+                                                "gamesPitched": 20,
+                                                "gamesStarted": 20,
+                                            },
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                        "position": {
+                            "type": "Pitcher",
+                            "abbreviation": "P",
+                        },
+                    },
+                ],
+            }
+
+    def request_get(*args, **kwargs):
+        calls.append((args, kwargs))
+        return Response()
+
+    rows = fetch_active_roster(
+        114,
+        2026,
+        team_name="Guardians",
+        request_get=request_get,
+    )
+    indexed = {
+        row["mlb_player_id"]: row
+        for row in rows
+    }
+
+    assert indexed[101][
+        "season_games_pitched"
+    ] == 30
+    assert indexed[101][
+        "season_games_started"
+    ] == 2
+    assert indexed[101][
+        "season_relief_appearances"
+    ] == 28
+
+    assert indexed[102][
+        "season_relief_appearances"
+    ] == 0
+
+    assert calls[0][1]["params"]["hydrate"] == (
+        "person("
+        "stats(type=season,group=pitching)"
+        ")"
+    )
+
+
+def test_active_roster_missing_pitching_stats_remains_explicit():
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "roster": [
+                    {
+                        "person": {
+                            "id": 101,
+                            "fullName": "Unknown Pitcher",
+                        },
+                        "position": {
+                            "type": "Pitcher",
+                            "abbreviation": "P",
+                        },
+                    },
+                ],
+            }
+
+    rows = fetch_active_roster(
+        114,
+        2026,
+        request_get=lambda *args, **kwargs: (
+            Response()
+        ),
+    )
+
+    assert rows[0][
+        "season_games_pitched"
+    ] is None
+    assert rows[0][
+        "season_games_started"
+    ] is None
+    assert rows[0][
+        "season_relief_appearances"
+    ] is None
+    assert rows[0][
+        "season_pitching_usage_source"
+    ] is None
+
+
+def test_active_roster_preserves_zero_games_started():
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "roster": [
+                    {
+                        "person": {
+                            "id": 101,
+                            "fullName": "Pure Reliever",
+                            "stats": [
+                                {
+                                    "splits": [
+                                        {
+                                            "stat": {
+                                                "gamesPitched": 51,
+                                                "gamesStarted": 0,
+                                            },
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                        "position": {
+                            "type": "Pitcher",
+                            "abbreviation": "P",
+                        },
+                    },
+                ],
+            }
+
+    rows = fetch_active_roster(
+        114,
+        2026,
+        request_get=lambda *args, **kwargs: (
+            Response()
+        ),
+    )
+
+    assert rows[0][
+        "season_games_pitched"
+    ] == 51
+    assert rows[0][
+        "season_games_started"
+    ] == 0
+    assert rows[0][
+        "season_relief_appearances"
+    ] == 51
+    assert rows[0][
+        "season_pitching_usage_source"
+    ] == (
+        "mlb_stats_active_roster_"
+        "season_pitching"
+    )

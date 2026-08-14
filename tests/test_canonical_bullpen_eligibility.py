@@ -264,3 +264,115 @@ def test_rejects_invalid_evidence_container():
         enforce(
             evidence_by_pitcher_id=object(),
         )
+
+
+def test_strict_membership_excludes_unknown_candidates():
+    result = enforce(
+        candidate_pitcher_ids=(
+            "101",
+            "102",
+        ),
+        starter_id="100",
+        evidence_by_pitcher_id=None,
+        require_explicit_bullpen_membership=True,
+    )
+
+    assert result[
+        "eligible_bullpen_pitcher_ids"
+    ] == []
+    assert result["excluded_pitcher_ids"] == [
+        "101",
+        "102",
+    ]
+    assert result[
+        "strict_membership_excluded_count"
+    ] == 2
+    assert result[
+        "require_explicit_bullpen_membership"
+    ] is True
+    assert result["safety_checks"][
+        "unknown_evidence_fails_closed"
+    ] is True
+
+
+def test_strict_membership_retains_explicit_relievers():
+    result = enforce(
+        require_explicit_bullpen_membership=True,
+    )
+
+    assert result[
+        "eligible_bullpen_pitcher_ids"
+    ] == [
+        "102",
+        "103",
+    ]
+    assert record(result, "102")[
+        "decision_reason"
+    ] == "explicitly_eligible"
+
+
+@pytest.mark.parametrize(
+    "role",
+    [
+        "starter",
+        "probable_starter",
+    ],
+)
+def test_strict_membership_excludes_starter_like_roles(
+    role,
+):
+    result = enforce(
+        candidate_pitcher_ids=("101",),
+        starter_id="100",
+        evidence_by_pitcher_id={
+            "101": evidence(
+                status="eligible",
+                role=role,
+            ),
+        },
+        require_explicit_bullpen_membership=True,
+    )
+
+    assert result[
+        "eligible_bullpen_pitcher_ids"
+    ] == []
+    assert result["excluded_pitcher_ids"] == [
+        "101",
+    ]
+    assert record(result, "101")[
+        "decision_reason"
+    ] == "starter_like_role_excluded"
+    assert result[
+        "starter_like_excluded_count"
+    ] == 1
+
+
+def test_strict_membership_preserves_planned_bulk_pitcher():
+    result = enforce(
+        candidate_pitcher_ids=("101",),
+        starter_id="100",
+        planned_pitcher_ids=("101",),
+        evidence_by_pitcher_id={
+            "101": evidence(
+                status="ineligible",
+                role="probable_starter",
+            ),
+        },
+        require_explicit_bullpen_membership=True,
+    )
+
+    assert result[
+        "eligible_bullpen_pitcher_ids"
+    ] == ["101"]
+    assert record(result, "101")[
+        "decision_reason"
+    ] == "explicit_pitching_plan_override"
+
+
+def test_strict_membership_rejects_non_boolean_mode():
+    with pytest.raises(TypeError):
+        enforce(
+            require_explicit_bullpen_membership=(
+                "yes"
+            ),
+        )

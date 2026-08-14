@@ -141,6 +141,87 @@ def evaluate_active_player(candidate: Dict[str, Any], *, as_of: dt.date, window_
     return False, "no_recent_verified_activity"
 
 
+def _safe_nonnegative_int(
+    value: Any,
+) -> Optional[int]:
+    if value in (None, "") or isinstance(
+        value,
+        bool,
+    ):
+        return None
+
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+
+    return parsed if parsed >= 0 else None
+
+
+def _season_pitching_usage(
+    row: Dict[str, Any],
+) -> Dict[str, Optional[int]]:
+    person = _person(row)
+
+    for stat_group in person.get("stats") or []:
+        if not isinstance(stat_group, dict):
+            continue
+
+        for split in stat_group.get("splits") or []:
+            if not isinstance(split, dict):
+                continue
+
+            stat = split.get("stat")
+
+            if not isinstance(stat, dict):
+                continue
+
+            raw_games_pitched = stat.get(
+                "gamesPitched"
+            )
+
+            if raw_games_pitched is None:
+                raw_games_pitched = stat.get(
+                    "gamesPlayed"
+                )
+
+            games_pitched = (
+                _safe_nonnegative_int(
+                    raw_games_pitched
+                )
+            )
+            games_started = (
+                _safe_nonnegative_int(
+                    stat.get("gamesStarted")
+                )
+            )
+
+            if (
+                games_pitched is None
+                or games_pitched <= 0
+                or games_started is None
+                or games_started > games_pitched
+            ):
+                continue
+
+            return {
+                "season_games_pitched":
+                    games_pitched,
+                "season_games_started":
+                    games_started,
+                "season_relief_appearances": max(
+                    games_pitched - games_started,
+                    0,
+                ),
+            }
+
+    return {
+        "season_games_pitched": None,
+        "season_games_started": None,
+        "season_relief_appearances": None,
+    }
+
+
 def fetch_active_roster(
     team_id: int,
     season: int,
@@ -152,7 +233,15 @@ def fetch_active_roster(
 
     response = request_get(
         f"{MLB_STATS_BASE}/teams/{int(team_id)}/roster",
-        params={"rosterType": "active", "season": int(season)},
+        params={
+            "rosterType": "active",
+            "season": int(season),
+            "hydrate": (
+                "person("
+                "stats(type=season,group=pitching)"
+                ")"
+            ),
+        },
         timeout=20,
     )
     response.raise_for_status()
@@ -165,6 +254,19 @@ def fetch_active_roster(
             team_name=team_name,
         )
         normalized["on_active_roster"] = True
+        normalized.update(
+            _season_pitching_usage(row)
+        )
+        normalized[
+            "season_pitching_usage_source"
+        ] = (
+            "mlb_stats_active_roster_"
+            "season_pitching"
+            if normalized[
+                "season_games_pitched"
+            ] is not None
+            else None
+        )
         records.append(normalized)
     return records
 

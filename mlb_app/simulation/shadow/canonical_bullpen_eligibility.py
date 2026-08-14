@@ -32,6 +32,19 @@ VALID_PITCHER_ROLES = frozenset({
     "unknown",
 })
 
+EXPLICIT_BULLPEN_ROLES = frozenset({
+    "reliever",
+    "long_reliever",
+    "middle_reliever",
+    "setup",
+    "closer",
+})
+
+STARTER_LIKE_ROLES = frozenset({
+    "starter",
+    "probable_starter",
+})
+
 
 def _identifier(value: Any) -> str | None:
     if value in (None, "") or isinstance(
@@ -182,14 +195,30 @@ def enforce_canonical_bullpen_eligibility(
         Mapping[Any, Any] | None
     ) = None,
     planned_pitcher_ids: Any = (),
+    require_explicit_bullpen_membership: (
+        bool
+    ) = False,
 ) -> dict[str, Any]:
     """
     Filter a bullpen pool using explicit evidence only.
 
-    Unknown or unavailable evidence fails open and retains the pitcher.
     Explicitly planned opener, bulk, or tandem pitchers are retained even
     when general role evidence classifies them as starters.
+
+    When require_explicit_bullpen_membership is false, unknown evidence
+    preserves the legacy fail-open behavior. When true, only valid,
+    explicitly eligible bullpen roles are retained; unknown, invalid, and
+    starter-like evidence fails closed.
     """
+
+    if not isinstance(
+        require_explicit_bullpen_membership,
+        bool,
+    ):
+        raise TypeError(
+            "require_explicit_bullpen_membership "
+            "must be a bool"
+        )
 
     candidates = _identifiers(
         candidate_pitcher_ids
@@ -212,6 +241,8 @@ def enforce_canonical_bullpen_eligibility(
     valid_evidence_count = 0
     unknown_role_count = 0
     planned_override_count = 0
+    strict_membership_excluded_count = 0
+    starter_like_excluded_count = 0
 
     for pitcher_id in candidates:
         evidence_present = (
@@ -261,6 +292,29 @@ def enforce_canonical_bullpen_eligibility(
                 )
             )
         elif (
+            require_explicit_bullpen_membership
+            and evidence["valid"]
+            and evidence["status"]
+            == "eligible"
+            and evidence["role"]
+            not in EXPLICIT_BULLPEN_ROLES
+        ):
+            retained = False
+            strict_membership_excluded_count += 1
+
+            if (
+                evidence["role"]
+                in STARTER_LIKE_ROLES
+            ):
+                starter_like_excluded_count += 1
+                decision_reason = (
+                    "starter_like_role_excluded"
+                )
+            else:
+                decision_reason = (
+                    "non_bullpen_role_excluded"
+                )
+        elif (
             evidence["valid"]
             and evidence["status"]
             == "eligible"
@@ -268,6 +322,12 @@ def enforce_canonical_bullpen_eligibility(
             retained = True
             decision_reason = (
                 "explicitly_eligible"
+            )
+        elif require_explicit_bullpen_membership:
+            retained = False
+            strict_membership_excluded_count += 1
+            decision_reason = (
+                "explicit_bullpen_membership_unavailable"
             )
         elif evidence_present:
             retained = True
@@ -351,6 +411,15 @@ def enforce_canonical_bullpen_eligibility(
             unknown_role_count,
         "planned_override_count":
             planned_override_count,
+        "strict_membership_excluded_count": (
+            strict_membership_excluded_count
+        ),
+        "starter_like_excluded_count": (
+            starter_like_excluded_count
+        ),
+        "require_explicit_bullpen_membership": (
+            require_explicit_bullpen_membership
+        ),
         "eligibility_evidence_complete":
             evidence_complete,
         "eligibility_evidence_coverage_rate":
@@ -379,7 +448,17 @@ def enforce_canonical_bullpen_eligibility(
         ),
         "records": records,
         "safety_checks": {
-            "unknown_evidence_fails_open": True,
+            "unknown_evidence_fails_open": (
+                not require_explicit_bullpen_membership
+            ),
+            "unknown_evidence_fails_closed": (
+                require_explicit_bullpen_membership
+            ),
+            "active_roster_membership_is_not_"
+            "bullpen_membership": True,
+            "workload_inference_used": False,
+            "roster_order_inference_used": False,
+            "appearance_rate_inference_used": False,
             "explicit_plans_take_precedence":
                 True,
             "database_writes_performed": False,
