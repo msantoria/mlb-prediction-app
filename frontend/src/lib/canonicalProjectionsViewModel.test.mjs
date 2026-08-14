@@ -71,6 +71,19 @@ function payload() {
               player_type: 'pitcher',
               team_side: 'home',
               pitcher_role: 'starter',
+              pitcher_projection_group: 'starter',
+              planned_pitcher_role: 'starter',
+              typical_bullpen_role: null,
+              game_availability_status: (
+                'planned_primary_pitcher'
+              ),
+              pitcher_pool_membership_status: (
+                'included_explicit_pitching_plan'
+              ),
+              pitcher_role_taxonomy_status: (
+                'resolved'
+              ),
+              appearance_probability: 1,
               authoritative: true,
               authoritative_source: (
                 'canonical_event_driven_'
@@ -642,4 +655,110 @@ test('recognizes activated production projections', () => {
     view.authoritativeSource,
     'canonical_event_driven_calibrated_baserunning',
   )
+})
+
+test('surfaces explicit pitcher pool and role taxonomy', () => {
+  const game = payload()
+  const players = game.diagnostics.canonical_shadow
+    .player_projections.players
+
+  players.push({
+    player_id: 'p-2',
+    full_name: 'Test Closer',
+    player_type: 'pitcher',
+    team_side: 'home',
+    pitcher_role: 'reliever',
+    pitcher_projection_group: 'bullpen',
+    planned_pitcher_role: 'reliever',
+    typical_bullpen_role: 'closer',
+    game_availability_status: (
+      'explicitly_eligible'
+    ),
+    pitcher_pool_membership_status: (
+      'included_explicitly_eligible'
+    ),
+    pitcher_role_taxonomy_status: 'resolved',
+    appearance_probability: 0.42,
+    metrics: {
+      batters_faced: metric(1.8),
+      outs_recorded: metric(1.1),
+    },
+  })
+
+  const view = buildCanonicalProjectionsViewModel(
+    game,
+  )
+  const starter = view.pitchers.find(
+    row => row.playerId === 'p-1',
+  )
+  const closer = view.pitchers.find(
+    row => row.playerId === 'p-2',
+  )
+
+  assert.equal(
+    starter.pitcherProjectionGroupLabel,
+    'Starters',
+  )
+  assert.equal(
+    starter.plannedPitcherRoleLabel,
+    'Starter',
+  )
+  assert.equal(
+    starter.gameAvailabilityStatusLabel,
+    'Planned',
+  )
+
+  assert.equal(
+    closer.pitcherProjectionGroupLabel,
+    'Bullpen',
+  )
+  assert.equal(
+    closer.typicalBullpenRoleLabel,
+    'Closer',
+  )
+  assert.equal(
+    closer.gameAvailabilityStatusLabel,
+    'Eligible',
+  )
+  assert.equal(
+    closer.appearanceProbabilityPercent,
+    42,
+  )
+
+  assert.deepEqual(
+    view.pitcherSections.map(
+      section => section.title,
+    ),
+    ['Home Starters', 'Home Bullpen'],
+  )
+})
+
+test('does not infer missing bullpen taxonomy', () => {
+  const game = payload()
+  const pitcher = game.diagnostics.canonical_shadow
+    .player_projections.players.find(
+      row => row.player_type === 'pitcher',
+    )
+
+  pitcher.pitcher_projection_group = 'bullpen'
+  pitcher.planned_pitcher_role = 'reliever'
+  pitcher.typical_bullpen_role = null
+  pitcher.game_availability_status = null
+  pitcher.appearance_probability = 0.8
+
+  const row = buildCanonicalProjectionsViewModel(
+    game,
+  ).pitchers[0]
+
+  assert.equal(row.typicalBullpenRole, null)
+  assert.equal(
+    row.typicalBullpenRoleLabel,
+    'Unknown',
+  )
+  assert.equal(
+    row.gameAvailabilityStatusLabel,
+    'Unknown',
+  )
+  assert.equal(row.pitcherProjectionGroup, 'bullpen')
+  assert.equal(row.plannedPitcherRole, 'reliever')
 })

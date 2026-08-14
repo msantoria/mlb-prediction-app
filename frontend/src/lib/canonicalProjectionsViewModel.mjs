@@ -107,6 +107,93 @@ function pitcherRoleLabel(value) {
   return labels[role] || '—'
 }
 
+function projectionGroupLabel(value) {
+  const labels = {
+    starter: 'Starters',
+    bullpen: 'Bullpen',
+  }
+
+  return labels[String(value || '').trim()]
+    || 'Unclassified'
+}
+
+function typicalBullpenRoleLabel(value) {
+  const labels = {
+    closer: 'Closer',
+    setup: 'Setup',
+    setup_reliever: 'Setup',
+    middle_reliever: 'Middle Relief',
+    long_reliever: 'Long Relief',
+  }
+
+  return labels[String(value || '').trim()]
+    || 'Unknown'
+}
+
+function availabilityStatusLabel(value) {
+  const labels = {
+    planned_primary_pitcher: 'Planned',
+    explicitly_eligible: 'Eligible',
+    active_roster_candidate_unknown: 'Unknown',
+    explicitly_ineligible: 'Unavailable',
+  }
+
+  return labels[String(value || '').trim()]
+    || 'Unknown'
+}
+
+function pitcherSections(rows) {
+  const sideOrder = ['away', 'home']
+  const groupOrder = ['starter', 'bullpen']
+
+  const sections = []
+
+  for (const side of sideOrder) {
+    for (const group of groupOrder) {
+      const sectionRows = rows.filter(
+        row => (
+          row.side === side
+          && row.pitcherProjectionGroup === group
+        ),
+      )
+
+      if (sectionRows.length) {
+        sections.push({
+          key: `${side}-${group}`,
+          title: (
+            `${side === 'away' ? 'Away' : 'Home'} `
+            + projectionGroupLabel(group)
+          ),
+          side,
+          group,
+          rows: sectionRows,
+        })
+      }
+    }
+  }
+
+  const unclassifiedRows = rows.filter(
+    row => (
+      !sideOrder.includes(row.side)
+      || !groupOrder.includes(
+        row.pitcherProjectionGroup,
+      )
+    ),
+  )
+
+  if (unclassifiedRows.length) {
+    sections.push({
+      key: 'unclassified',
+      title: 'Unclassified Pitchers',
+      side: null,
+      group: 'unclassified',
+      rows: unclassifiedRows,
+    })
+  }
+
+  return sections
+}
+
 function dfsValue(row, key) {
   const direct = number(row?.[key])
 
@@ -190,6 +277,55 @@ function pitcherRow(row) {
     pitcherRole: row?.pitcher_role ?? null,
     pitcherRoleLabel: pitcherRoleLabel(
       row?.pitcher_role,
+    ),
+    pitcherProjectionGroup: (
+      row?.pitcher_projection_group || null
+    ),
+    pitcherProjectionGroupLabel: (
+      projectionGroupLabel(
+        row?.pitcher_projection_group,
+      )
+    ),
+    plannedPitcherRole: (
+      row?.planned_pitcher_role || null
+    ),
+    plannedPitcherRoleLabel: pitcherRoleLabel(
+      row?.planned_pitcher_role,
+    ),
+    typicalBullpenRole: (
+      row?.typical_bullpen_role || null
+    ),
+    typicalBullpenRoleLabel: (
+      typicalBullpenRoleLabel(
+        row?.typical_bullpen_role,
+      )
+    ),
+    gameAvailabilityStatus: (
+      row?.game_availability_status || null
+    ),
+    gameAvailabilityStatusLabel: (
+      availabilityStatusLabel(
+        row?.game_availability_status,
+      )
+    ),
+    pitcherPoolMembershipStatus: (
+      row?.pitcher_pool_membership_status
+      || null
+    ),
+    pitcherRoleTaxonomyStatus: (
+      row?.pitcher_role_taxonomy_status
+      || null
+    ),
+    appearanceProbability: number(
+      row?.appearance_probability,
+    ),
+    appearanceProbabilityPercent: (
+      number(row?.appearance_probability) === null
+        ? null
+        : number(row?.appearance_probability) * 100
+    ),
+    workloadDistributionScope: (
+      'unconditional_game_level'
     ),
     authoritative: row?.authoritative === true,
     authoritativeSource: (
@@ -450,6 +586,14 @@ export function buildCanonicalProjectionsViewModel(
         )
   )
 
+  const pitchers = sortRows(
+    players
+      .filter(
+        row => row?.player_type === 'pitcher',
+      )
+      .map(pitcherRow),
+  )
+
   return {
     available,
     unavailable,
@@ -507,12 +651,10 @@ export function buildCanonicalProjectionsViewModel(
         )
         .map(batterRow),
     ),
-    pitchers: sortRows(
-      players
-        .filter(
-          row => row?.player_type === 'pitcher',
-        )
-        .map(pitcherRow),
+    pitchers,
+    pitcherSections: pitcherSections(pitchers),
+    pitcherWorkloadDistributionScope: (
+      'unconditional_game_level'
     ),
     errorMessage: (
       projections.error_message || null
