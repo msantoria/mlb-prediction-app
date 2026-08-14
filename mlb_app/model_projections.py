@@ -16,6 +16,9 @@ from mlb_app.simulation.projections.pitcher_projection_authority import (
 from mlb_app.simulation.shadow.canonical_pitcher_projection_activation_readiness import (
     audit_canonical_pitcher_projection_activation_readiness,
 )
+from mlb_app.simulation.shadow.canonical_pregame_pitcher_evidence_source_coverage import (
+    audit_canonical_pregame_pitcher_evidence_source_coverage,
+)
 from mlb_app.simulation.shadow.canonical_pitcher_projection_pool_and_workload_calibration import (
     audit_canonical_pitcher_projection_pool_and_workload_calibration,
 )
@@ -813,6 +816,7 @@ def _attach_production_shadow_comparison(
     legacy_result: Dict[str, Any],
     production_execution: Any,
     bullpen_discovery: Any = None,
+    pregame_pitcher_evidence_source_coverage: Any = None,
 ) -> Dict[str, Any]:
     """
     Attach executed canonical material to the existing shadow comparator.
@@ -861,6 +865,41 @@ def _attach_production_shadow_comparison(
         .get("diagnostics", {})
         .get("canonical_shadow", {})
     )
+
+    if isinstance(
+        pregame_pitcher_evidence_source_coverage,
+        dict,
+    ):
+        source_coverage = deepcopy(
+            pregame_pitcher_evidence_source_coverage
+        )
+    else:
+        source_coverage = {
+            "schema_version": (
+                "canonical_pregame_pitcher_evidence_"
+                "source_coverage_v1"
+            ),
+            "status": "unavailable",
+            "audited": False,
+            "blockers": [
+                "pregame_pitcher_evidence_source_"
+                "coverage_unavailable",
+            ],
+            "decision": {
+                "provider_integration_ready": False,
+                "production_activation_allowed": False,
+                "recommended_next_slice": (
+                    "source_canonical_pregame_"
+                    "bullpen_evidence"
+                ),
+            },
+            "database_writes_performed": False,
+            "production_authority_changed": False,
+        }
+
+    shadow[
+        "pregame_pitcher_evidence_source_coverage"
+    ] = source_coverage
 
     try:
         reconciled_projection_rows = (
@@ -1662,6 +1701,47 @@ def build_model_projection_payload(
             except Exception as shared_exc:
                 shared_simulation = {"status": "error", "error": str(shared_exc), "meta": {"game_pk": matchup.get("game_pk") or matchup.get("gamePk"), "source_route": "/models/projections"}}
 
+            try:
+                pregame_pitcher_evidence_source_coverage = (
+                    audit_canonical_pregame_pitcher_evidence_source_coverage(
+                        matchup=matchup,
+                        bullpen_discovery=(
+                            canonical_shadow_bullpen_discovery
+                        ),
+                    )
+                )
+            except Exception as source_coverage_exc:
+                pregame_pitcher_evidence_source_coverage = {
+                    "schema_version": (
+                        "canonical_pregame_pitcher_"
+                        "evidence_source_coverage_v1"
+                    ),
+                    "status": "error",
+                    "audited": False,
+                    "blockers": [
+                        "source_coverage_audit_error",
+                    ],
+                    "error_type": (
+                        source_coverage_exc
+                        .__class__.__name__
+                    ),
+                    "error_message": str(
+                        source_coverage_exc
+                    ),
+                    "decision": {
+                        "provider_integration_ready":
+                            False,
+                        "production_activation_allowed":
+                            False,
+                        "recommended_next_slice": (
+                            "source_canonical_pregame_"
+                            "bullpen_evidence"
+                        ),
+                    },
+                    "database_writes_performed": False,
+                    "production_authority_changed": False,
+                }
+
             shared_simulation = (
                 _attach_production_shadow_comparison(
                     legacy_result=shared_simulation,
@@ -1672,6 +1752,9 @@ def build_model_projection_payload(
                         _canonical_pitcher_pool_audit_input(
                             canonical_shadow_bullpen_discovery
                         )
+                    ),
+                    pregame_pitcher_evidence_source_coverage=(
+                        pregame_pitcher_evidence_source_coverage
                     ),
                 )
             )
