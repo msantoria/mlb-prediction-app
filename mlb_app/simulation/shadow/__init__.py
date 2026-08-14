@@ -89,6 +89,12 @@ from .observed_baserunning_evidence import (
     discover_composed_canonical_baserunning_evidence,
     discover_observed_canonical_baserunning_evidence,
 )
+from .pregame_bullpen_evidence_provider import (
+    PAYLOAD_SCHEMA_VERSION as CANONICAL_PREGAME_BULLPEN_PROVIDER_PAYLOAD_VERSION,
+    SCHEMA_VERSION as CANONICAL_PREGAME_BULLPEN_PROVIDER_VERSION,
+    CanonicalPregameBullpenEvidenceProviderResult,
+    fetch_canonical_pregame_bullpen_evidence,
+)
 from .pregame_pitcher_availability_role_evidence import (
     SCHEMA_VERSION as CANONICAL_PREGAME_PITCHER_EVIDENCE_VERSION,
     CanonicalPregamePitcherEvidenceMaterialization,
@@ -219,6 +225,10 @@ __all__ = [
     "CANONICAL_OBSERVED_BASERUNNING_DIGEST_VERSION",
     "discover_composed_canonical_baserunning_evidence",
     "discover_observed_canonical_baserunning_evidence",
+    "CANONICAL_PREGAME_BULLPEN_PROVIDER_PAYLOAD_VERSION",
+    "CANONICAL_PREGAME_BULLPEN_PROVIDER_VERSION",
+    "CanonicalPregameBullpenEvidenceProviderResult",
+    "fetch_canonical_pregame_bullpen_evidence",
     "CANONICAL_PREGAME_PITCHER_EVIDENCE_VERSION",
     "CanonicalPregamePitcherEvidenceMaterialization",
     "materialize_canonical_pregame_pitcher_evidence",
