@@ -969,3 +969,116 @@ def test_comparator_applies_explicit_pitcher_pool_role_evidence():
     assert result[
         "home_win_probability"
     ] == legacy["home_win_probability"]
+def test_comparator_attaches_pregame_pitcher_evidence_source_coverage():
+    legacy = legacy_payload()
+    coverage = {
+        "schema_version": (
+            "canonical_pregame_pitcher_evidence_"
+            "source_coverage_v1"
+        ),
+        "status": "observed",
+        "audited": True,
+        "blockers": [
+            "bullpen_availability_source_incomplete",
+            "typical_bullpen_role_source_incomplete",
+        ],
+        "scheduled_starter_source_coverage_rate": 1.0,
+        "provider_evidence_coverage_rate": 0.0,
+        "explicit_availability_coverage_rate": 0.0,
+        "typical_role_coverage_rate": 0.0,
+        "decision": {
+            "provider_integration_ready": False,
+            "production_activation_allowed": False,
+            "recommended_next_slice": (
+                "source_canonical_pregame_"
+                "bullpen_evidence"
+            ),
+        },
+        "database_writes_performed": False,
+        "production_authority_changed": False,
+    }
+
+    result = (
+        model_projections
+        ._attach_production_shadow_comparison(
+            legacy_result=legacy,
+            production_execution=executed_shadow(
+                simulation_count=100,
+            ),
+            bullpen_discovery=(
+                model_projections
+                ._canonical_pitcher_pool_audit_input(
+                    bullpens()
+                )
+            ),
+            pregame_pitcher_evidence_source_coverage=(
+                coverage
+            ),
+        )
+    )
+
+    shadow = result["diagnostics"][
+        "canonical_shadow"
+    ]
+    attached = shadow[
+        "pregame_pitcher_evidence_source_coverage"
+    ]
+
+    assert attached == coverage
+    assert attached is not coverage
+    assert attached["status"] == "observed"
+    assert attached["decision"][
+        "production_activation_allowed"
+    ] is False
+    assert attached[
+        "database_writes_performed"
+    ] is False
+    assert attached[
+        "production_authority_changed"
+    ] is False
+
+    assert shadow["authoritative_source"] == "legacy"
+    assert result[
+        "away_win_probability"
+    ] == legacy["away_win_probability"]
+    assert result[
+        "home_win_probability"
+    ] == legacy["home_win_probability"]
+
+
+def test_comparator_marks_missing_source_coverage_unavailable():
+    legacy = legacy_payload()
+
+    result = (
+        model_projections
+        ._attach_production_shadow_comparison(
+            legacy_result=legacy,
+            production_execution=executed_shadow(
+                simulation_count=100,
+            ),
+            bullpen_discovery=(
+                model_projections
+                ._canonical_pitcher_pool_audit_input(
+                    bullpens()
+                )
+            ),
+        )
+    )
+
+    coverage = result["diagnostics"][
+        "canonical_shadow"
+    ][
+        "pregame_pitcher_evidence_source_coverage"
+    ]
+
+    assert coverage["status"] == "unavailable"
+    assert coverage["audited"] is False
+    assert coverage["decision"][
+        "production_activation_allowed"
+    ] is False
+    assert coverage[
+        "database_writes_performed"
+    ] is False
+    assert coverage[
+        "production_authority_changed"
+    ] is False
