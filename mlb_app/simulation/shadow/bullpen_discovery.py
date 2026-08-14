@@ -8,6 +8,10 @@ from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple
 from .canonical_bullpen_eligibility import (
     enforce_canonical_bullpen_eligibility,
 )
+from .pregame_pitcher_availability_role_evidence import (
+    CanonicalPregamePitcherEvidenceMaterialization,
+    materialize_canonical_pregame_pitcher_evidence,
+)
 
 
 CANONICAL_SHADOW_BULLPEN_DISCOVERY_VERSION = (
@@ -25,6 +29,39 @@ def _normalize_identifier(value: Any) -> Optional[str]:
     except (TypeError, ValueError):
         text = str(value).strip()
         return text or None
+
+
+
+
+def _normalize_identifiers(
+    values: Any,
+) -> Tuple[str, ...]:
+    if values is None:
+        return ()
+
+    if isinstance(values, (str, bytes)):
+        candidates = (values,)
+    elif isinstance(values, Sequence):
+        candidates = tuple(values)
+    else:
+        candidates = (values,)
+
+    result = []
+    seen = set()
+
+    for candidate in candidates:
+        identifier = _normalize_identifier(
+            candidate
+        )
+
+        if (
+            identifier is not None
+            and identifier not in seen
+        ):
+            result.append(identifier)
+            seen.add(identifier)
+
+    return tuple(result)
 
 
 def _pitcher_identifiers(
@@ -79,6 +116,9 @@ class CanonicalShadowBullpenSideDiscovery:
     starter_id: Optional[str] = None
     bullpen_pitcher_ids: Tuple[str, ...] = ()
     eligibility: Optional[Dict[str, Any]] = None
+    pregame_evidence: Optional[
+        CanonicalPregamePitcherEvidenceMaterialization
+    ] = None
     source_record_count: int = 0
     status: str = "unavailable"
     error_type: Optional[str] = None
@@ -166,6 +206,47 @@ class CanonicalShadowBullpenSideDiscovery:
                 if self.eligibility is not None
                 else 0
             ),
+            "pregame_evidence_materialized": (
+                self.pregame_evidence is not None
+            ),
+            "pregame_evidence_status": (
+                self.pregame_evidence.diagnostics.get(
+                    "status"
+                )
+                if self.pregame_evidence is not None
+                else "unavailable"
+            ),
+            "pregame_evidence_pitcher_count": (
+                self.pregame_evidence.diagnostics.get(
+                    "pitcher_count"
+                )
+                if self.pregame_evidence is not None
+                else 0
+            ),
+            "pregame_evidence_unknown_count": (
+                self.pregame_evidence.diagnostics.get(
+                    "unknown_pitcher_count"
+                )
+                if self.pregame_evidence is not None
+                else 0
+            ),
+            "pregame_evidence_conflict_count": (
+                self.pregame_evidence.diagnostics.get(
+                    "conflicting_pitcher_count"
+                )
+                if self.pregame_evidence is not None
+                else 0
+            ),
+            "pregame_evidence_stale_count": (
+                self.pregame_evidence.diagnostics.get(
+                    "stale_observation_count"
+                )
+                if self.pregame_evidence is not None
+                else 0
+            ),
+            "typical_role_inference_used": False,
+            "workload_inference_used": False,
+            "roster_order_inference_used": False,
             "exclusion_reason_counts": (
                 dict(
                     self.eligibility.get(
@@ -247,6 +328,7 @@ class CanonicalShadowBullpenDiscovery:
 
 def _discover_side(
     *,
+    team_side: str,
     team_id: Any,
     team_name: Any,
     starter_id: Any,
@@ -256,6 +338,12 @@ def _discover_side(
         Mapping[Any, Any]
     ] = None,
     planned_pitcher_ids: Any = (),
+    pregame_evidence_as_of: Any = None,
+    pregame_pitching_plan: Optional[
+        Mapping[str, Any]
+    ] = None,
+    pregame_provider_observations: Any = (),
+    pregame_maximum_age_seconds: int = 21600,
 ) -> CanonicalShadowBullpenSideDiscovery:
     normalized_team = _normalize_identifier(
         team_id
@@ -319,15 +407,68 @@ def _discover_side(
         records,
         starter_id=normalized_starter,
     )
+    pregame_evidence = None
+    materialized_evidence_by_pitcher_id = {}
+    materialized_planned_pitcher_ids = ()
+
+    if pregame_evidence_as_of is not None:
+        pregame_evidence = (
+            materialize_canonical_pregame_pitcher_evidence(
+                team_side=team_side,
+                scheduled_starter_id=(
+                    normalized_starter
+                ),
+                active_roster_pitcher_ids=(
+                    (normalized_starter,)
+                    + pitcher_ids
+                ),
+                as_of=pregame_evidence_as_of,
+                pitching_plan=pregame_pitching_plan,
+                provider_observations=(
+                    pregame_provider_observations
+                ),
+                maximum_age_seconds=(
+                    pregame_maximum_age_seconds
+                ),
+            )
+        )
+        materialized_evidence_by_pitcher_id = dict(
+            pregame_evidence.evidence_by_pitcher_id
+        )
+        materialized_planned_pitcher_ids = (
+            pregame_evidence.planned_pitcher_ids
+        )
+
+    direct_evidence = (
+        dict(eligibility_evidence_by_pitcher_id)
+        if isinstance(
+            eligibility_evidence_by_pitcher_id,
+            Mapping,
+        )
+        else {}
+    )
+    combined_evidence = {
+        **materialized_evidence_by_pitcher_id,
+        **direct_evidence,
+    }
+    combined_planned_pitcher_ids = tuple(
+        dict.fromkeys(
+            materialized_planned_pitcher_ids
+            + _normalize_identifiers(
+                planned_pitcher_ids
+            )
+        )
+    )
+
     eligibility = (
         enforce_canonical_bullpen_eligibility(
             candidate_pitcher_ids=pitcher_ids,
             starter_id=normalized_starter,
             evidence_by_pitcher_id=(
-                eligibility_evidence_by_pitcher_id
+                combined_evidence or None
             ),
             planned_pitcher_ids=(
-                planned_pitcher_ids
+                combined_planned_pitcher_ids
             ),
         )
     )
@@ -344,6 +485,7 @@ def _discover_side(
             eligible_pitcher_ids
         ),
         eligibility=eligibility,
+        pregame_evidence=pregame_evidence,
         source_record_count=len(records),
         status=(
             "ready"
@@ -373,6 +515,16 @@ def discover_canonical_shadow_bullpens(
     ] = None,
     away_planned_pitcher_ids: Any = (),
     home_planned_pitcher_ids: Any = (),
+    pregame_evidence_as_of: Any = None,
+    away_pregame_pitching_plan: Optional[
+        Mapping[str, Any]
+    ] = None,
+    home_pregame_pitching_plan: Optional[
+        Mapping[str, Any]
+    ] = None,
+    away_pregame_provider_observations: Any = (),
+    home_pregame_provider_observations: Any = (),
+    pregame_maximum_age_seconds: int = 21600,
 ) -> CanonicalShadowBullpenDiscovery:
     """
     Discover active-roster bullpen IDs without activating canonical execution.
@@ -390,6 +542,7 @@ def discover_canonical_shadow_bullpens(
 
     return CanonicalShadowBullpenDiscovery(
         away=_discover_side(
+            team_side="away",
             team_id=away_team_id,
             team_name=away_team_name,
             starter_id=away_starter_id,
@@ -401,8 +554,21 @@ def discover_canonical_shadow_bullpens(
             planned_pitcher_ids=(
                 away_planned_pitcher_ids
             ),
+            pregame_evidence_as_of=(
+                pregame_evidence_as_of
+            ),
+            pregame_pitching_plan=(
+                away_pregame_pitching_plan
+            ),
+            pregame_provider_observations=(
+                away_pregame_provider_observations
+            ),
+            pregame_maximum_age_seconds=(
+                pregame_maximum_age_seconds
+            ),
         ),
         home=_discover_side(
+            team_side="home",
             team_id=home_team_id,
             team_name=home_team_name,
             starter_id=home_starter_id,
@@ -413,6 +579,18 @@ def discover_canonical_shadow_bullpens(
             ),
             planned_pitcher_ids=(
                 home_planned_pitcher_ids
+            ),
+            pregame_evidence_as_of=(
+                pregame_evidence_as_of
+            ),
+            pregame_pitching_plan=(
+                home_pregame_pitching_plan
+            ),
+            pregame_provider_observations=(
+                home_pregame_provider_observations
+            ),
+            pregame_maximum_age_seconds=(
+                pregame_maximum_age_seconds
             ),
         ),
     )

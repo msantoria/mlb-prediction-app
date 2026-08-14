@@ -114,3 +114,78 @@ def test_failed_roster_discovery_keeps_bullpens_blocked():
     assert report["requirements"][
         "home_bullpen"
     ]["ready"] is False
+
+def test_pregame_evidence_uses_scheduled_game_time():
+    discovery = discover_canonical_shadow_bullpens(
+        away_team_id=10,
+        away_team_name="Real Away Team",
+        away_starter_id=100,
+        home_team_id=20,
+        home_team_name="Real Home Team",
+        home_starter_id=200,
+        season=2026,
+        roster_fetcher=roster,
+        pregame_evidence_as_of=(
+            "2026-08-09T23:05:00+00:00"
+        ),
+        away_pregame_provider_observations=(
+            {
+                "pitcher_id": "101",
+                "status": "eligible",
+                "role": "closer",
+                "source": "provider_depth_chart_v1",
+                "observed_at": (
+                    "2026-08-09T22:30:00+00:00"
+                ),
+            },
+        ),
+        home_pregame_provider_observations=(
+            {
+                "pitcher_id": "201",
+                "status": "ineligible",
+                "role": "probable_starter",
+                "source": "provider_rotation_v1",
+                "observed_at": (
+                    "2026-08-09T22:30:00+00:00"
+                ),
+                "reason": (
+                    "probable_starter_not_in_plan"
+                ),
+            },
+        ),
+    )
+
+    assert discovery.away.pregame_evidence is not None
+    assert discovery.home.pregame_evidence is not None
+
+    assert discovery.away.bullpen_pitcher_ids == (
+        "101",
+    )
+    assert discovery.home.bullpen_pitcher_ids == ()
+
+    away_diagnostics = (
+        discovery.away.to_diagnostics()
+    )
+    home_diagnostics = (
+        discovery.home.to_diagnostics()
+    )
+
+    assert away_diagnostics[
+        "pregame_evidence_materialized"
+    ] is True
+    assert home_diagnostics[
+        "pregame_evidence_materialized"
+    ] is True
+    assert away_diagnostics[
+        "pregame_evidence_stale_count"
+    ] == 0
+    assert home_diagnostics[
+        "excluded_pitcher_count"
+    ] == 1
+
+    assert discovery.to_diagnostics()[
+        "activation_permitted"
+    ] is False
+    assert discovery.to_diagnostics()[
+        "authoritative_source"
+    ] == "legacy"

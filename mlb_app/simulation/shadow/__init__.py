@@ -89,6 +89,11 @@ from .observed_baserunning_evidence import (
     discover_composed_canonical_baserunning_evidence,
     discover_observed_canonical_baserunning_evidence,
 )
+from .pregame_pitcher_availability_role_evidence import (
+    SCHEMA_VERSION as CANONICAL_PREGAME_PITCHER_EVIDENCE_VERSION,
+    CanonicalPregamePitcherEvidenceMaterialization,
+    materialize_canonical_pregame_pitcher_evidence,
+)
 from .probability_provider_discovery import (
     CANONICAL_SHADOW_PROBABILITY_PROVIDER_DISCOVERY_VERSION,
     CanonicalShadowProbabilityProviderDiscovery,
@@ -214,6 +219,9 @@ __all__ = [
     "CANONICAL_OBSERVED_BASERUNNING_DIGEST_VERSION",
     "discover_composed_canonical_baserunning_evidence",
     "discover_observed_canonical_baserunning_evidence",
+    "CANONICAL_PREGAME_PITCHER_EVIDENCE_VERSION",
+    "CanonicalPregamePitcherEvidenceMaterialization",
+    "materialize_canonical_pregame_pitcher_evidence",
     "CANONICAL_PRODUCTION_SHADOW_EXECUTION_VERSION",
     "CANONICAL_SHADOW_PROBABILITY_PROVIDER_DISCOVERY_VERSION",
     "CANONICAL_SHADOW_INPUT_PROVENANCE_VERSION",

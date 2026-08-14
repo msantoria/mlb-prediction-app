@@ -322,3 +322,165 @@ def test_eligibility_diagnostics_do_not_expose_ids():
         "excluded_pitcher_ids"
         not in diagnostics["away"]
     )
+
+def test_materialized_pregame_evidence_filters_pool():
+    result = discovery(
+        pregame_evidence_as_of=(
+            "2026-08-09T18:00:00+00:00"
+        ),
+        away_pregame_provider_observations=(
+            {
+                "pitcher_id": "101",
+                "status": "eligible",
+                "role": "closer",
+                "source": "provider_depth_chart_v1",
+                "observed_at": (
+                    "2026-08-09T17:30:00+00:00"
+                ),
+            },
+            {
+                "pitcher_id": "102",
+                "status": "ineligible",
+                "role": "probable_starter",
+                "source": "provider_rotation_v1",
+                "observed_at": (
+                    "2026-08-09T17:30:00+00:00"
+                ),
+                "reason": (
+                    "probable_starter_not_in_plan"
+                ),
+            },
+        ),
+    )
+
+    assert result.away.bullpen_pitcher_ids == (
+        "101",
+    )
+    assert result.away.pregame_evidence is not None
+    diagnostics = result.away.to_diagnostics()
+
+    assert diagnostics[
+        "pregame_evidence_materialized"
+    ] is True
+    assert diagnostics[
+        "pregame_evidence_status"
+    ] == "materialized"
+    assert diagnostics[
+        "pregame_evidence_pitcher_count"
+    ] == 3
+    assert diagnostics[
+        "typical_role_inference_used"
+    ] is False
+
+
+def test_materialized_plan_overrides_ineligibility():
+    result = discovery(
+        pregame_evidence_as_of=(
+            "2026-08-09T18:00:00+00:00"
+        ),
+        away_pregame_pitching_plan={
+            "planned_sequence": [
+                {
+                    "pitcher_id": "101",
+                    "role": "bulk_follower",
+                },
+            ],
+        },
+        away_pregame_provider_observations=(
+            {
+                "pitcher_id": "101",
+                "status": "ineligible",
+                "role": "probable_starter",
+                "source": "provider_rotation_v1",
+                "observed_at": (
+                    "2026-08-09T17:30:00+00:00"
+                ),
+            },
+        ),
+    )
+
+    assert "101" in (
+        result.away.bullpen_pitcher_ids
+    )
+    assert result.away.to_diagnostics()[
+        "planned_override_count"
+    ] == 1
+
+
+def test_unknown_materialized_evidence_fails_open():
+    result = discovery(
+        pregame_evidence_as_of=(
+            "2026-08-09T18:00:00+00:00"
+        ),
+    )
+
+    assert result.away.bullpen_pitcher_ids == (
+        "101",
+        "102",
+    )
+    assert result.away.to_diagnostics()[
+        "pregame_evidence_unknown_count"
+    ] == 2
+
+
+def test_stale_materialized_evidence_fails_open():
+    result = discovery(
+        pregame_evidence_as_of=(
+            "2026-08-09T18:00:00+00:00"
+        ),
+        pregame_maximum_age_seconds=3600,
+        away_pregame_provider_observations=(
+            {
+                "pitcher_id": "101",
+                "status": "ineligible",
+                "role": "probable_starter",
+                "source": "provider_rotation_v1",
+                "observed_at": (
+                    "2026-08-09T15:00:00+00:00"
+                ),
+            },
+        ),
+    )
+
+    assert "101" in (
+        result.away.bullpen_pitcher_ids
+    )
+    assert result.away.to_diagnostics()[
+        "pregame_evidence_stale_count"
+    ] == 1
+
+
+def test_direct_evidence_api_remains_compatible():
+    result = discovery(
+        pregame_evidence_as_of=(
+            "2026-08-09T18:00:00+00:00"
+        ),
+        away_eligibility_evidence_by_pitcher_id={
+            "101": role_evidence(
+                "ineligible",
+                "probable_starter",
+                "direct_evidence_precedence",
+            ),
+        },
+    )
+
+    assert result.away.bullpen_pitcher_ids == (
+        "102",
+    )
+    assert result.away.to_diagnostics()[
+        "exclusion_reason_counts"
+    ] == {
+        "direct_evidence_precedence": 1,
+    }
+
+    records = {
+        record["pitcher_id"]: record
+        for record in result.away.eligibility[
+            "records"
+        ]
+    }
+
+    assert records["102"]["retained"] is True
+    assert records["102"][
+        "evidence_status"
+    ] == "unknown"
