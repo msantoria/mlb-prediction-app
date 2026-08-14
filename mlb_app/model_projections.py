@@ -1239,6 +1239,33 @@ def build_model_projection_payload(
                     home_team_name=home.get("team_name"),
                     home_starter_id=home.get("pitcher_id"),
                     season=date_obj.year,
+                    pregame_evidence_as_of=(
+                        matchup.get("game_time")
+                    ),
+                    away_pregame_pitching_plan=(
+                        matchup.get(
+                            "away_pregame_pitching_plan"
+                        )
+                    ),
+                    home_pregame_pitching_plan=(
+                        matchup.get(
+                            "home_pregame_pitching_plan"
+                        )
+                    ),
+                    away_pregame_provider_observations=(
+                        matchup.get(
+                            "away_pregame_pitcher_"
+                            "observations"
+                        )
+                        or ()
+                    ),
+                    home_pregame_provider_observations=(
+                        matchup.get(
+                            "home_pregame_pitcher_"
+                            "observations"
+                        )
+                        or ()
+                    ),
                 )
             )
 
