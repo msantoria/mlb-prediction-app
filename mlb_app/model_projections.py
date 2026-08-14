@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 
 import datetime
+import os
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import inspect, text
@@ -24,6 +25,9 @@ from mlb_app.simulation.shadow.canonical_pitcher_projection_pool_and_workload_ca
 )
 from mlb_app.simulation.shadow.canonical_pitcher_role_and_innings_attribution_audit import (
     audit_canonical_pitcher_role_and_innings_attribution,
+)
+from mlb_app.simulation.shadow.pregame_bullpen_evidence_provider import (
+    fetch_canonical_pregame_bullpen_evidence,
 )
 from mlb_app.simulation.shadow.production_monitoring_ledger import (
     CANONICAL_BASERUNNING_PRODUCTION_AUTHORITY,
@@ -1222,6 +1226,49 @@ def _enrich_game_workspace_player_projections(
     return shared_simulation
 
 
+def _fetch_configured_pregame_bullpen_evidence(
+    *,
+    matchup: Dict[str, Any],
+    away_team_id: Any,
+    home_team_id: Any,
+    environment: Any = None,
+    fetcher: Any = None,
+) -> Any:
+    if not isinstance(matchup, dict):
+        raise TypeError(
+            "matchup must be a dictionary"
+        )
+
+    if environment is None:
+        environment = os.environ
+
+    if fetcher is None:
+        fetcher = (
+            fetch_canonical_pregame_bullpen_evidence
+        )
+
+    return fetcher(
+        game_pk=(
+            matchup.get("game_pk")
+            or matchup.get("gamePk")
+        ),
+        game_time=matchup.get("game_time"),
+        away_team_id=away_team_id,
+        home_team_id=home_team_id,
+        endpoint=environment.get(
+            "MLB_PREGAME_BULLPEN_EVIDENCE_URL"
+        ),
+        provider_name=environment.get(
+            "MLB_PREGAME_BULLPEN_"
+            "EVIDENCE_PROVIDER"
+        ),
+        api_token=environment.get(
+            "MLB_PREGAME_BULLPEN_"
+            "EVIDENCE_TOKEN"
+        ),
+    )
+
+
 def build_model_projection_payload(
     session: Session,
     target_date: str,
@@ -1269,6 +1316,45 @@ def build_model_projection_payload(
                 )
             )
 
+            canonical_pregame_bullpen_provider = (
+                _fetch_configured_pregame_bullpen_evidence(
+                    matchup=matchup,
+                    away_team_id=away.get(
+                        "team_id"
+                    ),
+                    home_team_id=home.get(
+                        "team_id"
+                    ),
+                )
+            )
+
+            away_provider_observations = (
+                tuple(
+                    matchup.get(
+                        "away_pregame_pitcher_"
+                        "observations"
+                    )
+                    or ()
+                )
+                + canonical_pregame_bullpen_provider
+                .to_observations(
+                    team_side="away"
+                )
+            )
+            home_provider_observations = (
+                tuple(
+                    matchup.get(
+                        "home_pregame_pitcher_"
+                        "observations"
+                    )
+                    or ()
+                )
+                + canonical_pregame_bullpen_provider
+                .to_observations(
+                    team_side="home"
+                )
+            )
+
             canonical_shadow_bullpen_discovery = (
                 discover_canonical_shadow_bullpens(
                     away_team_id=away.get("team_id"),
@@ -1292,18 +1378,10 @@ def build_model_projection_payload(
                         )
                     ),
                     away_pregame_provider_observations=(
-                        matchup.get(
-                            "away_pregame_pitcher_"
-                            "observations"
-                        )
-                        or ()
+                        away_provider_observations
                     ),
                     home_pregame_provider_observations=(
-                        matchup.get(
-                            "home_pregame_pitcher_"
-                            "observations"
-                        )
-                        or ()
+                        home_provider_observations
                     ),
                 )
             )
@@ -1644,6 +1722,13 @@ def build_model_projection_payload(
                 "canonicalShadowBullpenDiscovery"
             ] = (
                 canonical_shadow_bullpen_discovery
+                .to_diagnostics()
+            )
+
+            workspace[
+                "canonicalPregameBullpenEvidenceProvider"
+            ] = (
+                canonical_pregame_bullpen_provider
                 .to_diagnostics()
             )
 
