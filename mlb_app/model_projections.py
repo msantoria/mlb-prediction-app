@@ -1383,6 +1383,9 @@ def build_model_projection_payload(
                     home_pregame_provider_observations=(
                         home_provider_observations
                     ),
+                    require_explicit_bullpen_membership=(
+                        True
+                    ),
                 )
             )
 

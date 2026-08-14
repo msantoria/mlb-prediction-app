@@ -110,6 +110,101 @@ def _pitcher_identifiers(
     return tuple(ordered)
 
 
+def _active_roster_usage_evidence(
+    records: Any,
+    *,
+    candidate_pitcher_ids: Sequence[str],
+) -> Dict[str, Dict[str, Any]]:
+    if not isinstance(records, Sequence) or isinstance(
+        records,
+        (str, bytes),
+    ):
+        return {}
+
+    candidates = set(candidate_pitcher_ids)
+    evidence = {}
+
+    for record in records:
+        if not isinstance(record, Mapping):
+            continue
+
+        pitcher_id = _normalize_identifier(
+            record.get("mlb_player_id")
+            or record.get("player_id")
+            or record.get("pitcher_id")
+            or record.get("id")
+        )
+
+        if (
+            pitcher_id is None
+            or pitcher_id not in candidates
+        ):
+            continue
+
+        games_pitched = record.get(
+            "season_games_pitched"
+        )
+        games_started = record.get(
+            "season_games_started"
+        )
+        relief_appearances = record.get(
+            "season_relief_appearances"
+        )
+
+        if (
+            isinstance(games_pitched, bool)
+            or isinstance(games_started, bool)
+            or isinstance(relief_appearances, bool)
+        ):
+            continue
+
+        try:
+            games_pitched = int(games_pitched)
+            games_started = int(games_started)
+            relief_appearances = int(
+                relief_appearances
+            )
+        except (TypeError, ValueError):
+            continue
+
+        if (
+            games_pitched <= 0
+            or games_started < 0
+            or relief_appearances < 0
+            or games_started > games_pitched
+            or relief_appearances
+            != games_pitched - games_started
+        ):
+            continue
+
+        if relief_appearances > games_started:
+            evidence[pitcher_id] = {
+                "status": "eligible",
+                "role": "reliever",
+                "source": (
+                    "mlb_stats_active_roster_"
+                    "season_pitching"
+                ),
+                "reason": (
+                    "observed_relief_usage_dominant"
+                ),
+            }
+        else:
+            evidence[pitcher_id] = {
+                "status": "ineligible",
+                "role": "probable_starter",
+                "source": (
+                    "mlb_stats_active_roster_"
+                    "season_pitching"
+                ),
+                "reason": (
+                    "observed_start_usage_dominant"
+                ),
+            }
+
+    return evidence
+
+
 @dataclass(frozen=True)
 class CanonicalShadowBullpenSideDiscovery:
     team_id: Optional[str] = None
@@ -205,6 +300,67 @@ class CanonicalShadowBullpenSideDiscovery:
                 )
                 if self.eligibility is not None
                 else 0
+            ),
+            "require_explicit_bullpen_membership": (
+                self.eligibility.get(
+                    "require_explicit_bullpen_membership"
+                )
+                if self.eligibility is not None
+                else True
+            ),
+            "strict_membership_excluded_count": (
+                self.eligibility.get(
+                    "strict_membership_excluded_count"
+                )
+                if self.eligibility is not None
+                else 0
+            ),
+            "starter_like_excluded_count": (
+                self.eligibility.get(
+                    "starter_like_excluded_count"
+                )
+                if self.eligibility is not None
+                else 0
+            ),
+            "season_usage_evidence_pitcher_count": (
+                self.eligibility.get(
+                    "season_usage_evidence_pitcher_count"
+                )
+                if self.eligibility is not None
+                else 0
+            ),
+            "season_usage_role_classification_used": (
+                self.eligibility.get(
+                    "season_usage_role_classification_used"
+                )
+                if self.eligibility is not None
+                else False
+            ),
+            "season_usage_classification_policy": (
+                self.eligibility.get(
+                    "season_usage_classification_policy"
+                )
+                if self.eligibility is not None
+                else None
+            ),
+            "unknown_materialized_evidence_"
+            "preserves_season_usage": (
+                self.eligibility.get(
+                    "unknown_materialized_evidence_"
+                    "preserves_season_usage"
+                )
+                if self.eligibility is not None
+                else False
+            ),
+            "evidence_precedence": (
+                list(
+                    self.eligibility.get(
+                        "evidence_precedence"
+                    )
+                    or []
+                )
+                if self.eligibility is not None
+                else []
             ),
             "pregame_evidence_materialized": (
                 self.pregame_evidence is not None
@@ -344,6 +500,9 @@ def _discover_side(
     ] = None,
     pregame_provider_observations: Any = (),
     pregame_maximum_age_seconds: int = 21600,
+    require_explicit_bullpen_membership: (
+        bool
+    ) = False,
 ) -> CanonicalShadowBullpenSideDiscovery:
     normalized_team = _normalize_identifier(
         team_id
@@ -439,6 +598,12 @@ def _discover_side(
             pregame_evidence.planned_pitcher_ids
         )
 
+    season_usage_evidence = (
+        _active_roster_usage_evidence(
+            records,
+            candidate_pitcher_ids=pitcher_ids,
+        )
+    )
     direct_evidence = (
         dict(eligibility_evidence_by_pitcher_id)
         if isinstance(
@@ -447,10 +612,50 @@ def _discover_side(
         )
         else {}
     )
-    combined_evidence = {
-        **materialized_evidence_by_pitcher_id,
-        **direct_evidence,
-    }
+    combined_evidence = dict(
+        season_usage_evidence
+    )
+
+    for (
+        evidence_pitcher_id,
+        materialized_record,
+    ) in materialized_evidence_by_pitcher_id.items():
+        normalized_evidence_pitcher_id = (
+            _normalize_identifier(
+                evidence_pitcher_id
+            )
+        )
+
+        if normalized_evidence_pitcher_id is None:
+            continue
+
+        materialized_status = (
+            str(
+                (
+                    materialized_record.get("status")
+                    if isinstance(
+                        materialized_record,
+                        Mapping,
+                    )
+                    else None
+                )
+                or "unknown"
+            )
+            .strip()
+            .lower()
+        )
+
+        if (
+            materialized_status
+            in {"eligible", "ineligible"}
+            or normalized_evidence_pitcher_id
+            not in combined_evidence
+        ):
+            combined_evidence[
+                normalized_evidence_pitcher_id
+            ] = materialized_record
+
+    combined_evidence.update(direct_evidence)
     combined_planned_pitcher_ids = tuple(
         dict.fromkeys(
             materialized_planned_pitcher_ids
@@ -470,8 +675,35 @@ def _discover_side(
             planned_pitcher_ids=(
                 combined_planned_pitcher_ids
             ),
+            require_explicit_bullpen_membership=(
+                require_explicit_bullpen_membership
+            ),
         )
     )
+    eligibility[
+        "season_usage_evidence_pitcher_count"
+    ] = len(season_usage_evidence)
+    eligibility[
+        "season_usage_role_classification_used"
+    ] = bool(season_usage_evidence)
+    eligibility[
+        "season_usage_classification_policy"
+    ] = (
+        "relief_appearances_greater_than_starts"
+    )
+    eligibility[
+        "unknown_materialized_evidence_"
+        "preserves_season_usage"
+    ] = True
+    eligibility[
+        "evidence_precedence"
+    ] = [
+        "direct_explicit_evidence",
+        "materialized_known_provider_evidence",
+        "mlb_stats_season_pitching_usage",
+        "materialized_unknown_evidence",
+    ]
+
     eligible_pitcher_ids = tuple(
         eligibility[
             "eligible_bullpen_pitcher_ids"
@@ -525,12 +757,17 @@ def discover_canonical_shadow_bullpens(
     away_pregame_provider_observations: Any = (),
     home_pregame_provider_observations: Any = (),
     pregame_maximum_age_seconds: int = 21600,
+    require_explicit_bullpen_membership: (
+        bool
+    ) = False,
 ) -> CanonicalShadowBullpenDiscovery:
     """
     Discover active-roster bullpen IDs without activating canonical execution.
 
-    Active-roster pitchers are treated as a bootstrap pitching-plan candidate,
-    not a claim about game availability, leverage role, or expected usage.
+    Active-roster pitchers are treated as bootstrap candidates, not proof
+    of bullpen membership, game availability, leverage role, or expected
+    usage. Production may require explicit bullpen membership; compatibility
+    callers retain candidate-discovery behavior unless they opt into it.
     """
 
     if roster_fetcher is None:
@@ -566,6 +803,9 @@ def discover_canonical_shadow_bullpens(
             pregame_maximum_age_seconds=(
                 pregame_maximum_age_seconds
             ),
+            require_explicit_bullpen_membership=(
+                require_explicit_bullpen_membership
+            ),
         ),
         home=_discover_side(
             team_side="home",
@@ -591,6 +831,9 @@ def discover_canonical_shadow_bullpens(
             ),
             pregame_maximum_age_seconds=(
                 pregame_maximum_age_seconds
+            ),
+            require_explicit_bullpen_membership=(
+                require_explicit_bullpen_membership
             ),
         ),
     )
