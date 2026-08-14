@@ -99,13 +99,26 @@ test('projections tab renders requested batter metrics', async () => {
   }
 })
 
-test('projections tab renders canonical pitcher role', async () => {
+test('projections tab separates pitcher role taxonomy', async () => {
   const source = await pageSource()
 
   assert.match(
     source,
-    /key: 'pitcherRoleLabel', label: 'Role'/,
+    /key: 'plannedPitcherRoleLabel', label: 'Planned Role'/,
   )
+  assert.match(
+    source,
+    /key: 'typicalBullpenRoleLabel', label: 'Typical Role'/,
+  )
+  assert.match(
+    source,
+    /key: 'gameAvailabilityStatusLabel', label: 'Availability'/,
+  )
+  assert.match(
+    source,
+    /key: 'appearanceProbabilityPercent', label: 'App %'/,
+  )
+  assert.match(source, /view\.pitcherSections\.map/)
 })
 
 test('projections tab renders pitcher workload distribution', async () => {
@@ -140,5 +153,26 @@ test('projections tab explains unavailable canonical states', async () => {
   assert.match(
     source,
     /same\s+canonical simulation run/i,
+  )
+})
+
+test('projections tab explains pitcher workload scope', async () => {
+  const source = await pageSource()
+
+  assert.match(
+    source,
+    /unconditional\s+game-level outcomes/i,
+  )
+  assert.match(
+    source,
+    /include nonappearances/i,
+  )
+  assert.match(
+    source,
+    /Appearance probability is shown separately/i,
+  )
+  assert.match(
+    source,
+    /no role is inferred from workload/i,
   )
 })

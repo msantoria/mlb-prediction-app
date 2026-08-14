@@ -886,8 +886,10 @@ const BATTER_PROJECTION_COLUMNS = [
 
 const PITCHER_PROJECTION_COLUMNS = [
   { key: 'name', label: 'Pitcher', format: 'text', align: 'left' },
-  { key: 'side', label: 'Side', format: 'text', align: 'left' },
-  { key: 'pitcherRoleLabel', label: 'Role', format: 'text', align: 'left' },
+  { key: 'plannedPitcherRoleLabel', label: 'Planned Role', format: 'text', align: 'left' },
+  { key: 'typicalBullpenRoleLabel', label: 'Typical Role', format: 'text', align: 'left' },
+  { key: 'gameAvailabilityStatusLabel', label: 'Availability', format: 'text', align: 'left' },
+  { key: 'appearanceProbabilityPercent', label: 'App %', digits: 0 },
   { key: 'battersFaced', label: 'BF' },
   { key: 'inningsPitched', label: 'IP' },
   { key: 'inningsPitchedP10', label: 'IP P10' },
@@ -1112,11 +1114,30 @@ function ProjectionsTab({ game }) {
         rows={view.batters}
       />
 
-      <ProjectionTable
-        title="Pitcher Projections"
-        columns={PITCHER_PROJECTION_COLUMNS}
-        rows={view.pitchers}
-      />
+      <div
+        style={{
+          color: '#8b949e',
+          fontSize: '12px',
+          lineHeight: 1.5,
+          marginTop: '14px',
+        }}
+      >
+        Pitcher workload percentiles are unconditional
+        game-level outcomes and include nonappearances.
+        Appearance probability is shown separately. Missing
+        availability or typical-role evidence remains Unknown;
+        no role is inferred from workload, roster order, name,
+        or appearance probability.
+      </div>
+
+      {view.pitcherSections.map(section => (
+        <ProjectionTable
+          key={section.key}
+          title={section.title}
+          columns={PITCHER_PROJECTION_COLUMNS}
+          rows={section.rows}
+        />
+      ))}
     </div>
   )
 }
