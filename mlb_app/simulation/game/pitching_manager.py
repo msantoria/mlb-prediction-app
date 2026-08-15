@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Tuple
+from typing import Dict, Mapping, Optional, Tuple
 
 from mlb_app.simulation.events import GameState, PlayEvent
 
@@ -61,6 +61,9 @@ class CanonicalPitchingManager:
     bullpen_selector: CanonicalBullpenSelector
     away_bullpen: Tuple[CanonicalBullpenPitcher, ...]
     home_bullpen: Tuple[CanonicalBullpenPitcher, ...]
+    batter_handedness_by_id: Optional[
+        Mapping[str, str]
+    ] = None
     opener_hook_policy: Optional[
         CanonicalStarterHookPolicy
     ] = None
@@ -561,6 +564,12 @@ class CanonicalPitchingManager:
                             team_side
                         ]
                     ),
+                    upcoming_batter_handedness=(
+                        self._upcoming_batter_handedness(
+                            team_side=team_side,
+                            state=state,
+                        )
+                    ),
                 )
             )
 
@@ -583,6 +592,50 @@ class CanonicalPitchingManager:
         )
 
         return replacement
+
+    def _upcoming_batter_handedness(
+        self,
+        *,
+        team_side: str,
+        state: GameState,
+        pocket_size: int = 5,
+    ) -> Tuple[str, ...]:
+        """
+        Return the next known hitter-handedness pocket.
+
+        The mapping is assembled before trials. Missing or invalid
+        evidence is omitted so the selector falls back to its existing
+        deterministic ordering without database access or inference.
+        """
+
+        if (
+            self.batter_handedness_by_id is None
+            or pocket_size < 1
+        ):
+            return ()
+
+        lineup = (
+            self.matchup_input.away_lineup
+            if team_side == "home"
+            else self.matchup_input.home_lineup
+        )
+
+        pocket = []
+
+        for offset in range(pocket_size):
+            batter_id = lineup.batter(
+                state.batting_order_index + offset
+            )
+            handedness = (
+                self.batter_handedness_by_id.get(
+                    batter_id
+                )
+            )
+
+            if handedness in {"L", "R", "S"}:
+                pocket.append(handedness)
+
+        return tuple(pocket)
 
     def _preferred_replacement_pitcher_id(
         self,

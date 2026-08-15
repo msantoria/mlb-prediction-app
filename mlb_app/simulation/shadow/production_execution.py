@@ -326,6 +326,12 @@ def run_canonical_production_shadow(
             Mapping[str, Any],
         ]
     ] = None,
+    pitcher_usage_evidence_by_id: Optional[
+        Mapping[Any, Any]
+    ] = None,
+    batter_handedness_by_id: Optional[
+        Mapping[str, str]
+    ] = None,
 ) -> CanonicalProductionShadowExecution:
     """
     Execute a small canonical batch when every production input is ready.
@@ -455,6 +461,12 @@ def run_canonical_production_shadow(
                 ),
                 pitcher_dfs_rules=(
                     DRAFTKINGS_CLASSIC_PITCHER_RULES
+                ),
+                pitcher_usage_evidence_by_id=(
+                    pitcher_usage_evidence_by_id
+                ),
+                batter_handedness_by_id=(
+                    batter_handedness_by_id
                 ),
             )
         )

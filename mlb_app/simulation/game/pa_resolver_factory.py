@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Mapping, Optional, Tuple
 
 from mlb_app.simulation.events import (
     GameState,
@@ -88,6 +88,9 @@ class CanonicalPlateAppearanceResolverFactory:
     home_bullpen: Optional[
         Tuple[CanonicalBullpenPitcher, ...]
     ] = None
+    batter_handedness_by_id: Optional[
+        Mapping[str, str]
+    ] = None
     version: str = (
         CANONICAL_PA_RESOLVER_FACTORY_VERSION
     )
@@ -166,6 +169,9 @@ class CanonicalPlateAppearanceResolverFactory:
                 ),
                 away_bullpen=self.away_bullpen,
                 home_bullpen=self.home_bullpen,
+                batter_handedness_by_id=(
+                    self.batter_handedness_by_id
+                ),
             )
 
         return _CanonicalPlateAppearanceResolver(

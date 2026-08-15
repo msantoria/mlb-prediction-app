@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Mapping, Optional
 
 from mlb_app.simulation.box_score import (
     BatterDfsScoringRules,
@@ -61,19 +61,184 @@ CANONICAL_SHADOW_EXECUTION_BUNDLE_FACTORY_VERSION = (
 )
 
 
+_ROLE_BY_EVIDENCE = {
+    "closer": CanonicalBullpenRole.CLOSER,
+    "setup": CanonicalBullpenRole.SETUP,
+    "setup_reliever": CanonicalBullpenRole.SETUP,
+    "long_relief": CanonicalBullpenRole.LONG_RELIEF,
+    "long_reliever": CanonicalBullpenRole.LONG_RELIEF,
+    "bulk_follower": CanonicalBullpenRole.LONG_RELIEF,
+    "swingman": CanonicalBullpenRole.LONG_RELIEF,
+    "middle_relief": CanonicalBullpenRole.MIDDLE_RELIEF,
+    "middle_reliever": CanonicalBullpenRole.MIDDLE_RELIEF,
+    "opener": CanonicalBullpenRole.MIDDLE_RELIEF,
+    "unknown": CanonicalBullpenRole.MIDDLE_RELIEF,
+}
+
+
+def _evidence_record(
+    evidence_by_pitcher_id: Optional[
+        Mapping[Any, Any]
+    ],
+    pitcher_id: str,
+) -> Mapping[str, Any]:
+    if not isinstance(
+        evidence_by_pitcher_id,
+        Mapping,
+    ):
+        return {}
+
+    record = (
+        evidence_by_pitcher_id.get(pitcher_id)
+    )
+
+    if record is None:
+        try:
+            numeric_id = int(pitcher_id)
+        except (TypeError, ValueError):
+            numeric_id = None
+
+        if numeric_id is not None:
+            record = evidence_by_pitcher_id.get(
+                numeric_id
+            )
+
+    return record if isinstance(record, Mapping) else {}
+
+
+def _canonical_bullpen_role(
+    record: Mapping[str, Any],
+) -> CanonicalBullpenRole:
+    planned_role = record.get(
+        "planned_game_role"
+    )
+
+    if (
+        record.get("planned_game_role_status")
+        == "confirmed"
+        and planned_role
+    ):
+        role_value = planned_role
+    else:
+        role_value = (
+            record.get("typical_role")
+            or record.get("role")
+        )
+
+    normalized = str(
+        role_value or "unknown"
+    ).strip().lower()
+
+    return _ROLE_BY_EVIDENCE.get(
+        normalized,
+        CanonicalBullpenRole.MIDDLE_RELIEF,
+    )
+
+
+def _nonnegative_int(
+    value: Any,
+    default: int = 0,
+) -> int:
+    if isinstance(value, bool):
+        return default
+
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError):
+        return default
+
+    return normalized if normalized >= 0 else default
+
+
+def _fatigue_index(value: Any) -> float:
+    if isinstance(value, bool):
+        return 0.0
+
+    try:
+        normalized = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+    if not 0.0 <= normalized <= 1.0:
+        return 0.0
+
+    return normalized
+
+
 def _baseline_bullpen(
     pitcher_ids: tuple[str, ...],
+    evidence_by_pitcher_id: Optional[
+        Mapping[Any, Any]
+    ] = None,
 ) -> tuple[CanonicalBullpenPitcher, ...]:
-    """Adapt an identity-only pitching plan into stable bullpen inputs."""
+    """
+    Adapt a canonical pitching plan and optional pretrial evidence.
 
-    return tuple(
-        CanonicalBullpenPitcher(
-            pitcher_id=pitcher_id,
-            role=CanonicalBullpenRole.MIDDLE_RELIEF,
-            appearance_priority=index,
+    Missing or invalid role, handedness, and workload evidence remains
+    neutral. This adapter performs no discovery or storage reads.
+    """
+
+    bullpen = []
+
+    for index, pitcher_id in enumerate(
+        pitcher_ids
+    ):
+        record = _evidence_record(
+            evidence_by_pitcher_id,
+            pitcher_id,
         )
-        for index, pitcher_id in enumerate(pitcher_ids)
-    )
+
+        handedness = str(
+            record.get("handedness")
+            or record.get("throws")
+            or ""
+        ).strip().upper()
+
+        if handedness not in {"L", "R"}:
+            handedness = None
+
+        available_value = record.get("available")
+        available = (
+            available_value
+            if isinstance(available_value, bool)
+            else True
+        )
+
+        bullpen.append(
+            CanonicalBullpenPitcher(
+                pitcher_id=pitcher_id,
+                role=_canonical_bullpen_role(
+                    record
+                ),
+                available=available,
+                appearance_priority=_nonnegative_int(
+                    record.get(
+                        "appearance_priority"
+                    ),
+                    index,
+                ),
+                handedness=handedness,
+                fatigue_index=_fatigue_index(
+                    record.get("fatigue_index")
+                ),
+                consecutive_days_worked=(
+                    _nonnegative_int(
+                        record.get(
+                            "consecutive_days_worked"
+                        )
+                    )
+                ),
+                recent_pitch_count=(
+                    _nonnegative_int(
+                        record.get(
+                            "recent_pitch_count"
+                        )
+                    )
+                ),
+            )
+        )
+
+    return tuple(bullpen)
 
 
 @dataclass(frozen=True)
@@ -106,6 +271,12 @@ class CanonicalShadowExecutionBundleFactory:
     ] = None
     pitcher_dfs_rules: Optional[
         PitcherDfsScoringRules
+    ] = None
+    pitcher_usage_evidence_by_id: Optional[
+        Mapping[Any, Any]
+    ] = None
+    batter_handedness_by_id: Optional[
+        Mapping[str, str]
     ] = None
     factory_version: str = (
         CANONICAL_SHADOW_EXECUTION_BUNDLE_FACTORY_VERSION
@@ -252,12 +423,17 @@ class CanonicalShadowExecutionBundleFactory:
                 away_bullpen=_baseline_bullpen(
                     self.matchup_input
                     .away_pitching_plan
-                    .bullpen_pitcher_ids
+                    .bullpen_pitcher_ids,
+                    self.pitcher_usage_evidence_by_id,
                 ),
                 home_bullpen=_baseline_bullpen(
                     self.matchup_input
                     .home_pitching_plan
-                    .bullpen_pitcher_ids
+                    .bullpen_pitcher_ids,
+                    self.pitcher_usage_evidence_by_id,
+                ),
+                batter_handedness_by_id=(
+                    self.batter_handedness_by_id
                 ),
             )
         )
@@ -353,6 +529,12 @@ def build_canonical_shadow_execution_bundle_factory(
     pitcher_dfs_rules: Optional[
         PitcherDfsScoringRules
     ] = None,
+    pitcher_usage_evidence_by_id: Optional[
+        Mapping[Any, Any]
+    ] = None,
+    batter_handedness_by_id: Optional[
+        Mapping[str, str]
+    ] = None,
 ) -> CanonicalShadowExecutionBundleFactory:
     """Build an explicit, non-default canonical shadow factory."""
 
@@ -376,4 +558,10 @@ def build_canonical_shadow_execution_bundle_factory(
         ),
         batter_dfs_rules=batter_dfs_rules,
         pitcher_dfs_rules=pitcher_dfs_rules,
+        pitcher_usage_evidence_by_id=(
+            pitcher_usage_evidence_by_id
+        ),
+        batter_handedness_by_id=(
+            batter_handedness_by_id
+        ),
     )

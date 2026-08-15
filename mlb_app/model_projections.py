@@ -40,6 +40,7 @@ from mlb_app.simulation.shadow.production_monitoring_ledger import (
 )
 
 from .canonical_game_context import build_canonical_game_context
+from .dashboard_object_models import DashboardPlayer
 from .db_utils import get_pitch_arsenal_with_fallback, get_team_split
 from .matchup_generator import generate_matchups_for_date
 from .model_projection_formulas import bullpen_collapse_index, offensive_firepower_score, pitch_identity_disruption_score, pitching_volatility_score, safe_float
@@ -917,6 +918,184 @@ def _materialize_matchup_pitcher_role_evidence(
     }
 
 
+def _canonical_matchup_bullpen_usage_evidence(
+    *,
+    bullpen_discovery: Any,
+    pitcher_role_evidence: Any,
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Merge canonical role evidence with private roster throwing hand.
+
+    Only pitchers already admitted to the strict canonical bullpen
+    membership are returned. Missing usage or fatigue evidence remains
+    absent and therefore neutral inside the simulation.
+    """
+
+    role_records = (
+        pitcher_role_evidence.get(
+            "evidence_by_pitcher_id",
+            {},
+        )
+        if isinstance(
+            pitcher_role_evidence,
+            dict,
+        )
+        else {}
+    )
+
+    evidence: Dict[str, Dict[str, Any]] = {}
+
+    for team_side in ("away", "home"):
+        side = getattr(
+            bullpen_discovery,
+            team_side,
+            None,
+        )
+        eligible_ids = {
+            str(value).strip()
+            for value in getattr(
+                side,
+                "bullpen_pitcher_ids",
+                (),
+            )
+            if str(value).strip()
+        }
+
+        roster_by_id: Dict[str, Dict[str, Any]] = {}
+
+        for raw_record in getattr(
+            side,
+            "active_roster_records",
+            (),
+        ):
+            if not isinstance(raw_record, dict):
+                try:
+                    raw_record = dict(raw_record)
+                except Exception:
+                    continue
+
+            raw_identifier = (
+                raw_record.get("mlb_player_id")
+                or raw_record.get("player_id")
+                or raw_record.get("pitcher_id")
+                or raw_record.get("person_id")
+                or raw_record.get("id")
+            )
+            identifier = str(
+                raw_identifier or ""
+            ).strip()
+
+            if identifier in eligible_ids:
+                roster_by_id[identifier] = dict(
+                    raw_record
+                )
+
+        for pitcher_id in sorted(eligible_ids):
+            role_record = role_records.get(
+                pitcher_id,
+                {},
+            )
+            record = (
+                deepcopy(role_record)
+                if isinstance(role_record, dict)
+                else {}
+            )
+            record["pitcher_id"] = pitcher_id
+
+            roster_record = roster_by_id.get(
+                pitcher_id,
+                {},
+            )
+            throwing_hand = str(
+                roster_record.get("throws")
+                or roster_record.get("handedness")
+                or ""
+            ).strip().upper()
+
+            if throwing_hand in {"L", "R"}:
+                record["throws"] = throwing_hand
+
+            evidence[pitcher_id] = record
+
+    return evidence
+
+
+def _canonical_matchup_batter_handedness(
+    *,
+    session: Session,
+    lineup_discovery: Any,
+) -> Dict[str, str]:
+    """
+    Read confirmed-lineup batter handedness once before simulation.
+
+    Failure is intentionally soft: missing directory rows produce neutral
+    matchup selection rather than suppressing the projection game.
+    """
+
+    identifiers = {
+        str(value).strip()
+        for value in (
+            tuple(
+                getattr(
+                    lineup_discovery,
+                    "away_player_ids",
+                    (),
+                )
+            )
+            + tuple(
+                getattr(
+                    lineup_discovery,
+                    "home_player_ids",
+                    (),
+                )
+            )
+        )
+        if str(value).strip()
+    }
+
+    integer_ids = []
+
+    for identifier in sorted(identifiers):
+        try:
+            integer_ids.append(int(identifier))
+        except (TypeError, ValueError):
+            continue
+
+    if not integer_ids:
+        return {}
+
+    try:
+        with session.begin_nested():
+            rows = (
+                session.query(
+                    DashboardPlayer.mlb_player_id,
+                    DashboardPlayer.bats,
+                )
+                .filter(
+                    DashboardPlayer.mlb_player_id.in_(
+                        integer_ids
+                    )
+                )
+                .all()
+            )
+    except Exception:
+        return {}
+
+    handedness: Dict[str, str] = {}
+
+    for player_id, bats in rows:
+        normalized_hand = str(
+            bats or ""
+        ).strip().upper()
+
+        if normalized_hand in {"L", "R", "S"}:
+            handedness[str(player_id)] = (
+                normalized_hand
+            )
+
+    return handedness
+
+
 def _canonical_pitcher_pool_audit_input(
     bullpen_discovery: Any,
 ) -> Dict[str, Any]:
@@ -1602,6 +1781,25 @@ def build_model_projection_payload(
                 )
             )
 
+            canonical_pitcher_usage_evidence = (
+                _canonical_matchup_bullpen_usage_evidence(
+                    bullpen_discovery=(
+                        canonical_shadow_bullpen_discovery
+                    ),
+                    pitcher_role_evidence=(
+                        canonical_pitcher_role_evidence
+                    ),
+                )
+            )
+            canonical_batter_handedness = (
+                _canonical_matchup_batter_handedness(
+                    session=session,
+                    lineup_discovery=(
+                        canonical_shadow_lineup_discovery
+                    ),
+                )
+            )
+
             canonical_readiness_matchup = dict(
                 matchup
             )
@@ -1774,6 +1972,12 @@ def build_model_projection_payload(
                     bootstrap_ready=bool(
                         canonical_shadow_bootstrap_readiness
                         .get("ready")
+                    ),
+                    pitcher_usage_evidence_by_id=(
+                        canonical_pitcher_usage_evidence
+                    ),
+                    batter_handedness_by_id=(
+                        canonical_batter_handedness
                     ),
                 )
             )

@@ -985,3 +985,119 @@ def test_manager_falls_back_when_bulk_unavailable_under_opener_hook():
     )
 
     assert pitcher == "home_long"
+
+def test_manager_builds_upcoming_handedness_pocket():
+    matchup_input = matchup()
+
+    value = CanonicalPitchingManager(
+        matchup_input=matchup_input,
+        starter_hook_policy=CanonicalStarterHookPolicy(
+            minimum_batters_faced=3,
+            target_batters_faced=3,
+            maximum_batters_faced=3,
+        ),
+        bullpen_selector=(
+            build_canonical_bullpen_selector()
+        ),
+        away_bullpen=bullpen("away"),
+        home_bullpen=(
+            CanonicalBullpenPitcher(
+                pitcher_id="home_long",
+                role=CanonicalBullpenRole.MIDDLE_RELIEF,
+                handedness="L",
+            ),
+            CanonicalBullpenPitcher(
+                pitcher_id="home_middle",
+                role=CanonicalBullpenRole.MIDDLE_RELIEF,
+                handedness="R",
+            ),
+        ),
+        batter_handedness_by_id={
+            "away_batter_0": "L",
+            "away_batter_1": "L",
+            "away_batter_2": "R",
+            "away_batter_3": "L",
+            "away_batter_4": "S",
+        },
+    )
+
+    value._active["home"] = replace(
+        value.active_lifecycle("home"),
+        batters_faced=3,
+    )
+
+    selected = value.pitcher_for_plate_appearance(
+        state=GameState(
+            inning=6,
+            half="top",
+            batting_order_index=0,
+        ),
+        batter_id="away_batter_0",
+    )
+
+    assert selected == "home_long"
+
+
+def test_manager_handedness_pocket_wraps_lineup_order():
+    matchup_input = matchup()
+
+    value = CanonicalPitchingManager(
+        matchup_input=matchup_input,
+        starter_hook_policy=CanonicalStarterHookPolicy(
+            minimum_batters_faced=3,
+            target_batters_faced=3,
+            maximum_batters_faced=3,
+        ),
+        bullpen_selector=(
+            build_canonical_bullpen_selector()
+        ),
+        away_bullpen=bullpen("away"),
+        home_bullpen=(
+            CanonicalBullpenPitcher(
+                pitcher_id="home_long",
+                role=CanonicalBullpenRole.MIDDLE_RELIEF,
+                handedness="L",
+            ),
+            CanonicalBullpenPitcher(
+                pitcher_id="home_middle",
+                role=CanonicalBullpenRole.MIDDLE_RELIEF,
+                handedness="R",
+            ),
+        ),
+        batter_handedness_by_id={
+            "away_batter_8": "R",
+            "away_batter_0": "R",
+            "away_batter_1": "R",
+            "away_batter_2": "L",
+            "away_batter_3": "S",
+        },
+    )
+
+    value._active["home"] = replace(
+        value.active_lifecycle("home"),
+        batters_faced=3,
+    )
+
+    selected = value.pitcher_for_plate_appearance(
+        state=GameState(
+            inning=6,
+            half="top",
+            batting_order_index=8,
+        ),
+        batter_id="away_batter_8",
+    )
+
+    assert selected == "home_middle"
+
+
+def test_manager_missing_handedness_preserves_fallback():
+    value = manager()
+
+    assert value._upcoming_batter_handedness(
+        team_side="home",
+        state=GameState(
+            inning=6,
+            half="top",
+            batting_order_index=0,
+        ),
+    ) == ()

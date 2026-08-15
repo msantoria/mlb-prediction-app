@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import hashlib
-from typing import Optional
+from typing import Any, Mapping, Optional
 
 from mlb_app.simulation.box_score import (
     BatterDfsScoringRules,
@@ -71,6 +71,12 @@ class CanonicalShadowExecutionInputs:
     ] = None
     pitcher_dfs_rules: Optional[
         PitcherDfsScoringRules
+    ] = None
+    pitcher_usage_evidence_by_id: Optional[
+        Mapping[Any, Any]
+    ] = None
+    batter_handedness_by_id: Optional[
+        Mapping[str, str]
     ] = None
     assembly_version: str = (
         CANONICAL_SHADOW_INPUT_ASSEMBLY_VERSION
@@ -275,6 +281,26 @@ class CanonicalShadowExecutionInputs:
             ),
             repr(self.batter_dfs_rules),
             repr(self.pitcher_dfs_rules),
+            repr(sorted(
+                (
+                    str(key),
+                    repr(value),
+                )
+                for key, value in (
+                    self.pitcher_usage_evidence_by_id
+                    or {}
+                ).items()
+            )),
+            repr(sorted(
+                (
+                    str(key),
+                    str(value),
+                )
+                for key, value in (
+                    self.batter_handedness_by_id
+                    or {}
+                ).items()
+            )),
         )
 
         return hashlib.sha256(
@@ -300,6 +326,12 @@ class CanonicalShadowExecutionInputs:
             game_config=self.game_config,
             batter_dfs_rules=self.batter_dfs_rules,
             pitcher_dfs_rules=self.pitcher_dfs_rules,
+            pitcher_usage_evidence_by_id=(
+                self.pitcher_usage_evidence_by_id
+            ),
+            batter_handedness_by_id=(
+                self.batter_handedness_by_id
+            ),
         )
 
 
@@ -326,6 +358,12 @@ def assemble_canonical_shadow_execution_inputs(
     pitcher_dfs_rules: Optional[
         PitcherDfsScoringRules
     ] = None,
+    pitcher_usage_evidence_by_id: Optional[
+        Mapping[Any, Any]
+    ] = None,
+    batter_handedness_by_id: Optional[
+        Mapping[str, str]
+    ] = None,
 ) -> CanonicalShadowExecutionInputs:
     """Assemble validated external inputs without discovery or activation."""
 
@@ -349,4 +387,10 @@ def assemble_canonical_shadow_execution_inputs(
         ),
         batter_dfs_rules=batter_dfs_rules,
         pitcher_dfs_rules=pitcher_dfs_rules,
+        pitcher_usage_evidence_by_id=(
+            pitcher_usage_evidence_by_id
+        ),
+        batter_handedness_by_id=(
+            batter_handedness_by_id
+        ),
     )
