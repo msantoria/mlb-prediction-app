@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple
 
@@ -215,6 +216,10 @@ class CanonicalShadowBullpenSideDiscovery:
         CanonicalPregamePitcherEvidenceMaterialization
     ] = None
     source_record_count: int = 0
+    active_roster_records: tuple[
+        Mapping[str, Any],
+        ...,
+    ] = ()
     status: str = "unavailable"
     error_type: Optional[str] = None
     error_message: Optional[str] = None
@@ -719,6 +724,18 @@ def _discover_side(
         eligibility=eligibility,
         pregame_evidence=pregame_evidence,
         source_record_count=len(records),
+        active_roster_records=tuple(
+            deepcopy(dict(record))
+            for record in records
+            if (
+                isinstance(record, Mapping)
+                and str(
+                    record.get("player_type")
+                    or ""
+                ).strip().lower()
+                == "pitcher"
+            )
+        ),
         status=(
             "ready"
             if eligible_pitcher_ids

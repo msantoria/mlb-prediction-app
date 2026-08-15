@@ -213,12 +213,44 @@ def _season_pitching_usage(
                     games_pitched - games_started,
                     0,
                 ),
+                "season_pitching_outs":
+                    _safe_nonnegative_int(
+                        stat.get("outs")
+                    ),
+                "season_games_finished":
+                    _safe_nonnegative_int(
+                        stat.get("gamesFinished")
+                    ),
+                "season_saves":
+                    _safe_nonnegative_int(
+                        stat.get("saves")
+                    ),
+                "season_save_opportunities":
+                    _safe_nonnegative_int(
+                        stat.get(
+                            "saveOpportunities"
+                        )
+                    ),
+                "season_holds":
+                    _safe_nonnegative_int(
+                        stat.get("holds")
+                    ),
+                "season_blown_saves":
+                    _safe_nonnegative_int(
+                        stat.get("blownSaves")
+                    ),
             }
 
     return {
         "season_games_pitched": None,
         "season_games_started": None,
         "season_relief_appearances": None,
+        "season_pitching_outs": None,
+        "season_games_finished": None,
+        "season_saves": None,
+        "season_save_opportunities": None,
+        "season_holds": None,
+        "season_blown_saves": None,
     }
 
 

@@ -70,6 +70,11 @@ from .production_execution import (
     CanonicalProductionShadowExecution,
     run_canonical_production_shadow,
 )
+from .pitcher_role_evidence_source import (
+    SCHEMA_VERSION as CANONICAL_PITCHER_ROLE_EVIDENCE_SOURCE_VERSION,
+    CanonicalPitcherRoleEvidenceSourceResult,
+    fetch_canonical_pitcher_role_evidence_source,
+)
 from .pitcher_baserunning_evidence import (
     CANONICAL_PITCHER_BASERUNNING_EVIDENCE_VERSION,
     CanonicalPitcherBaserunningObservation,
@@ -212,6 +217,9 @@ __all__ = [
     "CANONICAL_SHADOW_LINEUP_DISCOVERY_VERSION",
     "DEFAULT_PRODUCTION_SHADOW_SIMULATION_COUNT",
     "MIN_EXACT_BATTER_RECORDS_PER_SIDE",
+    "CANONICAL_PITCHER_ROLE_EVIDENCE_SOURCE_VERSION",
+    "CanonicalPitcherRoleEvidenceSourceResult",
+    "fetch_canonical_pitcher_role_evidence_source",
     "CANONICAL_PITCHER_BASERUNNING_EVIDENCE_VERSION",
     "CanonicalPitcherBaserunningObservation",
     "adapt_observed_pitcher_baserunning_evidence",

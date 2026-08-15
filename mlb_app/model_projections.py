@@ -29,6 +29,9 @@ from mlb_app.simulation.shadow.canonical_pitcher_role_and_innings_attribution_au
 from mlb_app.simulation.shadow.pregame_bullpen_evidence_provider import (
     fetch_canonical_pregame_bullpen_evidence,
 )
+from mlb_app.simulation.shadow.pitcher_role_evidence_source import (
+    fetch_canonical_pitcher_role_evidence_source,
+)
 from mlb_app.simulation.shadow.production_monitoring_ledger import (
     CANONICAL_BASERUNNING_PRODUCTION_AUTHORITY,
     CanonicalBaserunningProductionMonitoringRecord,
@@ -757,6 +760,163 @@ def _canonical_probability_payload(matchup: Dict[str, Any], projection_sim: Opti
     }
 
 
+
+
+def _materialize_matchup_pitcher_role_evidence(
+    *,
+    bullpen_discovery: Any,
+    season: int,
+    as_of: Any,
+    cache: Dict[Any, Any],
+    fetcher: Any = None,
+    maximum_final_games: int = 10,
+) -> Dict[str, Any]:
+    """Materialize historical typical roles once per team/date."""
+
+    if fetcher is None:
+        fetcher = (
+            fetch_canonical_pitcher_role_evidence_source
+        )
+
+    if not isinstance(cache, dict):
+        raise TypeError("cache must be a dictionary")
+
+    evidence_by_pitcher_id: Dict[str, Any] = {}
+    diagnostics_by_side: Dict[str, Any] = {}
+
+    for team_side in ("away", "home"):
+        side = getattr(
+            bullpen_discovery,
+            team_side,
+            None,
+        )
+
+        try:
+            result = fetcher(
+                team_id=getattr(
+                    side,
+                    "team_id",
+                    None,
+                ),
+                season=season,
+                as_of=as_of,
+                active_roster_records=getattr(
+                    side,
+                    "active_roster_records",
+                    (),
+                ),
+                maximum_final_games=(
+                    maximum_final_games
+                ),
+                cache=cache,
+            )
+        except Exception as exc:
+            diagnostics_by_side[team_side] = {
+                "schema_version": (
+                    "canonical_pitcher_role_"
+                    "evidence_source_v1"
+                ),
+                "status": "error",
+                "team_side": team_side,
+                "error_type":
+                    exc.__class__.__name__,
+                "error_message": str(exc),
+                "pitcher_identifiers_exposed":
+                    False,
+                "planned_role_claimed": False,
+                "future_assignment_inferred":
+                    False,
+                "database_writes_performed":
+                    False,
+                "production_authority_changed":
+                    False,
+            }
+            continue
+
+        role_evidence = getattr(
+            result,
+            "role_evidence",
+            {},
+        )
+        side_evidence = (
+            role_evidence.get(
+                "evidence_by_pitcher_id",
+                {},
+            )
+            if isinstance(role_evidence, dict)
+            else {}
+        )
+
+        if isinstance(side_evidence, dict):
+            for pitcher_id, record in (
+                side_evidence.items()
+            ):
+                normalized_id = str(
+                    pitcher_id
+                ).strip()
+
+                if (
+                    normalized_id
+                    and isinstance(record, dict)
+                ):
+                    evidence_by_pitcher_id[
+                        normalized_id
+                    ] = deepcopy(record)
+
+        diagnostics = result.to_diagnostics()
+        allowed_keys = (
+            "schema_version",
+            "status",
+            "team_id",
+            "as_of_date",
+            "lookback_days",
+            "maximum_final_games",
+            "scheduled_final_game_count",
+            "fetched_final_game_count",
+            "feed_error_count",
+            "resolved_typical_role_count",
+            "detected_opener_bulk_pair_count",
+            "bounded_game_fetch",
+            "simulation_trial_fetches_performed",
+            "planned_role_claimed",
+            "future_assignment_inferred",
+            "database_writes_performed",
+            "production_authority_changed",
+        )
+
+        diagnostics_by_side[team_side] = {
+            key: deepcopy(diagnostics.get(key))
+            for key in allowed_keys
+        }
+        diagnostics_by_side[team_side].update({
+            "team_side": team_side,
+            "pitcher_identifiers_exposed": False,
+        })
+
+    return {
+        "schema_version": (
+            "canonical_matchup_pitcher_role_"
+            "evidence_v1"
+        ),
+        "status": (
+            "materialized"
+            if evidence_by_pitcher_id
+            else "unavailable"
+        ),
+        "evidence_by_pitcher_id":
+            evidence_by_pitcher_id,
+        "source_diagnostics_by_team_side":
+            diagnostics_by_side,
+        "explicit_pregame_roles_take_precedence":
+            True,
+        "historical_role_never_claims_today_plan":
+            True,
+        "simulation_trial_fetches_performed": 0,
+        "database_writes_performed": False,
+        "production_authority_changed": False,
+    }
+
+
 def _canonical_pitcher_pool_audit_input(
     bullpen_discovery: Any,
 ) -> Dict[str, Any]:
@@ -821,6 +981,7 @@ def _attach_production_shadow_comparison(
     production_execution: Any,
     bullpen_discovery: Any = None,
     pregame_pitcher_evidence_source_coverage: Any = None,
+    pitcher_role_evidence: Any = None,
 ) -> Dict[str, Any]:
     """
     Attach executed canonical material to the existing shadow comparator.
@@ -923,6 +1084,14 @@ def _attach_production_shadow_comparison(
                     )
                     else {}
                 ),
+                pitcher_role_evidence=(
+                    pitcher_role_evidence
+                    if isinstance(
+                        pitcher_role_evidence,
+                        dict,
+                    )
+                    else {}
+                ),
             )
         )
     except Exception as exc:
@@ -955,6 +1124,28 @@ def _attach_production_shadow_comparison(
     shadow[
         "pitcher_projection_pool_role_reconciliation"
     ] = pool_role_reconciliation
+
+    role_source_diagnostics = (
+        pitcher_role_evidence.get(
+            "source_diagnostics_by_team_side",
+            {},
+        )
+        if isinstance(
+            pitcher_role_evidence,
+            dict,
+        )
+        else {}
+    )
+    shadow[
+        "pitcher_role_evidence_source"
+    ] = deepcopy(
+        role_source_diagnostics
+        if isinstance(
+            role_source_diagnostics,
+            dict,
+        )
+        else {}
+    )
 
     try:
         appearance_audit = (
@@ -1296,6 +1487,11 @@ def build_model_projection_payload(
     matchups = generate_matchups_for_date(session, target_date)
     games: List[Dict[str, Any]] = []
     errors: List[Dict[str, Any]] = []
+    pitcher_role_evidence_source_cache: Dict[
+        Any,
+        Any,
+    ] = {}
+
     for matchup in matchups:
         try:
             away = _side_context(matchup, "away", session, date_obj.year)
@@ -1386,6 +1582,23 @@ def build_model_projection_payload(
                     require_explicit_bullpen_membership=(
                         True
                     ),
+                )
+            )
+
+            canonical_pitcher_role_evidence = (
+                _materialize_matchup_pitcher_role_evidence(
+                    bullpen_discovery=(
+                        canonical_shadow_bullpen_discovery
+                    ),
+                    season=date_obj.year,
+                    as_of=(
+                        matchup.get("game_time")
+                        or target_date
+                    ),
+                    cache=(
+                        pitcher_role_evidence_source_cache
+                    ),
+                    maximum_final_games=10,
                 )
             )
 
@@ -1843,6 +2056,9 @@ def build_model_projection_payload(
                     ),
                     pregame_pitcher_evidence_source_coverage=(
                         pregame_pitcher_evidence_source_coverage
+                    ),
+                    pitcher_role_evidence=(
+                        canonical_pitcher_role_evidence
                     ),
                 )
             )
