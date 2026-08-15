@@ -38,6 +38,10 @@ class CanonicalBullpenPitcher:
     minimum_inning: int = 1
     maximum_inning: int = 99
     maximum_score_margin: int | None = None
+    handedness: str | None = None
+    fatigue_index: float = 0.0
+    consecutive_days_worked: int = 0
+    recent_pitch_count: int = 0
 
     def __post_init__(self) -> None:
         if not self.pitcher_id:
@@ -71,6 +75,54 @@ class CanonicalBullpenPitcher:
                 "maximum_score_margin cannot be negative"
             )
 
+        if self.handedness not in (None, "L", "R"):
+            raise ValueError(
+                "handedness must be L, R, or None"
+            )
+
+        if (
+            isinstance(self.fatigue_index, bool)
+            or not isinstance(
+                self.fatigue_index,
+                (int, float),
+            )
+            or not 0.0 <= float(
+                self.fatigue_index
+            ) <= 1.0
+        ):
+            raise ValueError(
+                "fatigue_index must be between zero and one"
+            )
+
+        if (
+            isinstance(
+                self.consecutive_days_worked,
+                bool,
+            )
+            or not isinstance(
+                self.consecutive_days_worked,
+                int,
+            )
+            or self.consecutive_days_worked < 0
+        ):
+            raise ValueError(
+                "consecutive_days_worked must be a "
+                "non-negative integer"
+            )
+
+        if (
+            isinstance(self.recent_pitch_count, bool)
+            or not isinstance(
+                self.recent_pitch_count,
+                int,
+            )
+            or self.recent_pitch_count < 0
+        ):
+            raise ValueError(
+                "recent_pitch_count must be a "
+                "non-negative integer"
+            )
+
 
 @dataclass(frozen=True)
 class CanonicalBullpenSelectionContext:
@@ -80,6 +132,7 @@ class CanonicalBullpenSelectionContext:
     game_context: CanonicalPitchingDecisionContext
     bullpen: Tuple[CanonicalBullpenPitcher, ...]
     previously_used_pitcher_ids: Tuple[str, ...] = ()
+    upcoming_batter_handedness: Tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(
@@ -123,6 +176,23 @@ class CanonicalBullpenSelectionContext:
             raise ValueError(
                 "previously used pitcher identifiers "
                 "must be unique"
+            )
+
+        if len(self.upcoming_batter_handedness) > 5:
+            raise ValueError(
+                "upcoming batter handedness pocket "
+                "cannot exceed five hitters"
+            )
+
+        if any(
+            handedness not in ("L", "R", "S")
+            for handedness in (
+                self.upcoming_batter_handedness
+            )
+        ):
+            raise ValueError(
+                "upcoming batter handedness values "
+                "must be L, R, or S"
             )
 
 
@@ -174,8 +244,9 @@ class CanonicalBullpenSelector:
     Transparent deterministic bullpen selector.
 
     Selection is role-aware, leverage-aware, inning-aware, and stable
-    under identical inputs. It does not yet model handedness, fatigue,
-    or recent real-world workload.
+    under identical inputs. Within the appropriate role tier, explicit
+    handedness, fatigue, consecutive-day, and recent-pitch evidence
+    calibrate which eligible reliever enters.
     """
 
     version: str = CANONICAL_BULLPEN_SELECTOR_VERSION
@@ -226,6 +297,10 @@ class CanonicalBullpenSelector:
                     self._role_rank(
                         pitcher.role,
                         target_roles,
+                    ),
+                    self._matchup_usage_score(
+                        pitcher=pitcher,
+                        context=context,
                     ),
                     pitcher.appearance_priority,
                     pitcher.pitcher_id,
@@ -346,6 +421,69 @@ class CanonicalBullpenSelector:
         target_roles: Tuple[CanonicalBullpenRole, ...],
     ) -> int:
         return target_roles.index(role)
+
+    @staticmethod
+    def _matchup_usage_score(
+        *,
+        pitcher: CanonicalBullpenPitcher,
+        context: CanonicalBullpenSelectionContext,
+    ) -> float:
+        """
+        Return a lower-is-better within-role usage score.
+
+        Role suitability remains the primary ordering key. This score
+        never allows a handedness preference to replace the correct
+        closer, setup, middle, or long-relief tier.
+
+        One or two consecutive days remain usable. Meaningful
+        consecutive-day fatigue begins with the third day, while
+        explicit fatigue and recent pitch volume contribute gradual
+        penalties.
+        """
+
+        score = 0.0
+
+        score += 40.0 * float(
+            pitcher.fatigue_index
+        )
+
+        if pitcher.consecutive_days_worked >= 3:
+            score += 18.0 * (
+                pitcher.consecutive_days_worked - 2
+            )
+
+        score += min(
+            25.0,
+            0.25 * pitcher.recent_pitch_count,
+        )
+
+        pitcher_hand = pitcher.handedness
+        pocket = context.upcoming_batter_handedness
+
+        if pitcher_hand is not None and pocket:
+            favorable = 0
+            unfavorable = 0
+
+            for batter_hand in pocket:
+                if batter_hand == "S":
+                    # A switch hitter is expected to bat from the
+                    # opposite side and is therefore unfavorable to
+                    # either conventional pitcher hand.
+                    unfavorable += 1
+                elif batter_hand == pitcher_hand:
+                    favorable += 1
+                else:
+                    unfavorable += 1
+
+            known = favorable + unfavorable
+
+            if known:
+                score += 12.0 * (
+                    (unfavorable - favorable)
+                    / known
+                )
+
+        return round(score, 6)
 
     @staticmethod
     def _selection_reason(
