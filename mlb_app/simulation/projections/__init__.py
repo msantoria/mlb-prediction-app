@@ -13,6 +13,15 @@ from .contracts import (
     StatisticalSummary,
     TeamProjection,
 )
+from .pitcher_appearance_history import (
+    SCHEMA_VERSION as CANONICAL_PITCHER_APPEARANCE_HISTORY_VERSION,
+    materialize_canonical_pitcher_appearance_history,
+)
+from .pitcher_typical_role_evidence import (
+    SCHEMA_VERSION as CANONICAL_PITCHER_TYPICAL_ROLE_EVIDENCE_VERSION,
+    materialize_canonical_pitcher_role_evidence,
+)
+
 from .serialization import (
     projection_payload_to_dict,
 )
@@ -22,6 +31,10 @@ from .validation import (
 )
 
 __all__ = [
+    "CANONICAL_PITCHER_APPEARANCE_HISTORY_VERSION",
+    "CANONICAL_PITCHER_TYPICAL_ROLE_EVIDENCE_VERSION",
+    "materialize_canonical_pitcher_appearance_history",
+    "materialize_canonical_pitcher_role_evidence",
     "CANONICAL_PROJECTION_SCHEMA_VERSION",
     "CanonicalProjectionPayload",
     "MetricProjection",

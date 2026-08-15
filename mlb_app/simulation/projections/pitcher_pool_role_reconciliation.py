@@ -130,6 +130,9 @@ def reconcile_canonical_pitcher_projection_pool_roles(
     payload: Mapping[str, Any],
     appearance_audit: Mapping[str, Any],
     bullpen_discovery: Mapping[str, Any],
+    pitcher_role_evidence: (
+        Mapping[str, Any] | None
+    ) = None,
 ) -> dict[str, Any]:
     """
     Attach explicit pitcher-pool, role, and availability evidence.
@@ -153,6 +156,23 @@ def reconcile_canonical_pitcher_projection_pool_roles(
             "bullpen_discovery must be a mapping"
         )
 
+    if (
+        pitcher_role_evidence is not None
+        and not isinstance(
+            pitcher_role_evidence,
+            Mapping,
+        )
+    ):
+        raise TypeError(
+            "pitcher_role_evidence must be a mapping"
+        )
+
+    role_evidence = _mapping(
+        _mapping(
+            pitcher_role_evidence
+        ).get("evidence_by_pitcher_id")
+    )
+
     result = deepcopy(dict(payload))
     players = result.get("players")
 
@@ -175,6 +195,9 @@ def reconcile_canonical_pitcher_projection_pool_roles(
     unknown_availability_count = 0
     planned_primary_count = 0
     role_conflict_count = 0
+    historical_typical_role_count = 0
+    explicit_typical_role_count = 0
+    inferred_typical_role_count = 0
     excluded_pitcher_ids = []
     role_conflict_pitcher_ids = []
 
@@ -225,7 +248,7 @@ def reconcile_canonical_pitcher_projection_pool_roles(
             if evidence_valid
             else "unknown"
         )
-        typical_role = (
+        explicit_typical_role = (
             _text(
                 eligibility.get("pitcher_role")
             ).lower()
@@ -233,8 +256,71 @@ def reconcile_canonical_pitcher_projection_pool_roles(
             else ""
         )
 
-        if typical_role == "unknown":
+        if explicit_typical_role == "unknown":
+            explicit_typical_role = ""
+
+        historical_role_record = _mapping(
+            role_evidence.get(pitcher_id)
+        )
+        historical_typical_role = _text(
+            historical_role_record.get(
+                "typical_role"
+            )
+        ).lower()
+
+        if historical_typical_role == "unknown":
+            historical_typical_role = ""
+
+        if explicit_typical_role:
+            typical_role = explicit_typical_role
+            typical_role_source = (
+                _text(eligibility.get("source"))
+                or "explicit_pregame_evidence"
+            )
+            typical_role_confidence = "explicit"
+            typical_role_inference_used = False
+        elif historical_typical_role:
+            typical_role = historical_typical_role
+            typical_role_source = (
+                _text(
+                    historical_role_record.get(
+                        "typical_role_source"
+                    )
+                    or historical_role_record.get(
+                        "source"
+                    )
+                )
+                or "historical_pitching_usage"
+            )
+            typical_role_confidence = (
+                _text(
+                    historical_role_record.get(
+                        "typical_role_confidence"
+                    )
+                    or historical_role_record.get(
+                        "confidence"
+                    )
+                )
+                or None
+            )
+            typical_role_inference_used = bool(
+                historical_role_record.get(
+                    "typical_role_inference_used"
+                )
+                if (
+                    "typical_role_inference_used"
+                    in historical_role_record
+                )
+                else historical_role_record.get(
+                    "inference_used",
+                    True,
+                )
+            )
+        else:
             typical_role = ""
+            typical_role_source = None
+            typical_role_confidence = None
+            typical_role_inference_used = False
 
         planned_primary = (
             planned_role in PLANNED_PRIMARY_ROLES
@@ -250,6 +336,14 @@ def reconcile_canonical_pitcher_projection_pool_roles(
                 is True
             )
         )
+
+        if explicit_typical_role:
+            explicit_typical_role_count += 1
+        elif historical_typical_role:
+            historical_typical_role_count += 1
+
+        if typical_role_inference_used:
+            inferred_typical_role_count += 1
 
         if planned_primary:
             availability_status = (
@@ -349,8 +443,14 @@ def reconcile_canonical_pitcher_projection_pool_roles(
             "typical_bullpen_role"
         ] = typical_role or None
         row[
+            "typical_role_source"
+        ] = typical_role_source
+        row[
+            "typical_role_confidence"
+        ] = typical_role_confidence
+        row[
             "typical_role_inference_used"
-        ] = False
+        ] = typical_role_inference_used
         row[
             "game_availability_status"
         ] = availability_status
@@ -417,7 +517,20 @@ def reconcile_canonical_pitcher_projection_pool_roles(
             set(role_conflict_pitcher_ids)
         ),
         "trial_count": trial_count,
-        "typical_role_inference_used": False,
+        "explicit_typical_role_count": (
+            explicit_typical_role_count
+        ),
+        "historical_typical_role_count": (
+            historical_typical_role_count
+        ),
+        "inferred_typical_role_count": (
+            inferred_typical_role_count
+        ),
+        "typical_role_inference_used": (
+            inferred_typical_role_count > 0
+        ),
+        "historical_role_never_claims_today_plan":
+            True,
         "unknown_evidence_fails_open": True,
         "explicit_plans_take_precedence": True,
         "workload_calibration_changed": False,

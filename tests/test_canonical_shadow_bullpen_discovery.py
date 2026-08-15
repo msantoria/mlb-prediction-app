@@ -934,3 +934,102 @@ def test_known_materialized_provider_evidence_overrides_usage():
     assert record["pitcher_role"] == (
         "long_reliever"
     )
+
+def test_preserves_private_active_roster_records_for_same_process_consumers():
+    source_records = active_roster(
+        10,
+        2026,
+        team_name="Away",
+    )
+
+    result = discovery(
+        roster_fetcher=lambda *args, **kwargs:
+            source_records,
+    )
+
+    assert result.away.source_record_count == 4
+    assert len(
+        result.away.active_roster_records
+    ) == 3
+    assert result.away.active_roster_records == (
+        source_records[0],
+        source_records[1],
+        source_records[2],
+    )
+    assert all(
+        record["player_type"] == "pitcher"
+        for record in (
+            result.away.active_roster_records
+        )
+    )
+
+    source_records[1]["player_type"] = "mutated"
+
+    assert result.away.active_roster_records[1][
+        "player_type"
+    ] == "pitcher"
+
+
+def test_private_active_roster_records_remain_redacted_from_diagnostics():
+    result = discovery()
+    side_diagnostics = result.away.to_diagnostics()
+    diagnostics = result.to_diagnostics()
+
+    assert "active_roster_records" not in (
+        side_diagnostics
+    )
+    assert "active_roster_records" not in (
+        diagnostics["away"]
+    )
+    assert "bullpen_pitcher_ids" not in (
+        side_diagnostics
+    )
+    assert side_diagnostics[
+        "pitcher_identifiers_exposed"
+    ] is False
+
+
+def test_private_active_roster_records_preserve_season_usage():
+    def usage_roster(
+        team_id,
+        season,
+        team_name=None,
+    ):
+        starter = 100 if team_id == 10 else 200
+
+        return [
+            {
+                "mlb_player_id": starter,
+                "player_type": "pitcher",
+                "season_games_pitched": 20,
+                "season_games_started": 20,
+                "season_relief_appearances": 0,
+                "season_saves": 0,
+                "season_holds": 0,
+            },
+            {
+                "mlb_player_id": starter + 1,
+                "player_type": "pitcher",
+                "season_games_pitched": 40,
+                "season_games_started": 0,
+                "season_relief_appearances": 40,
+                "season_saves": 18,
+                "season_holds": 2,
+            },
+        ]
+
+    result = discovery(
+        roster_fetcher=usage_roster,
+    )
+    records = {
+        str(record["mlb_player_id"]): record
+        for record in (
+            result.away.active_roster_records
+        )
+    }
+
+    assert records["101"][
+        "season_games_pitched"
+    ] == 40
+    assert records["101"]["season_saves"] == 18
+    assert records["101"]["season_holds"] == 2
