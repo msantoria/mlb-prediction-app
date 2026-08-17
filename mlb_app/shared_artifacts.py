@@ -37,7 +37,7 @@ def matchups_date_key(date: str) -> str:
 
 
 MODEL_PROJECTION_WORKSPACE_VERSION = (
-    "model_projection_workspace_v3"
+    "model_projection_workspace_v4"
 )
 
 

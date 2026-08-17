@@ -722,18 +722,14 @@ def test_strict_membership_uses_observed_season_usage():
     assert result.status == "ready"
     assert result.away.bullpen_pitcher_ids == (
         "101",
-        "103",
     )
     assert result.home.bullpen_pitcher_ids == (
         "201",
-        "203",
     )
 
     away_records = {
         row["pitcher_id"]: row
-        for row in result.away.eligibility[
-            "records"
-        ]
+        for row in result.away.eligibility["records"]
     }
 
     assert away_records["101"][
@@ -742,6 +738,16 @@ def test_strict_membership_uses_observed_season_usage():
     assert away_records["102"][
         "decision_reason"
     ] == "observed_start_usage_dominant"
+    assert away_records["103"][
+        "decision_reason"
+    ] == (
+        "observed_mixed_start_usage_"
+        "requires_explicit_plan"
+    )
+    assert away_records["103"]["retained"] is False
+    assert away_records["103"]["pitcher_role"] == (
+        "probable_starter"
+    )
 
     diagnostics = result.away.to_diagnostics()
 
@@ -754,7 +760,67 @@ def test_strict_membership_uses_observed_season_usage():
     assert diagnostics[
         "season_usage_classification_policy"
     ] == (
-        "relief_appearances_greater_than_starts"
+        "material_start_usage_requires_explicit_plan"
+    )
+
+
+def test_mixed_rotation_pitcher_requires_explicit_game_plan():
+    def mixed_roster(
+        team_id,
+        season,
+        team_name=None,
+    ):
+        starter = 100 if team_id == 10 else 200
+
+        return [
+            {
+                "mlb_player_id": starter,
+                "player_type": "pitcher",
+                "season_games_pitched": 20,
+                "season_games_started": 20,
+                "season_relief_appearances": 0,
+            },
+            {
+                "mlb_player_id": starter + 1,
+                "player_type": "pitcher",
+                "season_games_pitched": 17,
+                "season_games_started": 8,
+                "season_relief_appearances": 9,
+            },
+            {
+                "mlb_player_id": starter + 2,
+                "player_type": "pitcher",
+                "season_games_pitched": 40,
+                "season_games_started": 0,
+                "season_relief_appearances": 40,
+            },
+        ]
+
+    result = discovery(
+        roster_fetcher=mixed_roster,
+        require_explicit_bullpen_membership=True,
+    )
+
+    assert result.away.bullpen_pitcher_ids == (
+        "102",
+    )
+    assert result.home.bullpen_pitcher_ids == (
+        "202",
+    )
+
+    away_records = {
+        row["pitcher_id"]: row
+        for row in result.away.eligibility["records"]
+    }
+    mixed = away_records["101"]
+
+    assert mixed["retained"] is False
+    assert mixed["pitcher_role"] == (
+        "probable_starter"
+    )
+    assert mixed["decision_reason"] == (
+        "observed_mixed_start_usage_"
+        "requires_explicit_plan"
     )
 
 

@@ -178,19 +178,13 @@ def _active_roster_usage_evidence(
         ):
             continue
 
-        if relief_appearances > games_started:
-            evidence[pitcher_id] = {
-                "status": "eligible",
-                "role": "reliever",
-                "source": (
-                    "mlb_stats_active_roster_"
-                    "season_pitching"
-                ),
-                "reason": (
-                    "observed_relief_usage_dominant"
-                ),
-            }
-        else:
+        start_rate = games_started / games_pitched
+        material_start_usage = (
+            games_started >= 3
+            and start_rate >= 0.20
+        )
+
+        if games_started >= relief_appearances:
             evidence[pitcher_id] = {
                 "status": "ineligible",
                 "role": "probable_starter",
@@ -201,6 +195,34 @@ def _active_roster_usage_evidence(
                 "reason": (
                     "observed_start_usage_dominant"
                 ),
+                "season_start_rate": start_rate,
+            }
+        elif material_start_usage:
+            evidence[pitcher_id] = {
+                "status": "ineligible",
+                "role": "probable_starter",
+                "source": (
+                    "mlb_stats_active_roster_"
+                    "season_pitching"
+                ),
+                "reason": (
+                    "observed_mixed_start_usage_"
+                    "requires_explicit_plan"
+                ),
+                "season_start_rate": start_rate,
+            }
+        else:
+            evidence[pitcher_id] = {
+                "status": "eligible",
+                "role": "reliever",
+                "source": (
+                    "mlb_stats_active_roster_"
+                    "season_pitching"
+                ),
+                "reason": (
+                    "observed_relief_usage_dominant"
+                ),
+                "season_start_rate": start_rate,
             }
 
     return evidence
@@ -694,7 +716,7 @@ def _discover_side(
     eligibility[
         "season_usage_classification_policy"
     ] = (
-        "relief_appearances_greater_than_starts"
+        "material_start_usage_requires_explicit_plan"
     )
     eligibility[
         "unknown_materialized_evidence_"
