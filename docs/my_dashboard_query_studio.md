@@ -82,10 +82,19 @@ grouping, offsets, `OR`, physical schema names, and every DDL or DML verb.
 
 The authored statement is never sent to SQLAlchemy or a database driver. It is
 converted to a structured plan and dispatched to the existing
-`query_player_report` or `query_related_report` service. Those services retain
+`query_player_report`, `query_related_report`, `query_projection_report`, or
+`query_player_trends` service. Those services retain
 the existing allowlisted fields/operators, filtering-before-pagination,
 deterministic sorting, freshness/provenance, and report-population behavior.
 Metadata exposes logical objects only and omits physical base/source details.
+
+Model Projection statements use an equality `game_date` filter to select the
+shared daily artifact; when omitted, the MLB business date is used. Player
+Trends statements must provide equality filters for `player_type`,
+`selected_window_days`, and `metric`. `comparison_baseline` defaults to
+`previous_n_days`, and `freshness_date` defaults to the MLB business date.
+These controls are converted into the existing Player Trends runtime
+configuration before the remaining allowlisted filters are applied.
 
 ## Saved results and deferred language features
 
