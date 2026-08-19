@@ -103,6 +103,9 @@ def test_metadata_is_derived_and_excludes_physical_schema_details():
         "all_active_pitchers",
         "competitive_batter_arsenal",
         "hitters_arsenal_splits",
+        "model_projection_games",
+        "model_projection_players",
+        "player_trends",
         "players_lineup_history",
     }
     assert all("base_object" not in item for item in objects)
@@ -122,10 +125,66 @@ def test_metadata_is_derived_and_excludes_physical_schema_details():
     assert pitcher_plan.filters == [
         {"field": "average_velocity", "operator": "gte", "value": 95.0}
     ]
-    with pytest.raises(ValueError, match="Unsupported queryable logical object"):
-        workbench_query.parse_workbench_statement(
-            "SELECT game_pk FROM model_projection_games LIMIT 10"
-        )
+    projection_plan = workbench_query.parse_workbench_statement(
+        "SELECT game_pk, projected_total FROM model_projection_games "
+        "WHERE game_date = '2026-08-19' ORDER BY projected_total DESC LIMIT 10"
+    )
+    assert projection_plan.logical_object == "model_projection_games"
+
+
+def test_player_trends_requires_explicit_runtime_configuration(monkeypatch):
+    statement = (
+        "SELECT player_name, window_iso, iso_change FROM player_trends "
+        "WHERE freshness_date = '2026-08-19' AND player_type = 'hitter' "
+        "AND selected_window_days = 60 AND comparison_baseline = 'previous_n_days' "
+        "AND metric = 'iso' AND window_actual_pa >= 40 "
+        "ORDER BY window_iso DESC LIMIT 25"
+    )
+    plan = workbench_query.parse_workbench_statement(statement)
+    captured = {}
+
+    def query(_session, **options):
+        captured.update(options)
+        return {"records": [], "items": [], "totalSize": 0}
+
+    monkeypatch.setattr(workbench_query, "query_player_trends", query)
+    result = workbench_query.execute_workbench_plan(object(), plan)
+
+    assert captured["as_of_date"] == dt.date(2026, 8, 19)
+    assert captured["trend_config"] == {
+        "player_type": "hitter",
+        "window_days": 60,
+        "comparison_baseline": "previous_n_days",
+        "minimum_sample_size": 1,
+        "trend_direction": "all",
+        "selected_metrics": ["iso"],
+    }
+    assert result["workbench_plan"]["logical_object"] == "player_trends"
+
+    incomplete = workbench_query.parse_workbench_statement(
+        "SELECT player_name FROM player_trends WHERE player_type = 'hitter' LIMIT 10"
+    )
+    with pytest.raises(ValueError, match="requires equality filters"):
+        workbench_query.execute_workbench_plan(object(), incomplete)
+
+
+def test_projection_workbench_uses_statement_game_date(monkeypatch):
+    plan = workbench_query.parse_workbench_statement(
+        "SELECT full_name, strikeouts FROM model_projection_players "
+        "WHERE game_date = '2026-08-19' AND player_type = 'pitcher' "
+        "ORDER BY strikeouts DESC LIMIT 20"
+    )
+    captured = {}
+
+    def query(report_type, **options):
+        captured.update({"report_type": report_type, **options})
+        return {"records": [], "items": [], "totalSize": 0}
+
+    monkeypatch.setattr(workbench_query, "query_projection_report", query)
+    workbench_query.execute_workbench_plan(object(), plan)
+
+    assert captured["report_type"] == "model_projection_players"
+    assert captured["date"] == "2026-08-19"
 
 
 def test_competitive_batter_arsenal_query_supports_pitcher_usage_and_hitter_sample():
@@ -246,4 +305,4 @@ def test_query_studio_auth_boundary_returns_401_403_and_owner_metadata(tmp_path,
     owner_principal = admin_access.current_dashboard_principal(None, "owner-token")
     metadata = my_dashboard_routes.my_dashboard_query_studio_metadata(owner_principal)
     assert metadata["authored_sql_executed"] is False
-    assert metadata["totalSize"] == 4
+    assert metadata["totalSize"] == 8
