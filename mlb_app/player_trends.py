@@ -44,6 +44,8 @@ METRICS: Dict[str, Dict[str, Dict[str, Any]]] = {
     "pitcher": {
         "k_pct": {"label": "Strikeout Rate", "favorable": "higher", "tolerance": .01},
         "bb_pct": {"label": "Walk Rate", "favorable": "lower", "tolerance": .01},
+        "whiff_pct": {"label": "Whiff Rate", "favorable": "higher", "tolerance": .01},
+        "contact_pct": {"label": "Contact Rate Allowed", "favorable": "lower", "tolerance": .01},
         "hard_hit_pct": {"label": "Hard-Hit Rate Allowed", "favorable": "lower", "tolerance": .01},
         "avg_velocity": {"label": "Average Pitch Velocity", "favorable": "higher", "tolerance": .3},
         "avg_spin_rate": {"label": "Average Spin Rate", "favorable": "higher", "tolerance": 25.0},
@@ -76,6 +78,8 @@ ROLLING_NUMERIC_FIELDS: Dict[str, Dict[str, str]] = {
     "pitcher": {
         "batters_faced": "Batters Faced",
         "pitch_count": "Pitch Count",
+        "swings": "Swings",
+        "whiffs": "Whiffs",
         "batted_ball_count": "Batted Balls Allowed",
         "hard_hit_count": "Hard-Hit Balls Allowed",
         "strikeouts": "Strikeouts",
@@ -396,6 +400,12 @@ def _aggregate_pitcher_period(
             ).label("batters_faced"),
             func.sum(case((StatcastEvent.events == "strikeout", 1), else_=0)).label("strikeouts"),
             func.sum(case((StatcastEvent.events == "walk", 1), else_=0)).label("walks"),
+            func.sum(
+                case((StatcastEvent.description.in_(list(SWING_DESCRIPTIONS)), 1), else_=0)
+            ).label("swings"),
+            func.sum(
+                case((StatcastEvent.description.in_(list(WHIFF_DESCRIPTIONS)), 1), else_=0)
+            ).label("whiffs"),
             func.count(StatcastEvent.launch_speed).label("batted_balls"),
             func.sum(case((StatcastEvent.launch_speed >= 95.0, 1), else_=0)).label("hard_hits"),
             func.avg(StatcastEvent.release_speed).label("avg_velocity"),
@@ -414,6 +424,8 @@ def _aggregate_pitcher_period(
         player_id = int(row.player_id)
         batters_faced = int(row.batters_faced or 0)
         batted_balls = int(row.batted_balls or 0)
+        swings = int(row.swings or 0)
+        whiffs = int(row.whiffs or 0)
         result[player_id] = {
             "sample_size": batters_faced,
             "batters_faced": batters_faced,
@@ -422,8 +434,12 @@ def _aggregate_pitcher_period(
             "hard_hit_count": int(row.hard_hits or 0),
             "strikeouts": int(row.strikeouts or 0),
             "walks": int(row.walks or 0),
+            "swings": swings,
+            "whiffs": whiffs,
             "k_pct": _ratio(int(row.strikeouts or 0), batters_faced),
             "bb_pct": _ratio(int(row.walks or 0), batters_faced),
+            "whiff_pct": _ratio(whiffs, swings),
+            "contact_pct": round(1 - (whiffs / swings), 3) if swings else None,
             "hard_hit_pct": _ratio(int(row.hard_hits or 0), batted_balls),
             "avg_velocity": float(row.avg_velocity) if row.avg_velocity is not None else None,
             "avg_spin_rate": float(row.avg_spin_rate) if row.avg_spin_rate is not None else None,

@@ -37,7 +37,7 @@ def _player(player_id, player_type):
     )
 
 
-def _event(date, player_id, *, player_type, event, launch_speed=None):
+def _event(date, player_id, *, player_type, event, launch_speed=None, description=None):
     return StatcastEvent(
         game_date=date,
         game_pk=int(date.strftime("%m%d")),
@@ -46,7 +46,7 @@ def _event(date, player_id, *, player_type, event, launch_speed=None):
         pitcher_id=player_id if player_type == "pitcher" else 999,
         batter_id=player_id if player_type == "hitter" else 998,
         events=event,
-        description="hit_into_play" if launch_speed else "called_strike",
+        description=description or ("hit_into_play" if launch_speed else "called_strike"),
         launch_speed=launch_speed,
         release_speed=95.0 if player_type == "pitcher" else None,
     )
@@ -121,6 +121,47 @@ def test_pitcher_higher_strikeout_rate_is_improving(session):
     assert result["totalSize"] == 1
     assert result["records"][0]["trend_direction"] == "improving"
     assert result["records"][0]["absolute_change"] == 1.0
+
+
+def test_pitcher_whiff_rate_uses_canonical_pitch_descriptions(session):
+    session.add(_player(203, "pitcher"))
+    for day in (dt.date(2026, 7, 10), dt.date(2026, 7, 11)):
+        session.add(_event(
+            day,
+            203,
+            player_type="pitcher",
+            event="field_out",
+            description="foul",
+        ))
+    for day in (dt.date(2026, 7, 20), dt.date(2026, 7, 21)):
+        session.add(_event(
+            day,
+            203,
+            player_type="pitcher",
+            event="strikeout",
+            description="swinging_strike",
+        ))
+    session.commit()
+
+    result = query_player_trends(
+        session,
+        as_of_date=dt.date(2026, 7, 21),
+        trend_config={
+            "player_type": "pitcher",
+            "window_days": 7,
+            "comparison_baseline": "previous_n_days",
+            "minimum_sample_size": 2,
+            "trend_direction": "improving",
+            "selected_metrics": ["whiff_pct"],
+        },
+    )
+
+    row = result["records"][0]
+    assert row["window_swings"] == 2
+    assert row["window_whiffs"] == 2
+    assert row["window_whiff_pct"] == 1.0
+    assert row["baseline_whiff_pct"] == 0.0
+    assert row["trend_direction"] == "improving"
 
 
 def test_unsupported_prior_equivalent_period_is_not_advertised(session):
