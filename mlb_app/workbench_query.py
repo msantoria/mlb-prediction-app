@@ -12,8 +12,11 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from .dashboard_player_report_query import query_player_report
+from .dashboard_projection_report_query import query_projection_report
 from .dashboard_related_report_query import query_related_report
 from .dashboard_report_types import FIELD_CATALOG, REPORT_TYPES
+from .my_dashboard_dataset_runtime import mlb_business_date
+from .player_trends import query_player_trends
 
 
 MAX_WORKBENCH_ROWS = 250
@@ -21,6 +24,10 @@ RELATED_REPORT_TYPES = frozenset({
     "players_lineup_history",
     "hitters_arsenal_splits",
     "competitive_batter_arsenal",
+})
+PROJECTION_REPORT_TYPES = frozenset({
+    "model_projection_games",
+    "model_projection_players",
 })
 
 _STATEMENT = re.compile(
@@ -276,7 +283,61 @@ def execute_workbench_plan(session: Any, plan: WorkbenchPlan, *, page_number: in
         "selected_fields": plan.selected_fields,
         "include_metadata": True,
     }
-    if plan.logical_object in RELATED_REPORT_TYPES:
+    if plan.logical_object == "player_trends":
+        config_values: Dict[str, Any] = {}
+        for field_name in (
+            "player_type",
+            "selected_window_days",
+            "comparison_baseline",
+            "metric",
+            "freshness_date",
+        ):
+            matches = [
+                condition for condition in plan.filters
+                if condition["field"] == field_name and condition["operator"] == "eq"
+            ]
+            if len(matches) > 1 and len({str(item.get("value")) for item in matches}) > 1:
+                raise ValueError(f"Conflicting Player Trends configuration for '{field_name}'")
+            if matches:
+                config_values[field_name] = matches[0].get("value")
+        missing = [
+            field_name for field_name in ("player_type", "selected_window_days", "metric")
+            if field_name not in config_values
+        ]
+        if missing:
+            raise ValueError(
+                "Player Trends Query Studio requires equality filters for "
+                "player_type, selected_window_days, and metric"
+            )
+        as_of_date = dt.date.fromisoformat(
+            str(config_values.get("freshness_date") or mlb_business_date())[:10]
+        )
+        result = query_player_trends(
+            session,
+            as_of_date=as_of_date,
+            trend_config={
+                "player_type": config_values["player_type"],
+                "window_days": config_values["selected_window_days"],
+                "comparison_baseline": config_values.get("comparison_baseline") or "previous_n_days",
+                "minimum_sample_size": 1,
+                "trend_direction": "all",
+                "selected_metrics": [config_values["metric"]],
+            },
+            **options,
+        )
+    elif plan.logical_object in PROJECTION_REPORT_TYPES:
+        dates = [
+            condition.get("value") for condition in plan.filters
+            if condition["field"] == "game_date" and condition["operator"] == "eq"
+        ]
+        if len({str(value) for value in dates}) > 1:
+            raise ValueError("Conflicting game_date filters for Model Projections")
+        result = query_projection_report(
+            plan.logical_object,
+            date=str(dates[0] if dates else mlb_business_date()),
+            **options,
+        )
+    elif plan.logical_object in RELATED_REPORT_TYPES:
         result = query_related_report(session, plan.logical_object, **options)
     else:
         result = query_player_report(session, plan.logical_object, **options)
