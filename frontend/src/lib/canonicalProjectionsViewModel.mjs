@@ -119,6 +119,10 @@ function projectionGroupLabel(value) {
 
 function typicalBullpenRoleLabel(value) {
   const labels = {
+    starter: 'Starter',
+    opener: 'Opener',
+    bulk_follower: 'Bulk Follower',
+    swingman: 'Swingman',
     closer: 'Closer',
     setup: 'Setup',
     setup_reliever: 'Setup',

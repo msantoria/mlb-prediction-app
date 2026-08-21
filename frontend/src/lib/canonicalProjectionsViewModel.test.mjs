@@ -762,3 +762,44 @@ test('does not infer missing bullpen taxonomy', () => {
   assert.equal(row.pitcherProjectionGroup, 'bullpen')
   assert.equal(row.plannedPitcherRole, 'reliever')
 })
+
+
+test('formats the complete canonical typical-role taxonomy', () => {
+  const expected = new Map([
+    ['starter', 'Starter'],
+    ['opener', 'Opener'],
+    ['bulk_follower', 'Bulk Follower'],
+    ['swingman', 'Swingman'],
+    ['closer', 'Closer'],
+    ['setup', 'Setup'],
+    ['setup_reliever', 'Setup'],
+    ['middle_reliever', 'Middle Relief'],
+    ['long_reliever', 'Long Relief'],
+  ])
+
+  for (const [role, label] of expected) {
+    const game = payload()
+    const pitcher = game.diagnostics.canonical_shadow
+      .player_projections.players.find(
+        row => row.player_type === 'pitcher',
+      )
+
+    pitcher.typical_bullpen_role = role
+
+    const view = buildCanonicalProjectionsViewModel(
+      game,
+    )
+    const rendered = view.pitchers.find(
+      row => row.playerId === pitcher.player_id,
+    )
+
+    assert.equal(
+      rendered.typicalBullpenRole,
+      role,
+    )
+    assert.equal(
+      rendered.typicalBullpenRoleLabel,
+      label,
+    )
+  }
+})

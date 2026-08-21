@@ -170,16 +170,16 @@ def test_projection_workspace_version_changes_cache_namespace() -> None:
     )
 
 
-def test_model_projection_workspace_v4_invalidates_prior_role_payload_cache():
+def test_model_projection_workspace_v5_invalidates_prior_role_payload_cache():
     date = "2026-08-16"
 
     key = model_projection_date_key(date)
 
     assert MODEL_PROJECTION_WORKSPACE_VERSION == (
-        "model_projection_workspace_v4"
+        "model_projection_workspace_v5"
     )
     assert key.endswith(
-        "model_projection_workspace_v4:"
+        "model_projection_workspace_v5:"
         + date
     )
     assert (

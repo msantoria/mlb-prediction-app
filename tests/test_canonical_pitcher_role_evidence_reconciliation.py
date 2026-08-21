@@ -312,3 +312,31 @@ def test_public_projection_import_contract():
     assert callable(
         materialize_canonical_pitcher_role_evidence
     )
+
+
+def test_generic_pregame_reliever_preserves_historical_typical_role():
+    result = run(
+        discovery=bullpen_discovery(
+            explicit_role="reliever",
+        ),
+    )
+    row = rows(result)["101"]
+    reconciliation = result[
+        "pitcher_pool_role_reconciliation"
+    ]
+
+    assert row["planned_pitcher_role"] == "reliever"
+    assert row["typical_bullpen_role"] == "closer"
+    assert row["typical_role_source"] == (
+        "mlb_stats_season_pitching_usage"
+    )
+    assert row["typical_role_confidence"] == "high"
+    assert row[
+        "typical_role_inference_used"
+    ] is True
+    assert reconciliation[
+        "explicit_typical_role_count"
+    ] == 0
+    assert reconciliation[
+        "historical_typical_role_count"
+    ] == 2
