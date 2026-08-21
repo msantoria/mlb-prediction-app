@@ -24,6 +24,17 @@ STARTER_LIKE_TYPICAL_ROLES = frozenset({
     "probable_starter",
 })
 
+EXPLICIT_SPECIFIC_TYPICAL_ROLES = frozenset({
+    "opener",
+    "bulk_follower",
+    "swingman",
+    "closer",
+    "setup",
+    "setup_reliever",
+    "middle_reliever",
+    "long_reliever",
+})
+
 
 def _text(value: Any) -> str:
     if value in (None, ""):
@@ -259,6 +270,11 @@ def reconcile_canonical_pitcher_projection_pool_roles(
         if explicit_typical_role == "unknown":
             explicit_typical_role = ""
 
+        explicit_typical_role_is_specific = (
+            explicit_typical_role
+            in EXPLICIT_SPECIFIC_TYPICAL_ROLES
+        )
+
         historical_role_record = _mapping(
             role_evidence.get(pitcher_id)
         )
@@ -271,7 +287,7 @@ def reconcile_canonical_pitcher_projection_pool_roles(
         if historical_typical_role == "unknown":
             historical_typical_role = ""
 
-        if explicit_typical_role:
+        if explicit_typical_role_is_specific:
             typical_role = explicit_typical_role
             typical_role_source = (
                 _text(eligibility.get("source"))
@@ -337,7 +353,7 @@ def reconcile_canonical_pitcher_projection_pool_roles(
             )
         )
 
-        if explicit_typical_role:
+        if explicit_typical_role_is_specific:
             explicit_typical_role_count += 1
         elif historical_typical_role:
             historical_typical_role_count += 1
@@ -408,8 +424,12 @@ def reconcile_canonical_pitcher_projection_pool_roles(
         role_conflict = (
             include
             and planned_role == "reliever"
-            and typical_role
-            in STARTER_LIKE_TYPICAL_ROLES
+            and (
+                typical_role
+                in STARTER_LIKE_TYPICAL_ROLES
+                or explicit_typical_role
+                in STARTER_LIKE_TYPICAL_ROLES
+            )
         )
 
         if role_conflict:
