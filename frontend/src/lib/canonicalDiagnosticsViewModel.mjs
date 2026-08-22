@@ -696,6 +696,12 @@ function buildProductionMonitoring(sharedSimulation) {
   const eligibility = objectValue(
     report.eligibility
   )
+  const finalization = objectValue(
+    report.calibration_finalization
+  )
+  const finalizationGate = objectValue(
+    finalization.calibration_gate
+  )
 
   return {
     available: Object.keys(report).length > 0,
@@ -778,6 +784,20 @@ function buildProductionMonitoring(sharedSimulation) {
     ),
     parameterReselectionPermitted:
       settlement.parameter_reselection_permitted === true,
+    calibrationFinalizationAvailable:
+      finalization.ready === true,
+    calibrationDecision:
+      finalization.decision || null,
+    calibrationGatePassed:
+      finalizationGate.calibration_gate_passed === true,
+    incumbentRetained:
+      finalization.incumbent_retained === true,
+    incumbentTransformDigest:
+      finalization.incumbent_transform_digest || null,
+    candidateReselected:
+      finalization.candidate_reselected === true,
+    calibrationFinalizationDigest:
+      finalization.finalization_digest || null,
   }
 }
 
