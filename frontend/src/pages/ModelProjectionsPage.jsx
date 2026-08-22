@@ -1687,6 +1687,49 @@ function DiagnosticsTab({ game }) {
               }
               format="text"
             />
+            {monitoring.calibrationFinalizationAvailable ? (
+              <>
+                <StatRow
+                  k="Calibration Decision"
+                  v={
+                    monitoring.incumbentRetained
+                      ? 'Retain Incumbent'
+                      : 'Reopen Candidate Selection'
+                  }
+                  format="text"
+                />
+                <StatRow
+                  k="Production Calibration Gate"
+                  v={
+                    monitoring.calibrationGatePassed
+                      ? 'Passed'
+                      : 'Failed'
+                  }
+                  format="text"
+                />
+                <StatRow
+                  k="Incumbent Transform"
+                  v={
+                    monitoring.incumbentTransformDigest
+                      ? `${
+                          monitoring.incumbentTransformDigest
+                            .slice(0, 12)
+                        }…`
+                      : 'Unavailable'
+                  }
+                  format="text"
+                />
+                <StatRow
+                  k="Candidate Reselected"
+                  v={
+                    monitoring.candidateReselected
+                      ? 'Yes'
+                      : 'No'
+                  }
+                  format="text"
+                />
+              </>
+            ) : null}
           </GenericPanel>
         </div>
       ) : null}

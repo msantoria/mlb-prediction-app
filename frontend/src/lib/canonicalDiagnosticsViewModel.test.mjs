@@ -659,6 +659,21 @@ test('exposes canonical production monitoring progress', () => {
       attempt_mae: 1.3,
       parameter_reselection_permitted: false,
     },
+    calibration_finalization: {
+      schema_version:
+        'canonical_baserunning_production_calibration_finalization_v1',
+      status: 'ready',
+      ready: true,
+      decision: 'retain_incumbent',
+      incumbent_transform_digest:
+        'a'.repeat(64),
+      incumbent_retained: true,
+      candidate_reselected: false,
+      finalization_digest: 'b'.repeat(64),
+      calibration_gate: {
+        calibration_gate_passed: true,
+      },
+    },
   }
 
   const view = (
@@ -707,6 +722,37 @@ test('exposes canonical production monitoring progress', () => {
   assert.equal(
     view.productionMonitoring.attemptMae,
     1.3,
+  )
+  assert.equal(
+    view.productionMonitoring
+      .calibrationFinalizationAvailable,
+    true,
+  )
+  assert.equal(
+    view.productionMonitoring.calibrationDecision,
+    'retain_incumbent',
+  )
+  assert.equal(
+    view.productionMonitoring.calibrationGatePassed,
+    true,
+  )
+  assert.equal(
+    view.productionMonitoring.incumbentRetained,
+    true,
+  )
+  assert.equal(
+    view.productionMonitoring
+      .incumbentTransformDigest,
+    'a'.repeat(64),
+  )
+  assert.equal(
+    view.productionMonitoring.candidateReselected,
+    false,
+  )
+  assert.equal(
+    view.productionMonitoring
+      .calibrationFinalizationDigest,
+    'b'.repeat(64),
   )
   assert.equal(
     view.productionMonitoring

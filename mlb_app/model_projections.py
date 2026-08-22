@@ -68,6 +68,7 @@ from mlb_app.simulation.shadow import (
     discover_canonical_shadow_probability_provider,
     discover_confirmed_catcher_assignments,
     execute_live_baserunning_shadow_pair,
+    finalize_canonical_baserunning_production_settlements,
     load_baserunning_production_prior,
     load_canonical_baserunning_production_settlements,
     run_canonical_production_shadow,
@@ -92,12 +93,18 @@ def _load_production_settlement_diagnostics(
                 rows
             )
         )
+        finalization = (
+            finalize_canonical_baserunning_production_settlements(
+                rows
+            ).to_diagnostics()
+        )
         summary.update(
             {
                 "status": "ready",
                 "storage_available": True,
                 "error_type": None,
                 "error_message": None,
+                "_calibration_finalization": finalization,
             }
         )
         return summary
@@ -107,12 +114,18 @@ def _load_production_settlement_diagnostics(
                 ()
             )
         )
+        finalization = (
+            finalize_canonical_baserunning_production_settlements(
+                ()
+            ).to_diagnostics()
+        )
         summary.update(
             {
                 "status": "unavailable",
                 "storage_available": False,
                 "error_type": exc.__class__.__name__,
                 "error_message": str(exc),
+                "_calibration_finalization": finalization,
             }
         )
         return summary
@@ -2447,9 +2460,17 @@ def build_model_projection_payload(
                     session
                 )
             )
+            calibration_finalization = (
+                settlement_summary.pop(
+                    "_calibration_finalization"
+                )
+            )
             production_monitoring[
                 "settlement"
             ] = settlement_summary
+            production_monitoring[
+                "calibration_finalization"
+            ] = calibration_finalization
             workspace[
                 "canonicalBaserunningProductionMonitoring"
             ] = production_monitoring
