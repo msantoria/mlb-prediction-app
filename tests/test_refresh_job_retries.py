@@ -233,6 +233,60 @@ def test_target_checks_readiness_before_expensive_refresh(
     ]
 
 
+def test_fast_refresh_defaults_snapshot_warming_off():
+    assert (
+        run_refresh_job.DEFAULT_WARM_MATCHUP_SNAPSHOTS
+        == "0"
+    )
+
+
+def test_target_warms_snapshots_when_explicitly_enabled(
+    monkeypatch,
+):
+    calls = []
+
+    monkeypatch.setattr(
+        run_refresh_job,
+        "REFRESH_MATCHUPS_FIRST",
+        False,
+    )
+    monkeypatch.setattr(
+        run_refresh_job,
+        "WARM_SNAPSHOTS",
+        True,
+    )
+    monkeypatch.setattr(
+        run_refresh_job,
+        "CLEAR_AI_CACHE_AFTER_REFRESH",
+        False,
+    )
+    monkeypatch.setattr(
+        run_refresh_job,
+        "_check_readiness",
+        lambda label, base_url: calls.append(
+            ("readiness", label, base_url)
+        ),
+    )
+    monkeypatch.setattr(
+        run_refresh_job,
+        "_warm_snapshot_for_date",
+        lambda label, base_url, target_date: calls.append(
+            ("snapshot", label, base_url, target_date)
+        ),
+    )
+
+    run_refresh_job._run_target(
+        "production",
+        "https://example.test",
+    )
+
+    assert [row[0] for row in calls] == [
+        "readiness",
+        "snapshot",
+        "snapshot",
+    ]
+
+
 def test_target_isolation_is_preserved_after_exhausted_failure(
     monkeypatch,
 ):
