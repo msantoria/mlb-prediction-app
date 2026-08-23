@@ -1082,3 +1082,94 @@ def test_comparator_marks_missing_source_coverage_unavailable():
     assert coverage[
         "production_authority_changed"
     ] is False
+
+
+def test_comparator_attaches_extras_walkoff_activation():
+    result = (
+        model_projections
+        ._attach_production_shadow_comparison(
+            legacy_result=legacy_payload(),
+            production_execution=executed_shadow(
+                simulation_count=5,
+            ),
+        )
+    )
+
+    activation = result["diagnostics"][
+        "canonical_shadow"
+    ][
+        "canonical_extras_walkoff_activation"
+    ]
+
+    assert activation["status"] == "active"
+    assert activation["active"] is True
+    assert activation["simulation_count"] == 5
+    assert (
+        0.0
+        <= activation["extra_innings_probability"]
+        <= 1.0
+    )
+    assert (
+        0.0
+        <= activation["walk_off_probability"]
+        <= 1.0
+    )
+    assert activation[
+        "game_validation_pass_rate"
+    ] == 1.0
+    assert activation[
+        "box_score_reconciliation_pass_rate"
+    ] == 1.0
+    assert activation[
+        "automatic_runner_active"
+    ] is True
+    assert activation[
+        "legacy_candidate_promoted"
+    ] is False
+    assert activation[
+        "production_authority_changed"
+    ] is False
+
+
+def test_game_realism_requires_executed_activation():
+    unavailable = (
+        model_projections
+        ._build_game_state_realism_diagnostics()
+    )
+
+    assert unavailable[
+        "extra_innings_enabled"
+    ] is None
+    assert unavailable[
+        "automatic_runner_enabled"
+    ] is None
+    assert unavailable[
+        "walk_off_enabled"
+    ] is None
+
+    compared = (
+        model_projections
+        ._attach_production_shadow_comparison(
+            legacy_result=legacy_payload(),
+            production_execution=executed_shadow(),
+        )
+    )
+    active = (
+        model_projections
+        ._build_game_state_realism_diagnostics(
+            compared
+        )
+    )
+
+    assert active[
+        "extra_innings_enabled"
+    ] is True
+    assert active[
+        "automatic_runner_enabled"
+    ] is True
+    assert active[
+        "walk_off_enabled"
+    ] is True
+    assert active[
+        "extras_walkoff_model_status"
+    ] == "active"

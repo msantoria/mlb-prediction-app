@@ -710,3 +710,10 @@ from .production_calibration_finalization import (
     finalize_canonical_baserunning_production_calibration,
     finalize_canonical_baserunning_production_settlements,
 )
+
+
+from .extras_walkoff_activation import (
+    CANONICAL_EXTRAS_WALKOFF_ACTIVATION_VERSION,
+    CanonicalExtrasWalkoffActivation,
+    evaluate_canonical_extras_walkoff_activation,
+)

@@ -68,6 +68,7 @@ from mlb_app.simulation.shadow import (
     discover_canonical_shadow_probability_provider,
     discover_confirmed_catcher_assignments,
     execute_live_baserunning_shadow_pair,
+    evaluate_canonical_extras_walkoff_activation,
     finalize_canonical_baserunning_production_settlements,
     load_baserunning_production_prior,
     load_canonical_baserunning_production_settlements,
@@ -131,7 +132,9 @@ def _load_production_settlement_diagnostics(
         return summary
 
 
-def _build_game_state_realism_diagnostics() -> dict:
+def _build_game_state_realism_diagnostics(
+    shared_simulation: Any = None,
+) -> dict:
     """Layer 6OF guarded diagnostic payload.
 
     Diagnostic-only wiring for game-state realism features.
@@ -140,6 +143,45 @@ def _build_game_state_realism_diagnostics() -> dict:
     probabilities. It exposes whether key Layer 6 game-state realism concepts
     are intended to be represented in the Model Projections payload.
     """
+    activation = {}
+
+    if isinstance(shared_simulation, dict):
+        shared_diagnostics = (
+            shared_simulation.get(
+                "diagnostics",
+                {},
+            )
+        )
+        canonical_shadow = (
+            shared_diagnostics.get(
+                "canonical_shadow",
+                {},
+            )
+            if isinstance(
+                shared_diagnostics,
+                dict,
+            )
+            else {}
+        )
+        activation = (
+            canonical_shadow.get(
+                "canonical_extras_walkoff_activation",
+                {},
+            )
+            if isinstance(
+                canonical_shadow,
+                dict,
+            )
+            else {}
+        )
+
+    activation = (
+        activation
+        if isinstance(activation, dict)
+        else {}
+    )
+    active = activation.get("active") is True
+
     return {
         "base_out_state_enabled": True,
         "base_out_transition_model_status": "diagnostic_wired",
@@ -154,10 +196,27 @@ def _build_game_state_realism_diagnostics() -> dict:
             "events": ["single", "double", "ground_ball", "fly_ball"],
             "final_probability_replacement": False,
         },
+        "extra_innings_enabled": (
+            True if active else None
+        ),
+        "automatic_runner_enabled": (
+            True if active else None
+        ),
+        "walk_off_enabled": (
+            True if active else None
+        ),
         "extras_enabled": True,
         "ghost_runner_enabled": True,
         "walkoff_shortening_enabled": True,
-        "extras_walkoff_model_status": "diagnostic_wired",
+        "extras_walkoff_model_status": (
+            activation.get(
+                "status",
+                "canonical_execution_not_available",
+            )
+        ),
+        "extras_walkoff_activation": deepcopy(
+            activation
+        ),
         "double_play_enabled": True,
         "multi_out_scoring": True,
         "double_play_rate_source": "existing_simulation_transition_logic",
@@ -1221,6 +1280,23 @@ def _attach_production_shadow_comparison(
         result
         .get("diagnostics", {})
         .get("canonical_shadow", {})
+    )
+
+    extras_walkoff_activation = (
+        evaluate_canonical_extras_walkoff_activation(
+            canonical_payload=(
+                material.canonical_payload
+            ),
+            execution_inputs=(
+                material
+                .canonical_shadow_execution_inputs
+            ),
+        )
+    )
+    shadow[
+        "canonical_extras_walkoff_activation"
+    ] = (
+        extras_walkoff_activation.to_diagnostics()
     )
 
     if isinstance(
@@ -2576,7 +2652,11 @@ def build_model_projection_payload(
 
             games.append({
                 "game_pk": matchup.get("game_pk"),
-                "game_state_realism": _build_game_state_realism_diagnostics(),
+                "game_state_realism": (
+                    _build_game_state_realism_diagnostics(
+                        shared_simulation
+                    )
+                ),
                 "canonical_shadow_lineup_discovery": (
                     canonical_shadow_lineup_discovery
                     .to_diagnostics()
