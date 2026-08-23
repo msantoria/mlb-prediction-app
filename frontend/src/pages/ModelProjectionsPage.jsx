@@ -589,32 +589,130 @@ function OffenseProfilePanel({ labelText, profile }) {
   )
 }
 
+function EnvironmentAdjustmentPanel({
+  title,
+  adjustment,
+}) {
+  return (
+    <GenericPanel title={title}>
+      <StatRow
+        k="Park Adjustment"
+        v={adjustment?.park_adjustment}
+        format="pct"
+      />
+      <StatRow
+        k="Weather Adjustment"
+        v={adjustment?.weather_adjustment}
+        format="pct"
+      />
+      <StatRow
+        k="Full Environmental Adjustment"
+        v={adjustment?.full_adjustment}
+        format="pct"
+      />
+      <StatRow
+        k="Final Multiplier"
+        v={adjustment?.final_index}
+        format="num"
+      />
+    </GenericPanel>
+  )
+}
+
 function EnvironmentTab({ workspace, game }) {
   const directInputs = getSharedDirectInputs(game)
   const profile = directInputs.environment_profile || workspace?.environmentProfile || {}
   const run = profile.run_environment || {}
   const weather = profile.weather || {}
   const metadata = profile.metadata || {}
+  const components = profile.environment_components || {}
+  const adjustments = components.adjustment_breakdown || {}
+  const weatherComponent = components.weather_component || {}
+  const roof = weatherComponent.roof_resolution || {}
 
   return (
-    <div style={s.splitGrid}>
-      <GenericPanel title="Run Environment" subtitle={label(run.scoring_environment_label)}>
-        <StatRow k="Run Scoring Index" v={run.run_scoring_index} format="num" />
-        <StatRow k="HR Boost Index" v={run.hr_boost_index} format="num" />
-        <StatRow k="Hit Boost Index" v={run.hit_boost_index} format="num" />
-        <StatRow k="Weather Impact" v={run.weather_run_impact} />
-        <StatRow k="Wind Impact" v={run.wind_run_impact} />
-      </GenericPanel>
+    <>
+      <div style={s.grid}>
+        <EnvironmentAdjustmentPanel
+          title="Run Scoring Environment"
+          adjustment={adjustments.run_scoring}
+        />
+        <EnvironmentAdjustmentPanel
+          title="Hit Environment"
+          adjustment={adjustments.hits}
+        />
+        <EnvironmentAdjustmentPanel
+          title="Home Run Environment"
+          adjustment={adjustments.home_runs}
+        />
+      </div>
 
-      <GenericPanel title="Weather">
-        <StatRow k="Temperature" v={weather.temperature_f} format="num" />
-        <StatRow k="Condition" v={weather.condition} />
-        <StatRow k="Wind Speed" v={weather.wind_speed_mph} format="num" />
-        <StatRow k="Wind Direction" v={weather.wind_direction} />
-      </GenericPanel>
+      <div style={{ ...s.splitGrid, marginTop: '14px' }}>
+        <GenericPanel
+          title="Environment Application"
+          subtitle={label(run.scoring_environment_label)}
+        >
+          <StatRow
+            k="Weather Application"
+            v={label(
+              weatherComponent
+                .weather_application_status
+            )}
+          />
+          <StatRow
+            k="Roof Type"
+            v={label(roof.roof_type)}
+          />
+          <StatRow
+            k="Roof State"
+            v={label(roof.roof_state)}
+          />
+          <StatRow
+            k="Calibration Version"
+            v={metadata.environment_calibration_version}
+          />
+          <StatRow
+            k="Park Factor Policy"
+            v={label(
+              metadata.park_factor_preservation_policy
+            )}
+          />
+        </GenericPanel>
 
-      <DataSection title="Metadata" data={metadata} />
-    </div>
+        <GenericPanel title="Observed Weather">
+          <StatRow
+            k="Temperature"
+            v={weather.temperature_f}
+            format="num"
+          />
+          <StatRow
+            k="Condition"
+            v={weather.condition}
+          />
+          <StatRow
+            k="Wind Speed"
+            v={weather.wind_speed_mph}
+            format="num"
+          />
+          <StatRow
+            k="Wind Direction"
+            v={weather.wind_direction}
+          />
+          <StatRow
+            k="Applied Temperature"
+            v={weatherComponent.applied_temperature_f}
+            format="num"
+          />
+          <StatRow
+            k="Applied Wind Speed"
+            v={weatherComponent.applied_wind_speed_mph}
+            format="num"
+          />
+        </GenericPanel>
+
+        <DataSection title="Metadata" data={metadata} />
+      </div>
+    </>
   )
 }
 
