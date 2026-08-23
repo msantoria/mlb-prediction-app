@@ -44,6 +44,7 @@ const REALISM_FEATURES = [
     aliases: [
       'extra_innings',
       'extra_innings_enabled',
+      'extras_enabled',
     ],
   },
   {
@@ -63,6 +64,7 @@ const REALISM_FEATURES = [
       'walk_offs',
       'walk_off_enabled',
       'walk_off_shortening',
+      'walkoff_shortening_enabled',
     ],
   },
   {

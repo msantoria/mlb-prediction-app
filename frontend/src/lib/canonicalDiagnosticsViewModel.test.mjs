@@ -14,9 +14,9 @@ function sharedSimulation() {
     game_state_realism_diagnostics: {
       base_out_state: true,
       runner_advancement_enabled: true,
-      extra_innings: 'enabled',
+      extras_enabled: true,
       ghost_runner_enabled: true,
-      walk_off_shortening: true,
+      walkoff_shortening_enabled: true,
       double_play_scoring: true,
       sacrifice_fly_scoring_enabled: true,
       steals_model: 'deferred_not_active',
@@ -408,7 +408,15 @@ test('normalizes realism feature aliases and states', () => {
     'enabled',
   )
   assert.equal(
+    features.extra_innings,
+    'enabled',
+  )
+  assert.equal(
     features.automatic_runner,
+    'enabled',
+  )
+  assert.equal(
+    features.walk_offs,
     'enabled',
   )
   assert.equal(
@@ -418,6 +426,43 @@ test('normalizes realism feature aliases and states', () => {
   assert.equal(
     features.stolen_bases,
     'deferred',
+  )
+})
+
+test('explicit unavailable runtime realism does not fall through to implementation flags', () => {
+  const payload = sharedSimulation()
+
+  payload.game_state_realism_diagnostics = {
+    extra_innings_enabled: null,
+    extras_enabled: true,
+    automatic_runner_enabled: null,
+    ghost_runner_enabled: true,
+    walk_off_enabled: null,
+    walkoff_shortening_enabled: true,
+  }
+
+  const view = buildCanonicalDiagnosticsViewModel(
+    payload,
+  )
+
+  const features = Object.fromEntries(
+    view.realism.features.map(feature => [
+      feature.key,
+      feature.status,
+    ]),
+  )
+
+  assert.equal(
+    features.extra_innings,
+    'unknown',
+  )
+  assert.equal(
+    features.automatic_runner,
+    'unknown',
+  )
+  assert.equal(
+    features.walk_offs,
+    'unknown',
   )
 })
 
