@@ -36,8 +36,8 @@ from .historical_probability_statistics_source import (
 )
 from .historical_probability_workspace_reconstruction import (
     CanonicalHistoricalPaProbabilityWorkspaceWindow,
-    _offense_profile,
-    _pitcher_profile,
+    build_historical_probability_offense_profile,
+    build_historical_probability_pitcher_profile,
 )
 from .probability_provider_discovery import (
     discover_canonical_shadow_probability_provider,
@@ -106,10 +106,10 @@ def _distribution(
     pitcher: CanonicalHistoricalProbabilityPlayerStatistics,
 ):
     model = build_pa_outcome_probabilities(
-        batter_profile=_offense_profile(
+        batter_profile=build_historical_probability_offense_profile(
             _counts(batter)
         ),
-        pitcher_profile=_pitcher_profile(
+        pitcher_profile=build_historical_probability_pitcher_profile(
             _counts(pitcher)
         ),
         environment_profile=None,
