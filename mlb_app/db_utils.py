@@ -46,10 +46,34 @@ TERMINAL_EVENTS = {
     "grounded_into_double_play",
     "fielders_choice",
     "fielders_choice_out",
+    "field_error",
+    "other_out",
+    "triple_play",
     "sac_fly",
+    "sac_fly_double_play",
     "sac_bunt",
+    "sac_bunt_double_play",
     "catcher_interf",
     "catcher_interference",
+}
+
+# A Statcast BBE is a batted ball that produces a result.  launch_speed can
+# also be populated on measured foul contact, so launch_speed alone must never
+# define the BBE population used by the batter homepage.
+BATTED_BALL_EVENTS = HIT_EVENTS | {
+    "field_out",
+    "force_out",
+    "double_play",
+    "grounded_into_double_play",
+    "fielders_choice",
+    "fielders_choice_out",
+    "field_error",
+    "other_out",
+    "triple_play",
+    "sac_fly",
+    "sac_fly_double_play",
+    "sac_bunt",
+    "sac_bunt_double_play",
 }
 TOTAL_BASES = {"single": 1, "double": 2, "triple": 3, "home_run": 4}
 
@@ -1226,10 +1250,11 @@ def _compute_batter_batted_ball_sql(
     s_start: datetime.date,
     s_end: datetime.date,
 ) -> List[Any]:
-    """Aggregate batted-ball EV/quality stats at the DB level.
+    """Aggregate true batted-ball events at the DB level.
 
-    Double GROUP BY deduplicates pitch events: first by
-    (batter_id, game_pk, at_bat_number, pitch_number), then aggregates per batter.
+    Statcast may provide launch_speed for foul contact.  A BBE must therefore
+    have both a measured exit velocity and a terminal batted-ball outcome.
+    The inner GROUP BY keeps the calculation duplicate-safe.
     """
     inner = (
         session.query(
@@ -1244,7 +1269,89 @@ def _compute_batter_batted_ball_sql(
             StatcastEvent.game_date >= s_start,
             StatcastEvent.game_date <= s_end,
             StatcastEvent.batter_id.isnot(None),
+            StatcastEvent.events.in_(list(BATTED_BALL_EVENTS)),
             StatcastEvent.launch_speed.isnot(None),
+            StatcastEvent.game_pk.isnot(None),
+            StatcastEvent.at_bat_number.isnot(None),
+            StatcastEvent.pitch_number.isnot(None),
+        )
+        .group_by(
+            StatcastEvent.batter_id,
+            StatcastEvent.game_pk,
+            StatcastEvent.at_bat_number,
+            StatcastEvent.pitch_number,
+        )
+        .subquery()
+    )
+
+    # MLB's barrel zone starts at 98 mph / 26-30 degrees and expands with
+    # exit velocity, reaching 8-50 degrees at 116 mph.  Cap both bounds at
+    # those documented limits.
+    barrel_lower_bound = case(
+        (inner.c.launch_speed >= 116.0, 8.0),
+        else_=124.0 - inner.c.launch_speed,
+    )
+    barrel_upper_bound = case(
+        (inner.c.launch_speed >= 108.0, 50.0),
+        else_=30.0 + ((inner.c.launch_speed - 98.0) * 2.0),
+    )
+
+    return (
+        session.query(
+            inner.c.batter_id,
+            func.count().label("bbe"),
+            func.avg(inner.c.launch_speed).label("avg_exit_velocity"),
+            func.max(inner.c.launch_speed).label("max_exit_velocity"),
+            func.sum(case((inner.c.launch_speed >= 95.0, 1), else_=0)).label("hard_hits"),
+            func.sum(
+                case(
+                    (
+                        and_(
+                            inner.c.launch_speed >= 98.0,
+                            inner.c.launch_angle.isnot(None),
+                            inner.c.launch_angle >= barrel_lower_bound,
+                            inner.c.launch_angle <= barrel_upper_bound,
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("barrels"),
+        )
+        .group_by(inner.c.batter_id)
+        .all()
+    )
+
+
+def _compute_batter_swing_sql(
+    session: Session,
+    s_start: datetime.date,
+    s_end: datetime.date,
+) -> List[Any]:
+    """Aggregate duplicate-safe swing, whiff, and contact counts per batter."""
+    inner = (
+        session.query(
+            StatcastEvent.batter_id.label("batter_id"),
+            StatcastEvent.game_pk.label("game_pk"),
+            StatcastEvent.at_bat_number.label("at_bat_number"),
+            StatcastEvent.pitch_number.label("pitch_number"),
+            func.max(
+                case(
+                    (StatcastEvent.description.in_(list(SWING_DESCRIPTIONS)), 1),
+                    else_=0,
+                )
+            ).label("is_swing"),
+            func.max(
+                case(
+                    (StatcastEvent.description.in_(list(WHIFF_DESCRIPTIONS)), 1),
+                    else_=0,
+                )
+            ).label("is_whiff"),
+        )
+        .filter(
+            StatcastEvent.game_date >= s_start,
+            StatcastEvent.game_date <= s_end,
+            StatcastEvent.batter_id.isnot(None),
             StatcastEvent.game_pk.isnot(None),
             StatcastEvent.at_bat_number.isnot(None),
             StatcastEvent.pitch_number.isnot(None),
@@ -1261,28 +1368,12 @@ def _compute_batter_batted_ball_sql(
     return (
         session.query(
             inner.c.batter_id,
-            func.count().label("bbe"),
-            func.avg(inner.c.launch_speed).label("avg_exit_velocity"),
-            func.max(inner.c.launch_speed).label("max_exit_velocity"),
-            func.sum(case((inner.c.launch_speed >= 95.0, 1), else_=0)).label("hard_hits"),
-            func.sum(
-                case(
-                    (
-                        and_(
-                            inner.c.launch_speed >= 98.0,
-                            inner.c.launch_angle >= 8.0,
-                            inner.c.launch_angle <= 50.0,
-                        ),
-                        1,
-                    ),
-                    else_=0,
-                )
-            ).label("barrels"),
+            func.sum(inner.c.is_swing).label("swings"),
+            func.sum(inner.c.is_whiff).label("whiffs"),
         )
         .group_by(inner.c.batter_id)
         .all()
     )
-
 
 def get_batter_leaderboards(
     session: Session,
@@ -1321,7 +1412,7 @@ def get_batter_leaderboards(
     _all_metrics = [
         "home_runs", "hits", "doubles", "iso",
         "hard_hit_pct", "barrel_pct", "avg_exit_velocity", "max_exit_velocity",
-        "bb_pct", "k_pct_avoidance",
+        "bb_pct", "k_pct_avoidance", "contact_pct", "whiff_pct",
     ]
 
     if s_start is None:
@@ -1341,8 +1432,10 @@ def get_batter_leaderboards(
     # Compute stats via SQL GROUP BY — no full-table-to-Python load
     counting_rows = _compute_batter_counting_sql(session, s_start, s_end)
     batted_ball_rows = _compute_batter_batted_ball_sql(session, s_start, s_end)
+    swing_rows = _compute_batter_swing_sql(session, s_start, s_end)
 
     bb_by_batter: Dict[int, Any] = {int(row.batter_id): row for row in batted_ball_rows}
+    swings_by_batter: Dict[int, Any] = {int(row.batter_id): row for row in swing_rows}
 
     players: List[Dict[str, Any]] = []
     for row in counting_rows:
@@ -1383,6 +1476,12 @@ def get_batter_leaderboards(
             bbe = 0
             avg_ev = max_ev = hard_hit_pct = barrel_pct = None
 
+        swing_row = swings_by_batter.get(batter_id)
+        swings = int(swing_row.swings or 0) if swing_row is not None else 0
+        whiffs = int(swing_row.whiffs or 0) if swing_row is not None else 0
+        whiff_pct = round(whiffs / swings, 3) if swings else None
+        contact_pct = round(1.0 - (whiffs / swings), 3) if swings else None
+
         players.append({
             "player_id": batter_id,
             "player_name": player_name,
@@ -1400,6 +1499,10 @@ def get_batter_leaderboards(
             "max_exit_velocity": max_ev,
             "k_pct": k_pct,
             "bb_pct": bb_pct,
+            "swings": swings,
+            "whiffs": whiffs,
+            "whiff_pct": whiff_pct,
+            "contact_pct": contact_pct,
         })
 
     latest_event_date = (
@@ -1420,6 +1523,8 @@ def get_batter_leaderboards(
         ("max_exit_velocity", "max_exit_velocity", "bbe", min_bbe, True),
         ("bb_pct", "bb_pct", "pa", max(min_pa, 100), True),
         ("k_pct_avoidance", "k_pct", "pa", max(min_pa, 100), False),
+        ("contact_pct", "contact_pct", "swings", 100, True),
+        ("whiff_pct", "whiff_pct", "swings", 100, False),
     ]
 
     for response_key, metric, min_key, min_count, reverse in board_specs:
@@ -1433,7 +1538,8 @@ def get_batter_leaderboards(
     notes: List[str] = [
         "Counting stats computed via SQL GROUP BY on deduplicated terminal plate appearances.",
         "Batted-ball stats computed via SQL GROUP BY on deduplicated pitch events.",
-        "Whiff/contact/RBI leaderboards require full pitch-level data and are not precomputed here.",
+        "Swing metrics use duplicate-safe pitch identity; contact% is 1 - whiffs/swings.",
+        "RBI is intentionally unavailable because the local Statcast schema does not store runner scoring attribution.",
     ]
     if actual_season != season:
         notes.append(f"No rows found for {season}; leaderboards fell back to {actual_season}.")
