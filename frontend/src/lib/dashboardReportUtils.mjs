@@ -38,6 +38,45 @@ export function buildReportCsv({ columns, rows, fieldMap, getValue }) {
   return [header, ...body].join('\r\n')
 }
 
+export function paginatedResultRows(result = {}) {
+  if (Array.isArray(result?.records) && (result.records.length || !Array.isArray(result?.items))) {
+    return result.records
+  }
+  return Array.isArray(result?.items) ? result.items : []
+}
+
+export async function collectPaginatedRows(fetchPage, { maxPages = 10000 } = {}) {
+  if (typeof fetchPage !== 'function') throw new TypeError('fetchPage must be a function')
+
+  const rows = []
+  const visitedPages = new Set()
+  let pageNumber = 1
+
+  while (pageNumber <= maxPages) {
+    if (visitedPages.has(pageNumber)) throw new Error('CSV export received a repeated page number')
+    visitedPages.add(pageNumber)
+
+    const result = await fetchPage(pageNumber)
+    const pageRows = paginatedResultRows(result)
+    rows.push(...pageRows)
+
+    const pageInfo = result?.page_info || {}
+    const totalValue = result?.totalSize ?? result?.total_size
+    const total = Number(totalValue)
+    const hasTotal = Number.isFinite(total) && total >= 0
+    const explicitHasNext = pageInfo.has_next ?? pageInfo.has_next_page
+    const hasNext = explicitHasNext === true || (hasTotal && rows.length < total)
+
+    if (!hasNext) return rows
+    if (!pageRows.length) throw new Error('CSV export stopped before every matching row was returned')
+
+    const nextPage = Number(pageInfo.next_page)
+    pageNumber = Number.isInteger(nextPage) && nextPage > pageNumber ? nextPage : pageNumber + 1
+  }
+
+  throw new Error(`CSV export exceeded the ${maxPages}-page safety limit`)
+}
+
 export function safeFilenamePart(value) {
   return String(value || 'report')
     .trim()

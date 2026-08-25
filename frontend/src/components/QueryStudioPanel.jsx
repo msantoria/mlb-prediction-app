@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 
-import { buildReportCsv, safeFilenamePart } from '../lib/dashboardReportUtils.mjs'
+import { buildReportCsv, collectPaginatedRows, safeFilenamePart } from '../lib/dashboardReportUtils.mjs'
 import {
   QUERY_STUDIO_EXAMPLE,
   queryStudioColumns,
@@ -47,7 +47,9 @@ export default function QueryStudioPanel({
   const automaticStatement = useRef(QUERY_STUDIO_EXAMPLE)
   const [preview, setPreview] = useState(null)
   const [result, setResult] = useState(null)
+  const [executedStatement, setExecutedStatement] = useState('')
   const [running, setRunning] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [error, setError] = useState('')
   const [pageNumber, setPageNumber] = useState(1)
 
@@ -73,6 +75,8 @@ export default function QueryStudioPanel({
     automaticStatement.current = null
     setStatement(next)
     setPreview(null)
+    setResult(null)
+    setExecutedStatement('')
     setPageNumber(1)
   }, [restore])
 
@@ -97,22 +101,25 @@ export default function QueryStudioPanel({
     })
     setPreview(null)
     setResult(null)
+    setExecutedStatement('')
     setPageNumber(1)
   }, [objects, preferredObject])
 
   async function request(path, nextPage = 1) {
     setRunning(true)
     setError('')
+    const submittedStatement = statement
     try {
       const json = await dashboardApi(path, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ statement, page_number: nextPage }),
+        body: JSON.stringify({ statement: submittedStatement, page_number: nextPage }),
       })
       if (path.endsWith('/preview')) setPreview(json.plan)
       else {
         setResult(json)
         setPreview(json.workbench_plan)
+        setExecutedStatement(submittedStatement)
         setPageNumber(nextPage)
       }
     } catch (err) {
@@ -134,7 +141,7 @@ export default function QueryStudioPanel({
     const label = metadata?.objects?.find(item => item.api_name === result?.report_type)?.label || 'Query Studio'
     const payload = queryStudioSavePayload({
       folderId,
-      statement,
+      statement: executedStatement || statement,
       result,
       title: `${label} Query`,
     })
@@ -151,10 +158,25 @@ export default function QueryStudioPanel({
     }
   }
 
-  function exportCsv() {
-    const fieldMap = Object.fromEntries(columns.map(accessor => [accessor, { accessor, label: fieldLabels[accessor] || accessor }]))
-    const csv = buildReportCsv({ columns, rows, fieldMap, getValue: (row, accessor) => row?.[accessor] })
-    download(`${safeFilenamePart(result?.report_type || 'query-studio')}-page-${pageNumber}.csv`, csv)
+  async function exportCsv() {
+    if (!rows.length || !columns.length || exporting) return
+    setExporting(true)
+    setError('')
+    try {
+      const exportStatement = executedStatement || statement
+      const exportRows = await collectPaginatedRows(page => dashboardApi('/my-dashboard/query-studio/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ statement: exportStatement, page_number: page }),
+      }))
+      const fieldMap = Object.fromEntries(columns.map(accessor => [accessor, { accessor, label: fieldLabels[accessor] || accessor }]))
+      const csv = buildReportCsv({ columns, rows: exportRows, fieldMap, getValue: (row, accessor) => row?.[accessor] })
+      download(`${safeFilenamePart(result?.report_type || 'query-studio')}-all-rows.csv`, csv)
+    } catch (err) {
+      setError(err.message || 'Unable to export every Query Studio row.')
+    } finally {
+      setExporting(false)
+    }
   }
 
   if (metadataState === 'loading') return <section style={s.panel}><div style={s.eyebrow}>Owner Query Studio</div><p style={s.muted}>Loading the registered query language…</p></section>
@@ -169,7 +191,7 @@ export default function QueryStudioPanel({
     <div style={s.actions}><button style={s.secondary} disabled={running} onClick={() => request('/my-dashboard/query-studio/preview', 1)}>Preview Plan</button><button style={s.primary} disabled={running} onClick={() => request('/my-dashboard/query-studio/execute', 1)}>{running ? 'Validating…' : 'Run Query'}</button></div>
     {preview ? <div style={s.plan}><div style={s.planHeader}><strong>Validated plan</strong><span>{preview.logical_object}</span></div><div style={s.planGrid}><span>{preview.selected_fields?.length || 0} fields</span><span>{preview.filters?.length || 0} bound values</span><span>{preview.sort?.field || 'default sort'} {preview.sort?.direction || ''}</span><span>Limit {preview.pagination?.page_size}</span></div><details style={s.planDetails}><summary>Normalized request and bindings</summary><pre style={s.planCode}>{JSON.stringify({ logical_object: preview.logical_object, selected_fields: preview.selected_fields, filters: preview.filters, sort: preview.sort, pagination: preview.pagination }, null, 2)}</pre></details></div> : null}
     {result ? <div style={s.results}>
-      <div style={s.row}><div><strong>{result.totalSize || 0} matching rows</strong><div style={s.muted}>Page {pageNumber} · {result?.provenance?.updated_at || result?.provenance?.generated_at || 'Current registered data'}</div></div><div style={s.actions}><button style={s.secondary} disabled={!rows.length} onClick={exportCsv}>Export Page</button><button style={s.secondary} disabled={!rows.length} onClick={save}>Save Query</button></div></div>
+      <div style={s.row}><div><strong>{result.totalSize || 0} matching rows</strong><div style={s.muted}>Page {pageNumber} · {result?.provenance?.updated_at || result?.provenance?.generated_at || 'Current registered data'}</div></div><div style={s.actions}><button style={s.secondary} disabled={!rows.length || running || exporting} onClick={exportCsv}>{exporting ? 'Exporting All Rows…' : 'Export All Rows'}</button><button style={s.secondary} disabled={!rows.length || exporting} onClick={save}>Save Query</button></div></div>
       <div style={s.tableWrap}><table style={s.table}><thead><tr>{columns.map(column => <th style={s.th} key={column}>{fieldLabels[column] || column}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={row.mlb_player_id || row.id || index}>{columns.map(column => <td style={s.td} key={column}>{display(row?.[column])}</td>)}</tr>)}</tbody></table></div>
       <div style={s.pager}><button style={s.secondary} disabled={running || pageNumber <= 1} onClick={() => request('/my-dashboard/query-studio/execute', pageNumber - 1)}>Previous</button><span>Page {pageNumber}</span><button style={s.secondary} disabled={running || !(pageInfo.has_next || pageInfo.has_next_page)} onClick={() => request('/my-dashboard/query-studio/execute', pageNumber + 1)}>Next</button></div>
     </div> : null}
