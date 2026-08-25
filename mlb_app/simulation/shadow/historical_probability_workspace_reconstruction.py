@@ -101,7 +101,7 @@ def _rate(
     return numerator / denominator
 
 
-def _offense_profile(
+def build_historical_probability_offense_profile(
     counts: Mapping[str, int],
 ) -> Dict[str, Any]:
     pa = counts.get("pa", 0)
@@ -143,7 +143,7 @@ def _offense_profile(
     }
 
 
-def _pitcher_profile(
+def build_historical_probability_pitcher_profile(
     counts: Mapping[str, int],
 ) -> Dict[str, Any]:
     batters_faced = counts.get(
@@ -189,10 +189,10 @@ def _model(
     pitcher_counts: Mapping[str, int],
 ) -> Dict[str, Any]:
     result = build_pa_outcome_probabilities(
-        batter_profile=_offense_profile(
+        batter_profile=build_historical_probability_offense_profile(
             offense_counts
         ),
-        pitcher_profile=_pitcher_profile(
+        pitcher_profile=build_historical_probability_pitcher_profile(
             pitcher_counts
         ),
         environment_profile=None,

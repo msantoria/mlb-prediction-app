@@ -8,6 +8,26 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
+
+from mlb_app.database import StatcastEvent
+from mlb_app.statcast_event_identity import (
+    load_canonical_statcast_events,
+)
+from mlb_app.simulation.shadow.canonical_pitcher_matchup_profile_runtime_batch import (
+    build_canonical_pitcher_matchup_profile_runtime_batch,
+)
+from mlb_app.simulation.shadow.canonical_pitcher_matchup_profile_source import (
+    source_canonical_pitcher_matchup_profile,
+)
+from mlb_app.simulation.shadow.canonical_pitcher_matchup_profile_pa_activation import (
+    APPROVED_CROSS_SEASON_AUDIT_DIGEST,
+    APPROVED_ELIGIBILITY_DIGEST,
+    APPROVED_HISTORICAL_EVALUATION_DIGEST,
+    select_canonical_pitcher_matchup_profile_pa_model,
+)
+from mlb_app.simulation.shadow.canonical_pitcher_matchup_profile_pa_comparator import (
+    compare_canonical_pitcher_matchup_profile_pa_outcomes,
+)
 from mlb_app.simulation.projections.pitcher_pool_role_reconciliation import (
     reconcile_canonical_pitcher_projection_pool_roles,
 )
@@ -560,8 +580,125 @@ def _build_projection_simulation_cards(matchup: Dict[str, Any], away: Dict[str, 
     away_bullpen_profile = build_bullpen_profile(team_id=away_team_id, team_name=away_team_name)
     home_bullpen_profile = build_bullpen_profile(team_id=home_team_id, team_name=home_team_name)
 
-    away_vs_home_starter_pa = _team_offense_prior_pa_model(away_team_id, away_team_name, home_pitcher_profile, environment_profile)
-    home_vs_away_starter_pa = _team_offense_prior_pa_model(home_team_id, home_team_name, away_pitcher_profile, environment_profile)
+    away_offense_profile = build_team_offense_prior(
+        team_id=away_team_id,
+        team_name=away_team_name,
+    )
+    home_offense_profile = build_team_offense_prior(
+        team_id=home_team_id,
+        team_name=home_team_name,
+    )
+
+    away_vs_home_starter_pa = _team_offense_prior_pa_model(
+        away_team_id,
+        away_team_name,
+        home_pitcher_profile,
+        environment_profile,
+        offense_profile=away_offense_profile,
+    )
+    home_vs_away_starter_pa = _team_offense_prior_pa_model(
+        home_team_id,
+        home_team_name,
+        away_pitcher_profile,
+        environment_profile,
+        offense_profile=home_offense_profile,
+    )
+
+    away_vs_home_pitcher_profile_shadow = (
+        compare_canonical_pitcher_matchup_profile_pa_outcomes(
+            candidate=(
+                home.get(
+                    "pitcher_matchup_profile_candidate"
+                )
+                or {}
+            ),
+            production_pitcher_profile=(
+                home_pitcher_profile
+            ),
+            batter_profile=away_offense_profile,
+            environment_profile=environment_profile,
+        )
+    )
+    home_vs_away_pitcher_profile_shadow = (
+        compare_canonical_pitcher_matchup_profile_pa_outcomes(
+            candidate=(
+                away.get(
+                    "pitcher_matchup_profile_candidate"
+                )
+                or {}
+            ),
+            production_pitcher_profile=(
+                away_pitcher_profile
+            ),
+            batter_profile=home_offense_profile,
+            environment_profile=environment_profile,
+        )
+    )
+
+    pitcher_profile_pa_activation_requested = (
+        os.getenv(
+            "MLB_ENABLE_CANONICAL_PITCHER_MATCHUP_PROFILE_PA",
+            "",
+        )
+        .strip()
+        .lower()
+        in {"1", "true", "yes", "on"}
+    )
+    away_vs_home_pitcher_profile_activation = (
+        select_canonical_pitcher_matchup_profile_pa_model(
+            production_model=(
+                away_vs_home_starter_pa
+            ),
+            comparison=(
+                away_vs_home_pitcher_profile_shadow
+            ),
+            activation_requested=(
+                pitcher_profile_pa_activation_requested
+            ),
+            eligibility_digest=(
+                APPROVED_ELIGIBILITY_DIGEST
+            ),
+            historical_evaluation_digest=(
+                APPROVED_HISTORICAL_EVALUATION_DIGEST
+            ),
+            cross_season_audit_digest=(
+                APPROVED_CROSS_SEASON_AUDIT_DIGEST
+            ),
+        )
+    )
+    home_vs_away_pitcher_profile_activation = (
+        select_canonical_pitcher_matchup_profile_pa_model(
+            production_model=(
+                home_vs_away_starter_pa
+            ),
+            comparison=(
+                home_vs_away_pitcher_profile_shadow
+            ),
+            activation_requested=(
+                pitcher_profile_pa_activation_requested
+            ),
+            eligibility_digest=(
+                APPROVED_ELIGIBILITY_DIGEST
+            ),
+            historical_evaluation_digest=(
+                APPROVED_HISTORICAL_EVALUATION_DIGEST
+            ),
+            cross_season_audit_digest=(
+                APPROVED_CROSS_SEASON_AUDIT_DIGEST
+            ),
+        )
+    )
+    away_vs_home_starter_pa = (
+        away_vs_home_pitcher_profile_activation[
+            "model"
+        ]
+    )
+    home_vs_away_starter_pa = (
+        home_vs_away_pitcher_profile_activation[
+            "model"
+        ]
+    )
+
     away_vs_home_bullpen_pa = _team_offense_prior_pa_model(away_team_id, away_team_name, home_bullpen_profile, environment_profile)
     home_vs_away_bullpen_pa = _team_offense_prior_pa_model(home_team_id, home_team_name, away_bullpen_profile, environment_profile)
 
@@ -675,6 +812,71 @@ def _build_projection_simulation_cards(matchup: Dict[str, Any], away: Dict[str, 
         "homeBullpenProfile": home_bullpen_profile,
         "awayPAOutcomeModel": away_vs_home_starter_pa,
         "homePAOutcomeModel": home_vs_away_starter_pa,
+        "pitcherMatchupProfilePAShadowComparisons": {
+            "awayOffenseVsHomeStarter": (
+                away_vs_home_pitcher_profile_shadow
+            ),
+            "homeOffenseVsAwayStarter": (
+                home_vs_away_pitcher_profile_shadow
+            ),
+            "comparison_role": (
+                "production_activation_source"
+                if pitcher_profile_pa_activation_requested
+                else "paired_shadow_diagnostic_only"
+            ),
+            "simulation_inputs_changed": (
+                away_vs_home_pitcher_profile_activation[
+                    "activated"
+                ]
+                or home_vs_away_pitcher_profile_activation[
+                    "activated"
+                ]
+            ),
+            "final_probabilities_changed": False,
+            "production_authority": (
+                away_vs_home_pitcher_profile_activation[
+                    "activated"
+                ]
+                or home_vs_away_pitcher_profile_activation[
+                    "activated"
+                ]
+            ),
+            "production_authority_changed": (
+                away_vs_home_pitcher_profile_activation[
+                    "activated"
+                ]
+                or home_vs_away_pitcher_profile_activation[
+                    "activated"
+                ]
+            ),
+        },
+        "pitcherMatchupProfilePAActivation": {
+            "requested": (
+                pitcher_profile_pa_activation_requested
+            ),
+            "awayOffenseVsHomeStarter": (
+                away_vs_home_pitcher_profile_activation[
+                    "diagnostics"
+                ]
+            ),
+            "homeOffenseVsAwayStarter": (
+                home_vs_away_pitcher_profile_activation[
+                    "diagnostics"
+                ]
+            ),
+            "simulation_inputs_changed": (
+                away_vs_home_pitcher_profile_activation[
+                    "activated"
+                ]
+                or home_vs_away_pitcher_profile_activation[
+                    "activated"
+                ]
+            ),
+            "final_side_probabilities_changed": False,
+            "final_side_probability_source": (
+                "matchups.canonical_matchup_win_probability_v2"
+            ),
+        },
         "awayVsHomeBullpenPAOutcomeModel": away_vs_home_bullpen_pa,
         "homeVsAwayBullpenPAOutcomeModel": home_vs_away_bullpen_pa,
         "awayMatchupAnalysis": _matchup_workspace_analysis(away, home),
@@ -766,23 +968,290 @@ def _projection_offense_inputs(
     )
 
 
-def _side_context(matchup: Dict[str, Any], side: str, session: Session, season: int) -> Dict[str, Any]:
+def _materialize_pitcher_matchup_profile_runtime_batch(
+    *,
+    session: Session,
+    matchups: List[Dict[str, Any]],
+    game_date: Any,
+    event_loader: Any = None,
+    batch_builder: Any = None,
+) -> Dict[str, Any]:
+    """Load terminal evidence once and build all shadow candidates."""
+    event_loader = (
+        event_loader
+        or load_canonical_statcast_events
+    )
+    batch_builder = (
+        batch_builder
+        or build_canonical_pitcher_matchup_profile_runtime_batch
+    )
+
+    pitcher_ids = tuple(sorted({
+        int(pitcher_id)
+        for matchup in matchups
+        if isinstance(matchup, dict)
+        for side in ("away", "home")
+        for pitcher_id in [
+            matchup.get(
+                f"{side}_pitcher_id"
+            )
+        ]
+        if pitcher_id not in (
+            None,
+            0,
+            "",
+        )
+    }))
+
+    if not pitcher_ids:
+        return {
+            "candidates": {},
+            "diagnostics": {
+                "status": "unavailable",
+                "blockers": [
+                    "no_probable_pitcher_ids",
+                ],
+                "single_terminal_event_load": False,
+                "production_authority": False,
+                "production_authority_changed": False,
+            },
+        }
+
+    window_start = (
+        game_date
+        - datetime.timedelta(days=90)
+    )
+
+    try:
+        events, identity = event_loader(
+            session,
+            StatcastEvent.game_date
+            >= window_start,
+            StatcastEvent.game_date
+            < game_date,
+            StatcastEvent.events.isnot(None),
+            order_by=(
+                StatcastEvent.game_date,
+                StatcastEvent.game_pk,
+                StatcastEvent.at_bat_number,
+                StatcastEvent.pitch_number,
+                StatcastEvent.id,
+            ),
+        )
+        result = batch_builder(
+            events,
+            pitcher_ids=pitcher_ids,
+            game_date=game_date,
+            window_days=90,
+        )
+
+        diagnostics = dict(
+            result.get("diagnostics") or {}
+        )
+        diagnostics.update({
+            "single_terminal_event_load": True,
+            "terminal_event_count": len(events),
+            "identity_diagnostics": dict(
+                identity or {}
+            ),
+            "production_authority": False,
+            "production_authority_changed": False,
+        })
+
+        return {
+            "candidates": dict(
+                result.get("candidates") or {}
+            ),
+            "diagnostics": diagnostics,
+        }
+    except Exception as exc:
+        return {
+            "candidates": {},
+            "diagnostics": {
+                "status": "error",
+                "blockers": [
+                    "runtime_candidate_batch_failed",
+                ],
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+                "single_terminal_event_load": True,
+                "production_authority": False,
+                "production_authority_changed": False,
+            },
+        }
+
+
+def _side_context(
+    matchup: Dict[str, Any],
+    side: str,
+    session: Session,
+    season: int,
+    game_date: Any,
+    pitcher_matchup_profile_candidates: Optional[
+        Dict[str, Any]
+    ] = None,
+    pitcher_matchup_profile_batch_diagnostics: Optional[
+        Dict[str, Any]
+    ] = None,
+) -> Dict[str, Any]:
     pitcher_id = matchup.get(f"{side}_pitcher_id")
-    arsenal = matchup.get(f"{side}_pitch_arsenal") or {}
-    arsenal_source = "matchup_generator" if arsenal else "missing_pitch_arsenal"
+    supplied_pitcher_features = (
+        matchup.get(f"{side}_pitcher_features")
+        or {}
+    )
+    if not isinstance(
+        supplied_pitcher_features,
+        dict,
+    ):
+        supplied_pitcher_features = {}
+
+    if pitcher_id:
+        pitcher_profile_source = (
+            source_canonical_pitcher_matchup_profile(
+                session,
+                pitcher_id=int(pitcher_id),
+                game_date=game_date,
+                matchup_features=(
+                    supplied_pitcher_features
+                ),
+            )
+        )
+        pitcher_features = (
+            pitcher_profile_source[
+                "pitcher_features"
+            ]
+        )
+        pitcher_profile_diagnostics = (
+            pitcher_profile_source[
+                "diagnostics"
+            ]
+        )
+    else:
+        pitcher_features = dict(
+            supplied_pitcher_features
+        )
+        pitcher_profile_diagnostics = {
+            "schema_version": (
+                "canonical_pitcher_matchup_"
+                "profile_source_v1"
+            ),
+            "status": "unavailable",
+            "pitcher_id": None,
+            "game_date": str(game_date),
+            "cutoff_rule": (
+                "aggregate_end_date_strictly_"
+                "before_game_date"
+            ),
+            "selected_window": None,
+            "selected_end_date": None,
+            "days_before_game": None,
+            "populated_fields": [],
+            "missing_fields": [
+                "k_pct",
+                "bb_pct",
+                "hard_hit_pct",
+                "xwoba",
+                "xba",
+            ],
+            "field_provenance": {},
+            "source_digest": None,
+            "blockers": [
+                "missing_pitcher_id",
+            ],
+        }
+
+    candidate_key = (
+        str(int(pitcher_id))
+        if pitcher_id
+        else None
+    )
+    pitcher_matchup_profile_candidate = (
+        (
+            pitcher_matchup_profile_candidates
+            or {}
+        ).get(candidate_key)
+        if candidate_key is not None
+        else None
+    )
+
+    if not isinstance(
+        pitcher_matchup_profile_candidate,
+        dict,
+    ):
+        pitcher_matchup_profile_candidate = {
+            "profile_rates": {},
+            "diagnostics": {
+                "status": "unavailable",
+                "pitcher_id": (
+                    int(pitcher_id)
+                    if pitcher_id
+                    else None
+                ),
+                "blockers": [
+                    (
+                        "runtime_candidate_unavailable"
+                        if pitcher_id
+                        else "missing_pitcher_id"
+                    ),
+                ],
+                "production_authority": False,
+                "production_authority_changed": False,
+                "activation_status": (
+                    "shadow_candidate_unavailable"
+                ),
+            },
+        }
+
+    arsenal = matchup.get(
+        f"{side}_pitch_arsenal"
+    ) or {}
+    arsenal_source = (
+        "matchup_generator"
+        if arsenal
+        else "missing_pitch_arsenal"
+    )
     if not arsenal and pitcher_id:
-        records, arsenal_season = get_pitch_arsenal_with_fallback(session, int(pitcher_id), season)
-        arsenal = _arsenal_records_to_dict(records)
-        arsenal_source = f"pitch_arsenal_fallback_{arsenal_season}" if arsenal else "missing_pitch_arsenal"
+        records, arsenal_season = (
+            get_pitch_arsenal_with_fallback(
+                session,
+                int(pitcher_id),
+                season,
+            )
+        )
+        arsenal = _arsenal_records_to_dict(
+            records
+        )
+        arsenal_source = (
+            f"pitch_arsenal_fallback_{arsenal_season}"
+            if arsenal
+            else "missing_pitch_arsenal"
+        )
+
     team_id = matchup.get(f"{side}_team_id")
-    team_name = matchup.get(f"{side}_team_name")
+    team_name = matchup.get(
+        f"{side}_team_name"
+    )
     ctx = {
         "side": side,
         "team_id": team_id,
         "team_name": team_name,
         "pitcher_id": pitcher_id,
-        "pitcher_name": matchup.get(f"{side}_pitcher_name"),
-        "pitcher_features": matchup.get(f"{side}_pitcher_features") or {},
+        "pitcher_name": matchup.get(
+            f"{side}_pitcher_name"
+        ),
+        "pitcher_features": pitcher_features,
+        "pitcher_matchup_profile_source": (
+            pitcher_profile_diagnostics
+        ),
+        "pitcher_matchup_profile_candidate": (
+            pitcher_matchup_profile_candidate
+        ),
+        "pitcher_matchup_profile_runtime_batch": (
+            dict(
+                pitcher_matchup_profile_batch_diagnostics
+                or {}
+            )
+        ),
         "pitch_arsenal": arsenal,
         "pitch_arsenal_source": arsenal_source,
         "offense_inputs": _projection_offense_inputs(
@@ -792,7 +1261,11 @@ def _side_context(matchup: Dict[str, Any], side: str, session: Session, season: 
             team_id=team_id,
             season=season,
         ),
-        "bullpen_inputs": _bullpen_inputs(session, team_id, team_name),
+        "bullpen_inputs": _bullpen_inputs(
+            session,
+            team_id,
+            team_name,
+        ),
     }
     ctx["models"] = [
         pitching_volatility_score(ctx["pitcher_features"], ctx["pitch_arsenal"]),
@@ -1753,6 +2226,25 @@ def build_model_projection_payload(
     except ValueError as exc:
         raise ValueError("date must be YYYY-MM-DD") from exc
     matchups = generate_matchups_for_date(session, target_date)
+    pitcher_matchup_profile_runtime_batch = (
+        _materialize_pitcher_matchup_profile_runtime_batch(
+            session=session,
+            matchups=matchups,
+            game_date=date_obj,
+        )
+    )
+    pitcher_matchup_profile_candidates = (
+        pitcher_matchup_profile_runtime_batch.get(
+            "candidates",
+            {},
+        )
+    )
+    pitcher_matchup_profile_batch_diagnostics = (
+        pitcher_matchup_profile_runtime_batch.get(
+            "diagnostics",
+            {},
+        )
+    )
     games: List[Dict[str, Any]] = []
     errors: List[Dict[str, Any]] = []
     pitcher_role_evidence_source_cache: Dict[
@@ -1762,8 +2254,24 @@ def build_model_projection_payload(
 
     for matchup in matchups:
         try:
-            away = _side_context(matchup, "away", session, date_obj.year)
-            home = _side_context(matchup, "home", session, date_obj.year)
+            away = _side_context(
+                matchup,
+                "away",
+                session,
+                date_obj.year,
+                date_obj,
+                pitcher_matchup_profile_candidates,
+                pitcher_matchup_profile_batch_diagnostics,
+            )
+            home = _side_context(
+                matchup,
+                "home",
+                session,
+                date_obj.year,
+                date_obj,
+                pitcher_matchup_profile_candidates,
+                pitcher_matchup_profile_batch_diagnostics,
+            )
             simulation_cards = _build_projection_simulation_cards(matchup, away, home)
             away["models"].extend(simulation_cards.get("away", []))
             home["models"].extend(simulation_cards.get("home", []))
