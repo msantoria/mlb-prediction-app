@@ -33,11 +33,13 @@ from .db_utils import (
 )
 from .pitcher_intelligence import MLB_TIMEZONE, build_pitcher_intelligence_profile
 from .pitcher_leaderboards import build_pitcher_leaderboards
+from .official_player_stats import OfficialPlayerStatsUnavailable, fetch_official_hitting_season
 
 MLB_STATS_BASE = "https://statsapi.mlb.com/api/v1"
 router = APIRouter()
 
 _LEADERBOARD_TTL_SECONDS = 3600
+_BATTER_LEADERBOARD_TTL_SECONDS = 60
 _leaderboard_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 _pitcher_leaderboard_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 _identity_cache: Dict[int, Tuple[float, Dict[str, Any]]] = {}
@@ -265,15 +267,35 @@ def player_identity(id: int) -> Dict[str, Any]:
 
 @router.get("/batters/leaderboards")
 def batters_leaderboards(season: Optional[int] = None, min_pa: int = Query(25, ge=1), min_bbe: int = Query(100, ge=1), limit: int = Query(10, ge=1, le=50)) -> Dict[str, Any]:
+    if season is None:
+        season = datetime.datetime.now(MLB_TIMEZONE).year
     cache_key = f"{season}:{min_pa}:{min_bbe}:{limit}"
     cached = _leaderboard_cache.get(cache_key)
     if cached is not None:
         cached_at, data = cached
-        if time.monotonic() - cached_at < _LEADERBOARD_TTL_SECONDS:
+        if time.monotonic() - cached_at < _BATTER_LEADERBOARD_TTL_SECONDS:
             return data
+    official_hitting: Dict[str, Any] = {}
+    official_warning: Optional[str] = None
+    try:
+        official_hitting = fetch_official_hitting_season(season)
+    except OfficialPlayerStatsUnavailable as exc:
+        official_warning = str(exc)
+
     Session = _get_session()
     with Session() as session:
-        result = get_batter_leaderboards(session, season=season, min_pa=min_pa, min_bbe=min_bbe, limit=limit)
+        result = get_batter_leaderboards(
+            session,
+            season=season,
+            min_pa=min_pa,
+            min_bbe=min_bbe,
+            limit=limit,
+            official_hitting=official_hitting,
+        )
+    if official_warning:
+        result.setdefault("warnings", []).append(
+            f"Official MLB counting stats unavailable: {official_warning}"
+        )
     _leaderboard_cache[cache_key] = (time.monotonic(), result)
     return result
 
