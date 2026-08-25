@@ -26,7 +26,9 @@ NON_AB_EVENTS = {
     "intent_walk",
     "hit_by_pitch",
     "sac_bunt",
+    "sac_bunt_double_play",
     "sac_fly",
+    "sac_fly_double_play",
     "catcher_interf",
     "catcher_interference",
 }
@@ -1374,6 +1376,7 @@ def _compute_batter_swing_sql(
         .group_by(inner.c.batter_id)
         .all()
     )
+
 
 def get_batter_leaderboards(
     session: Session,
