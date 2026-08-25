@@ -1384,87 +1384,83 @@ def get_batter_leaderboards(
     min_pa: int = 50,
     min_bbe: int = 100,
     limit: int = 10,
+    official_hitting: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     if season is None:
         season = datetime.date.today().year
 
-    # Find which season has data with a lightweight existence check
-    actual_season = season
-    s_start: Optional[datetime.date] = None
-    s_end: Optional[datetime.date] = None
-    for candidate_season in [season, season - 1]:
-        cs_start = datetime.date(candidate_season, 1, 1)
-        cs_end = datetime.date(candidate_season, 12, 31)
-        has_data = (
-            session.query(StatcastEvent.batter_id)
-            .filter(
-                StatcastEvent.game_date >= cs_start,
-                StatcastEvent.game_date <= cs_end,
-                StatcastEvent.batter_id.isnot(None),
-                StatcastEvent.events.in_(list(TERMINAL_EVENTS)),
-            )
-            .limit(1)
-            .first()
-        )
-        if has_data:
-            actual_season = candidate_season
-            s_start = cs_start
-            s_end = cs_end
-            break
+    actual_season = int(season)
+    s_start = datetime.date(actual_season, 1, 1)
+    s_end = datetime.date(actual_season, 12, 31)
 
     _all_metrics = [
-        "home_runs", "hits", "doubles", "iso",
+        "home_runs", "hits", "doubles", "rbi", "iso",
         "hard_hit_pct", "barrel_pct", "avg_exit_velocity", "max_exit_velocity",
         "bb_pct", "k_pct_avoidance", "contact_pct", "whiff_pct",
     ]
 
-    if s_start is None:
-        return {
-            "updated_at": datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
-            "source": "batter_aggregate_sql",
-            "season": season,
-            "leaderboards": {},
-            "available_metrics": [],
-            "unavailable_metrics": sorted(_all_metrics),
-            "notes": ["No StatcastEvent rows found for requested season or previous season."],
-        }
-
     name_map = _latest_batter_names(session)
     team_map = _latest_batter_teams(session, actual_season)
 
-    # Compute stats via SQL GROUP BY — no full-table-to-Python load
-    counting_rows = _compute_batter_counting_sql(session, s_start, s_end)
+    # Official counting totals and local pitch metrics intentionally have
+    # separate authorities. Never reconstruct an official season line here.
+    official_season = _safe_int((official_hitting or {}).get("season"))
+    official_rows = (
+        list((official_hitting or {}).get("rows") or [])
+        if official_season == actual_season
+        else []
+    )
     batted_ball_rows = _compute_batter_batted_ball_sql(session, s_start, s_end)
     swing_rows = _compute_batter_swing_sql(session, s_start, s_end)
 
     bb_by_batter: Dict[int, Any] = {int(row.batter_id): row for row in batted_ball_rows}
     swings_by_batter: Dict[int, Any] = {int(row.batter_id): row for row in swing_rows}
 
-    players: List[Dict[str, Any]] = []
-    for row in counting_rows:
-        batter_id = int(row.batter_id)
-        player_name = name_map.get(batter_id)
-        if not _is_real_player_name(player_name):
+    players_by_id: Dict[int, Dict[str, Any]] = {}
+    for row in official_rows:
+        batter_id = _safe_int(row.get("player_id"))
+        player_name = row.get("player_name")
+        if not batter_id or not _is_real_player_name(player_name):
             continue
+        players_by_id[batter_id] = {
+            "player_id": batter_id,
+            "player_name": player_name,
+            "team": row.get("team") or "",
+            "pa": _safe_int(row.get("pa")),
+            "ab": _safe_int(row.get("ab")),
+            "hits": _safe_int(row.get("hits")),
+            "home_runs": _safe_int(row.get("home_runs")),
+            "doubles": _safe_int(row.get("doubles")),
+            "rbi": _safe_int(row.get("rbi")),
+            "iso": row.get("iso"),
+            "k_pct": row.get("k_pct"),
+            "bb_pct": row.get("bb_pct"),
+            "counting_source": row.get("source") or "mlb_stats_api_season_hitting",
+        }
 
-        pa = int(row.pa or 0)
-        ab = int(row.ab or 0)
-        hits = int(row.hits or 0)
-        home_runs = int(row.home_runs or 0)
-        doubles = int(row.doubles or 0)
-        walks = int(row.walks or 0)
-        strikeouts = int(row.strikeouts or 0)
-        total_bases = int(row.total_bases or 0)
-
-        batting_avg = round(hits / ab, 3) if ab else None
-        slugging_pct = round(total_bases / ab, 3) if ab else None
-        iso = (
-            round(slugging_pct - batting_avg, 3)
-            if slugging_pct is not None and batting_avg is not None
-            else None
-        )
-        k_pct = round(strikeouts / pa, 3) if pa else None
-        bb_pct = round(walks / pa, 3) if pa else None
+    local_ids = set(bb_by_batter) | set(swings_by_batter)
+    for batter_id in local_ids:
+        player = players_by_id.get(batter_id)
+        if player is None:
+            player_name = name_map.get(batter_id)
+            if not _is_real_player_name(player_name):
+                continue
+            player = {
+                "player_id": batter_id,
+                "player_name": player_name,
+                "team": team_map.get(batter_id, ""),
+                "pa": None,
+                "ab": None,
+                "hits": None,
+                "home_runs": None,
+                "doubles": None,
+                "rbi": None,
+                "iso": None,
+                "k_pct": None,
+                "bb_pct": None,
+                "counting_source": None,
+            }
+            players_by_id[batter_id] = player
 
         bb = bb_by_batter.get(batter_id)
         if bb is not None:
@@ -1485,28 +1481,20 @@ def get_batter_leaderboards(
         whiff_pct = round(whiffs / swings, 3) if swings else None
         contact_pct = round(1.0 - (whiffs / swings), 3) if swings else None
 
-        players.append({
-            "player_id": batter_id,
-            "player_name": player_name,
-            "team": team_map.get(batter_id, ""),
-            "pa": pa,
-            "ab": ab,
+        player.update({
             "bbe": bbe,
-            "hits": hits,
-            "home_runs": home_runs,
-            "doubles": doubles,
-            "iso": iso,
             "hard_hit_pct": hard_hit_pct,
             "barrel_pct": barrel_pct,
             "avg_exit_velocity": avg_ev,
             "max_exit_velocity": max_ev,
-            "k_pct": k_pct,
-            "bb_pct": bb_pct,
             "swings": swings,
             "whiffs": whiffs,
             "whiff_pct": whiff_pct,
             "contact_pct": contact_pct,
+            "pitch_metrics_source": "postgres_statcast_events_canonical_pitch_identity",
         })
+
+    players = list(players_by_id.values())
 
     latest_event_date = (
         session.query(func.max(StatcastEvent.game_date))
@@ -1519,6 +1507,7 @@ def get_batter_leaderboards(
         ("home_runs", "home_runs", "pa", min_pa, True),
         ("hits", "hits", "pa", min_pa, True),
         ("doubles", "doubles", "pa", min_pa, True),
+        ("rbi", "rbi", "pa", min_pa, True),
         ("iso", "iso", "pa", max(min_pa, 100), True),
         ("hard_hit_pct", "hard_hit_pct", "bbe", min_bbe, True),
         ("barrel_pct", "barrel_pct", "bbe", min_bbe, True),
@@ -1539,21 +1528,27 @@ def get_batter_leaderboards(
     unavailable_metrics = sorted(set(_all_metrics) - set(available_metrics))
 
     notes: List[str] = [
-        "Counting stats computed via SQL GROUP BY on deduplicated terminal plate appearances.",
-        "Batted-ball stats computed via SQL GROUP BY on deduplicated pitch events.",
+        "Counting stats come from MLB's official regular-season player totals; they are never reconstructed from local pitch rows.",
+        "Batted-ball stats come from deduplicated terminal batted-ball events in the canonical pitch ledger.",
         "Swing metrics use duplicate-safe pitch identity; contact% is 1 - whiffs/swings.",
-        "RBI is intentionally unavailable because the local Statcast schema does not store runner scoring attribution.",
+        "Official and pitch-derived rows are joined only by MLB player ID.",
     ]
-    if actual_season != season:
-        notes.append(f"No rows found for {season}; leaderboards fell back to {actual_season}.")
+    if not official_rows:
+        notes.append("Official MLB season totals are unavailable; counting and rate boards are intentionally omitted rather than replaced with reconstructed values.")
     if not players:
         notes.append("No leaderboard rows had resolvable real player names.")
 
     return {
         "updated_at": datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
-        "source": "batter_aggregate_sql",
+        "source": "official_mlb_counting_plus_canonical_statcast_pitch_metrics",
         "season": actual_season,
         "latest_event_date": latest_event_date.isoformat() if latest_event_date else None,
+        "official_stats_retrieved_at": (official_hitting or {}).get("retrieved_at"),
+        "sources": {
+            "counting": (official_hitting or {}).get("source"),
+            "pitch_metrics": "postgres_statcast_events_canonical_pitch_identity",
+        },
+        "contract_version": "batter_leaderboards_v3",
         "minimums": {"min_pa": min_pa, "min_bbe": min_bbe, "limit": limit},
         "leaderboards": leaderboards,
         "available_metrics": available_metrics,

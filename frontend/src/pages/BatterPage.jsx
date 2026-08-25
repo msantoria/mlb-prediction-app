@@ -146,6 +146,7 @@ const LB_CONFIG = [
   { key: 'home_runs', title: 'Home Runs', fmt: v => `${Math.round(v)}`, color: C.blue, group: 'Counting' },
   { key: 'hits', title: 'Hits', fmt: v => `${Math.round(v)}`, color: C.green, group: 'Counting' },
   { key: 'doubles', title: 'Doubles (2B)', fmt: v => `${Math.round(v)}`, color: C.teal, group: 'Counting' },
+  { key: 'rbi', title: 'RBI', fmt: v => `${Math.round(v)}`, color: C.purple, group: 'Counting' },
   { key: 'avg_exit_velocity', title: 'Avg Exit Velocity', fmt: v => `${v.toFixed(1)} mph`, color: C.orange, group: 'Statcast' },
   { key: 'hard_hit_pct', title: 'Hard Hit %', fmt: v => `${(v * 100).toFixed(1)}%`, color: C.orange, group: 'Statcast' },
   { key: 'barrel_pct', title: 'Barrel %', fmt: v => `${(v * 100).toFixed(1)}%`, color: C.red, group: 'Statcast' },
@@ -262,7 +263,7 @@ function LeaderboardDashboard({ data, loading }) {
         <div>
           <h1 style={{ fontSize: '24px', fontWeight: '700', color: C.text, margin: 0 }}>Batter Leaderboards</h1>
           <div style={{ fontSize: '13px', color: C.muted, marginTop: '6px' }}>
-            Daily Top 10 batter leaderboards built from canonical plate appearances, batted-ball events, and pitches.
+            Official MLB season totals joined to canonical Statcast pitch metrics by MLB player ID.
           </div>
         </div>
         <div style={{ fontSize: '13px', color: C.muted, textAlign: 'right' }}>
@@ -509,7 +510,7 @@ export default function BatterPage() {
     setLbLoading(true)
     setLbError(null)
 
-    fetch(`${API}/batters/leaderboards?contract=batter_leaderboards_v2`)
+    fetch(`${API}/batters/leaderboards?contract=batter_leaderboards_v3`)
       .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(e.detail || r.statusText)))
       .then(d => {
         if (cancelled) return
