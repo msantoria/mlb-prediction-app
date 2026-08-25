@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { buildReportCsv, csvEscape, formatEasternDateTime, mlbDateIso, safeFilenamePart } from './dashboardReportUtils.mjs'
+import { buildReportCsv, collectPaginatedRows, csvEscape, formatEasternDateTime, mlbDateIso, safeFilenamePart } from './dashboardReportUtils.mjs'
 
 test('mlbDateIso uses the MLB Eastern business date instead of UTC', () => {
   assert.equal(mlbDateIso(new Date('2026-07-14T02:30:00.000Z')), '2026-07-13')
@@ -28,6 +28,44 @@ test('buildReportCsv exports visible columns in their current order', () => {
     getValue: (row, accessor) => accessor === 'metrics.xwOBA' ? row.metrics.xwOBA : row[accessor],
   })
   assert.equal(csv, 'Name,xwOBA\r\n"Player, One",0.412')
+})
+
+test('collectPaginatedRows exports every records page in server order', async () => {
+  const pagesRequested = []
+  const rows = await collectPaginatedRows(async pageNumber => {
+    pagesRequested.push(pageNumber)
+    const records = pageNumber === 1
+      ? [{ id: 1 }, { id: 2 }]
+      : pageNumber === 2
+        ? [{ id: 3 }, { id: 4 }]
+        : [{ id: 5 }]
+    return {
+      records,
+      totalSize: 5,
+      page_info: { has_next_page: pageNumber < 3 },
+    }
+  })
+
+  assert.deepEqual(pagesRequested, [1, 2, 3])
+  assert.deepEqual(rows.map(row => row.id), [1, 2, 3, 4, 5])
+})
+
+test('collectPaginatedRows supports legacy item pages and fails on an incomplete empty page', async () => {
+  const legacyRows = await collectPaginatedRows(async pageNumber => ({
+    items: pageNumber === 1 ? [{ id: 'a' }] : [{ id: 'b' }],
+    totalSize: 2,
+    page_info: { has_next: pageNumber === 1 },
+  }))
+  assert.deepEqual(legacyRows.map(row => row.id), ['a', 'b'])
+
+  await assert.rejects(
+    collectPaginatedRows(async pageNumber => ({
+      records: pageNumber === 1 ? [{ id: 1 }] : [],
+      totalSize: 2,
+      page_info: { has_next_page: true },
+    })),
+    /before every matching row/,
+  )
 })
 
 test('safeFilenamePart produces portable filenames', () => {
