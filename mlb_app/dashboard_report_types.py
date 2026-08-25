@@ -620,6 +620,20 @@ COMPETITIVE_ARSENAL_FIELDS.extend([
     },
     {
         **_field(
+            "opposing_pitcher_name",
+            "Opposing Pitcher Name",
+            "string",
+            "Matchup",
+            operators=["eq", "neq", "contains", "in"],
+            description="Current opposing pitcher name resolved from the canonical player directory record.",
+            freshness="canonical",
+            source_object="dashboard_players",
+        ),
+        "field_directory": "canonical_player_directory",
+        "relationship_path": "opposing_pitcher",
+    },
+    {
+        **_field(
             "opposing_team_name",
             "Opposing Team Name",
             "string",

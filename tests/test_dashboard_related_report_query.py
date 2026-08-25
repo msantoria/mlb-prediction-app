@@ -144,6 +144,7 @@ def test_competitive_batter_arsenal_is_the_registered_matchup_object_and_support
     assert fastball["pitcher_pitch_name"] == "Four-Seam Fastball"
     assert fastball["pitcher_usage_pct"] == pytest.approx(0.5)
     assert fastball["team_name"] == "Chicago Cubs"
+    assert fastball["opposing_pitcher_name"] == "Opponent Arm"
     assert fastball["opposing_team_name"] == "St. Louis Cardinals"
     assert fastball["edge_score"] is not None
     assert fastball["matchup_confidence"] is not None
@@ -163,6 +164,7 @@ def test_competitive_batter_arsenal_is_the_registered_matchup_object_and_support
         for field in describe_report_type("competitive_batter_arsenal")["fields"]
     }
     assert fields["team_name"]["relationship_path"] == "batter.current_team"
+    assert fields["opposing_pitcher_name"]["relationship_path"] == "opposing_pitcher"
     assert (
         fields["opposing_team_name"]["relationship_path"]
         == "opposing_pitcher.current_team"

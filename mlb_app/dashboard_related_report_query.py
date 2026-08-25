@@ -40,7 +40,7 @@ COLUMN_NAMES = {
     ),
     "competitive_batter_arsenal": (
         "id", "batter_id", "batter_name", "batter_team_id", "opposing_pitcher_id",
-        "team_name", "opposing_team_name",
+        "team_name", "opposing_pitcher_name", "opposing_team_name",
         "pitch_type", "game_pk", "target_date", "date_end", "pitches_seen", "pa_ended",
         "xwoba", "xba", "avg_exit_velocity", "avg_launch_angle", "hard_hit_pct",
         "whiff_pct", "k_pct", "source", "refreshed_at", "pitcher_pitch_name",
@@ -94,6 +94,7 @@ def _columns(report_type: str) -> Dict[str, Any]:
         }
         columns.update({
             "team_name": BATTER_DIRECTORY.current_team_name,
+            "opposing_pitcher_name": OPPOSING_PITCHER_DIRECTORY.full_name,
             "opposing_team_name": OPPOSING_PITCHER_DIRECTORY.current_team_name,
             "pitcher_pitch_name": PitchArsenal.pitch_name,
             "pitcher_pitch_count": PitchArsenal.pitch_count,
