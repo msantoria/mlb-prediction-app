@@ -56,6 +56,15 @@ test('all-row CSV downloads use one authenticated streaming request', () => {
   assert.doesNotMatch(studioSource, /collectPaginatedRows/)
 })
 
+test('saved reports expose an authenticated report subscription toggle', () => {
+  assert.match(workspaceSource, /Save report to subscribe/)
+  assert.match(workspaceSource, /Subscribe to report/)
+  assert.match(workspaceSource, /Subscribed ✓/)
+  assert.match(workspaceSource, /\/my-dashboard\/items\/\$\{savedReportId\}\/subscription/)
+  assert.match(workspaceSource, /JSON\.stringify\(\{ enabled: !subscription\?\.enabled \}\)/)
+  assert.match(workspaceSource, /setReportSavedItemId\(item\.id\)/)
+})
+
 test('the workspace preserves the approved type system and responsive breakpoints', () => {
   assert.match(workspaceSource, /Franklin Gothic/)
   assert.match(workspaceSource, /Century Gothic/)

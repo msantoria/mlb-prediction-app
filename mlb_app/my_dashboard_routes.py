@@ -18,7 +18,13 @@ from .dashboard_player_report_query import query_player_report
 from .dashboard_projection_report_query import query_projection_report
 from .dashboard_related_report_query import query_related_report
 from .dashboard_report_types import list_report_types
-from .database import AppFeatureFlag, create_tables, get_engine, get_session
+from .database import (
+    AppFeatureFlag,
+    AppReportSubscription,
+    create_tables,
+    get_engine,
+    get_session,
+)
 from .my_dashboard_context_cache import install_dashboard_context_cache
 from .my_dashboard_dataset_runtime import mlb_business_date, run_dataset_query, should_use_dataset_query
 from .my_dashboard_observability import (
@@ -36,6 +42,13 @@ from .my_dashboard_report_query import (
 )
 from .player_trends import query_player_trends, supported_trend_configuration
 from .report_csv import safe_csv_filename, stream_paginated_csv
+from .report_subscriptions import (
+    build_saved_report_csv,
+    default_report_executor,
+    email_delivery_configured,
+    owned_executable_report,
+    utcnow,
+)
 from .shared_payload_cache import env_ttl, get_or_set, make_cache_key, stable_hash
 from .workbench_query import execute_workbench_plan, parse_workbench_statement, queryable_objects
 
@@ -92,6 +105,12 @@ class QueryStudioRequest(BaseModel):
     page_number: int = Field(default=1, ge=1)
 
 
+class ReportSubscriptionUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+
+
 def session_factory():
     database_url = os.getenv("DATABASE_URL", "sqlite:///mlb.db")
     engine = get_engine(database_url)
@@ -101,6 +120,29 @@ def session_factory():
 
 def _yesterday_iso() -> str:
     return (mlb_business_date() - dt.timedelta(days=1)).isoformat()
+
+
+def _serialize_report_subscription(
+    subscription: Optional[AppReportSubscription],
+    *,
+    item_id: int,
+    recipient_email: str,
+) -> Dict[str, Any]:
+    return {
+        "saved_report_id": item_id,
+        "enabled": bool(subscription and subscription.enabled),
+        "recipient_email": recipient_email,
+        "delivery_configured": email_delivery_configured(),
+        "last_checked_at": (
+            subscription.last_checked_at.isoformat() + "Z"
+            if subscription and subscription.last_checked_at else None
+        ),
+        "last_sent_at": (
+            subscription.last_sent_at.isoformat() + "Z"
+            if subscription and subscription.last_sent_at else None
+        ),
+        "last_error": subscription.last_error if subscription else None,
+    }
 
 
 @router.get("/my-dashboard/health")
@@ -456,6 +498,95 @@ def my_dashboard_report_export(
             "X-Report-Row-Count": str(first_result.get("totalSize") or 0),
         },
     )
+
+
+@router.get("/my-dashboard/items/{item_id}/subscription")
+def my_dashboard_report_subscription_get(
+    item_id: int,
+    principal: DashboardPrincipal = Depends(require_capability("dashboard.reports.manage")),
+) -> Dict[str, Any]:
+    factory = session_factory()
+    with factory() as session:
+        try:
+            owned_executable_report(session, principal.user_id, item_id)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        subscription = session.query(AppReportSubscription).filter(
+            AppReportSubscription.user_id == principal.user_id,
+            AppReportSubscription.dashboard_item_id == item_id,
+        ).first()
+        return _serialize_report_subscription(
+            subscription,
+            item_id=item_id,
+            recipient_email=principal.email,
+        )
+
+
+@router.put("/my-dashboard/items/{item_id}/subscription")
+def my_dashboard_report_subscription_update(
+    item_id: int,
+    payload: ReportSubscriptionUpdate,
+    principal: DashboardPrincipal = Depends(require_capability("dashboard.reports.manage")),
+) -> Dict[str, Any]:
+    if payload.enabled and not email_delivery_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Report email delivery is not configured",
+        )
+
+    factory = session_factory()
+    with factory() as session:
+        try:
+            item = owned_executable_report(session, principal.user_id, item_id)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        subscription = session.query(AppReportSubscription).filter(
+            AppReportSubscription.user_id == principal.user_id,
+            AppReportSubscription.dashboard_item_id == item_id,
+        ).first()
+        now = utcnow()
+        if not payload.enabled:
+            if subscription is not None:
+                subscription.enabled = False
+                subscription.last_error = None
+                subscription.updated_at = now
+                session.commit()
+            return _serialize_report_subscription(
+                subscription,
+                item_id=item_id,
+                recipient_email=principal.email,
+            )
+
+        snapshot = build_saved_report_csv(
+            item,
+            default_report_executor,
+        )
+        if subscription is None:
+            subscription = AppReportSubscription(
+                user_id=principal.user_id,
+                dashboard_item_id=item_id,
+                enabled=True,
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(subscription)
+        subscription.enabled = True
+        subscription.last_fingerprint = snapshot.fingerprint
+        subscription.last_checked_at = now
+        subscription.last_error = None
+        subscription.updated_at = now
+        session.commit()
+        session.refresh(subscription)
+        return _serialize_report_subscription(
+            subscription,
+            item_id=item_id,
+            recipient_email=principal.email,
+        )
 
 
 @router.get("/my-dashboard/solver")

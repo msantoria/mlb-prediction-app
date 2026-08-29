@@ -699,6 +699,36 @@ class AppDashboardItem(Base):
     )
 
 
+class AppReportSubscription(Base):
+    """Delivery state for one user's saved MyDashboard report."""
+
+    __tablename__ = "app_report_subscriptions"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    user_id: int = Column(Integer, nullable=False, index=True)
+    dashboard_item_id: int = Column(Integer, nullable=False, index=True)
+    enabled: bool = Column(Boolean, nullable=False, default=True, index=True)
+    last_fingerprint: Optional[str] = Column(String(64), nullable=True)
+    last_checked_at: Optional[datetime] = Column(DateTime, nullable=True)
+    last_sent_at: Optional[datetime] = Column(DateTime, nullable=True)
+    last_error: Optional[str] = Column(Text, nullable=True)
+    created_at: datetime = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: datetime = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "dashboard_item_id",
+            name="uq_app_report_subscriptions_user_item",
+        ),
+        Index(
+            "ix_app_report_subscriptions_enabled_item",
+            "enabled",
+            "dashboard_item_id",
+        ),
+    )
+
+
 class AppSession(Base):
     __tablename__ = "app_sessions"
 

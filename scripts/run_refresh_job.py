@@ -387,6 +387,19 @@ def _run_canonical_dashboard_refresh() -> None:
         f"model_score_coverage="
         f"{hitter_coverage.get('fields', {}).get('model_score', {}).get('coverage')}"
     )
+    try:
+        from mlb_app.report_subscriptions import dispatch_report_subscriptions
+
+        subscription_summary = dispatch_report_subscriptions(factory)
+        _log(
+            "Saved-report subscription check completed: "
+            + ", ".join(
+                f"{key}={value}" for key, value in subscription_summary.items()
+            )
+        )
+    except Exception as exc:
+        # Email delivery must never turn a successful canonical refresh into a failed refresh.
+        _log(f"Saved-report subscription check failed: {exc}")
 
 
 def _load_targets() -> list[tuple[str, str]]:
