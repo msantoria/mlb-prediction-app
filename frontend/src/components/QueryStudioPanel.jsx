@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 
-import { buildReportCsv, collectPaginatedRows, safeFilenamePart } from '../lib/dashboardReportUtils.mjs'
+import { safeFilenamePart } from '../lib/dashboardReportUtils.mjs'
 import {
   QUERY_STUDIO_EXAMPLE,
   queryStudioColumns,
@@ -9,7 +9,7 @@ import {
   queryStudioRows,
   queryStudioSavePayload,
 } from '../lib/dashboardQueryStudioState.mjs'
-import { dashboardApi } from '../lib/dashboardSession.mjs'
+import { dashboardApi, dashboardDownload } from '../lib/dashboardSession.mjs'
 
 const FRANKLIN = '"Franklin Gothic Medium", "Franklin Gothic", "Arial Narrow", Arial, sans-serif'
 const CENTURY = '"Century Gothic", CenturyGothic, AppleGothic, Arial, sans-serif'
@@ -21,8 +21,10 @@ function display(value) {
   return typeof value === 'object' ? JSON.stringify(value) : String(value)
 }
 
-function download(filename, contents) {
-  const blob = new Blob([contents], { type: 'text/csv;charset=utf-8' })
+async function downloadResponse(response, fallbackFilename) {
+  const disposition = response.headers.get('content-disposition') || ''
+  const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || fallbackFilename
+  const blob = await response.blob()
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
@@ -164,14 +166,12 @@ export default function QueryStudioPanel({
     setError('')
     try {
       const exportStatement = executedStatement || statement
-      const exportRows = await collectPaginatedRows(page => dashboardApi('/my-dashboard/query-studio/execute', {
+      const response = await dashboardDownload('/my-dashboard/query-studio/export.csv', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ statement: exportStatement, page_number: page }),
-      }))
-      const fieldMap = Object.fromEntries(columns.map(accessor => [accessor, { accessor, label: fieldLabels[accessor] || accessor }]))
-      const csv = buildReportCsv({ columns, rows: exportRows, fieldMap, getValue: (row, accessor) => row?.[accessor] })
-      download(`${safeFilenamePart(result?.report_type || 'query-studio')}-all-rows.csv`, csv)
+        body: JSON.stringify({ statement: exportStatement, page_number: 1 }),
+      })
+      await downloadResponse(response, `${safeFilenamePart(result?.report_type || 'query-studio')}-all-rows.csv`)
     } catch (err) {
       setError(err.message || 'Unable to export every Query Studio row.')
     } finally {

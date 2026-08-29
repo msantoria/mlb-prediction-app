@@ -6,6 +6,7 @@ import {
   DashboardApiError,
   adminAccessState,
   dashboardApi,
+  dashboardDownload,
   dashboardApiUrl,
   hasDashboardCapability,
   readDashboardSessionToken,
@@ -99,6 +100,58 @@ test('dashboard profile clears a stale compatibility token when no session resol
     storage,
     apiBase: 'https://api.example.test',
   })
+  assert.equal(readDashboardSessionToken(storage), '')
+})
+
+test('dashboard download returns the streaming response with the active session', async () => {
+  const storage = memoryStorage({ [DASHBOARD_SESSION_STORAGE_KEY]: 'download-token' })
+  let request = null
+  const response = {
+    ok: true,
+    status: 200,
+    headers: new Map([['content-type', 'text/csv; charset=utf-8']]),
+    async blob() { return new Blob(['Name\r\nPlayer One\r\n'], { type: 'text/csv' }) },
+  }
+  const fetchImpl = async (url, options) => {
+    request = { url, options }
+    return response
+  }
+
+  const result = await dashboardDownload('/my-dashboard/reports/export.csv', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{"report_type":"all_active_hitters"}',
+  }, {
+    fetchImpl,
+    storage,
+    apiBase: 'https://api.example.test',
+  })
+
+  assert.equal(result, response)
+  assert.equal(request.url, 'https://api.example.test/my-dashboard/reports/export.csv')
+  assert.equal(request.options.credentials, 'include')
+  assert.equal(request.options.cache, 'no-store')
+  assert.equal(request.options.headers['X-Dashboard-Session'], 'download-token')
+})
+
+test('dashboard download clears rejected sessions and reports JSON errors', async () => {
+  const storage = memoryStorage({ [DASHBOARD_SESSION_STORAGE_KEY]: 'rejected-download-token' })
+  const fetchImpl = async () => ({
+    ok: false,
+    status: 401,
+    async json() { return { detail: 'Dashboard sign-in required' } },
+  })
+
+  await assert.rejects(
+    dashboardDownload('/my-dashboard/reports/export.csv', { method: 'POST' }, {
+      fetchImpl,
+      storage,
+      apiBase: 'https://api.example.test',
+    }),
+    error => error instanceof DashboardApiError
+      && error.status === 401
+      && error.message === 'Dashboard sign-in required',
+  )
   assert.equal(readDashboardSessionToken(storage), '')
 })
 

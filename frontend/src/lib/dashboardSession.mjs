@@ -75,6 +75,36 @@ export async function dashboardApi(
   return json
 }
 
+export async function dashboardDownload(
+  path,
+  options = {},
+  {
+    fetchImpl = globalThis.fetch,
+    storage = browserStorage(),
+    apiBase = API_BASE,
+  } = {},
+) {
+  const headers = { ...(options.headers || {}) }
+  const token = readDashboardSessionToken(storage)
+  if (token) headers['X-Dashboard-Session'] = token
+  const response = await fetchImpl(dashboardApiUrl(path, apiBase), {
+    credentials: 'include',
+    cache: 'no-store',
+    ...options,
+    headers,
+  })
+  if (response.status === 401) writeDashboardSessionToken('', storage)
+  if (!response.ok) {
+    const json = await response.json().catch(() => ({}))
+    throw new DashboardApiError(
+      errorDetail(json, `${response.status} request failed`),
+      response.status,
+      json,
+    )
+  }
+  return response
+}
+
 export async function logoutDashboardSession(dependencies) {
   try {
     return await dashboardApi('/my-dashboard/auth/logout', { method: 'POST' }, dependencies)

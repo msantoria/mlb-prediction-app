@@ -3,12 +3,14 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 const appSource = readFileSync(new URL('../App.jsx', import.meta.url), 'utf8')
+const routeSource = readFileSync(new URL('../pages/MyDashboardReportBuilderRoute.jsx', import.meta.url), 'utf8')
 const workspaceSource = readFileSync(new URL('../pages/MyDashboardReportBuilderPage.jsx', import.meta.url), 'utf8')
 const studioSource = readFileSync(new URL('../components/QueryStudioPanel.jsx', import.meta.url), 'utf8')
 const adminSource = readFileSync(new URL('../pages/AdminControlCenterPage.jsx', import.meta.url), 'utf8')
 
 test('/my-dashboard resolves to the current Report Builder workspace', () => {
-  assert.match(appSource, /path="\/my-dashboard" element={<MyDashboardReportBuilderPage\s*\/>}/)
+  assert.match(appSource, /path="\/my-dashboard" element={<MyDashboardReportBuilderRoute\s*\/>}/)
+  assert.match(routeSource, /<MyDashboardReportBuilderPage\s*\/>/)
   assert.doesNotMatch(appSource, /MyDashboardWorkbenchPage/)
 })
 
@@ -45,6 +47,13 @@ test('Query Studio visibility is capability-derived and the server remains the e
   assert.match(studioSource, /dashboardApi\(path/)
   assert.match(studioSource, /Normalized request and bindings/)
   assert.match(studioSource, /event\.(metaKey|ctrlKey)/)
+})
+
+test('all-row CSV downloads use one authenticated streaming request', () => {
+  assert.match(workspaceSource, /dashboardDownload\('\/my-dashboard\/reports\/export\.csv'/)
+  assert.match(studioSource, /dashboardDownload\('\/my-dashboard\/query-studio\/export\.csv'/)
+  assert.doesNotMatch(workspaceSource, /collectPaginatedRows/)
+  assert.doesNotMatch(studioSource, /collectPaginatedRows/)
 })
 
 test('the workspace preserves the approved type system and responsive breakpoints', () => {
