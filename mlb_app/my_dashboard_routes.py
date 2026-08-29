@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+from dataclasses import replace
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from . import my_dashboard_solver as dashboard_solver
@@ -33,6 +35,7 @@ from .my_dashboard_report_query import (
     install_full_result_finalizer,
 )
 from .player_trends import query_player_trends, supported_trend_configuration
+from .report_csv import safe_csv_filename, stream_paginated_csv
 from .shared_payload_cache import env_ttl, get_or_set, make_cache_key, stable_hash
 from .workbench_query import execute_workbench_plan, parse_workbench_statement, queryable_objects
 
@@ -218,6 +221,43 @@ def my_dashboard_query_studio_execute(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.post("/my-dashboard/query-studio/export.csv")
+def my_dashboard_query_studio_export(
+    request: QueryStudioRequest,
+    principal: DashboardPrincipal = Depends(require_capability("dashboard.export")),
+) -> StreamingResponse:
+    if not principal.has_capability("workbench.advanced"):
+        raise HTTPException(status_code=403, detail="Advanced Query Studio access required")
+    try:
+        plan = replace(parse_workbench_statement(request.statement), page_size=MAX_PAGE_SIZE)
+        factory = session_factory()
+
+        def fetch_page(page_number: int) -> Dict[str, Any]:
+            with factory() as session:
+                _require_query_studio_enabled(session, principal)
+                return execute_workbench_plan(session, plan, page_number=page_number)
+
+        first_result = fetch_page(1)
+        filename = f"{safe_csv_filename(plan.logical_object)}-all-rows.csv"
+        return StreamingResponse(
+            stream_paginated_csv(
+                first_result,
+                fetch_page,
+                selected_fields=plan.selected_fields,
+            ),
+            media_type="text/csv; charset=utf-8",
+            headers={
+                "Cache-Control": "no-store",
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "X-Report-Row-Count": str(first_result.get("totalSize") or 0),
+            },
+        )
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/my-dashboard/canonical/status")
 def my_dashboard_canonical_status() -> Dict[str, Any]:
     factory = session_factory()
@@ -380,6 +420,42 @@ def my_dashboard_player_report_query(payload: DashboardPlayerReportRequest) -> D
             return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/my-dashboard/reports/export.csv")
+def my_dashboard_report_export(
+    payload: DashboardPlayerReportRequest,
+    _principal: DashboardPrincipal = Depends(require_capability("dashboard.export")),
+) -> StreamingResponse:
+    """Stream every matching report row without browser-side page collection."""
+
+    export_payload = payload.model_copy(update={
+        "page_number": 1,
+        "page_size": MAX_PAGE_SIZE,
+        "include_metadata": True,
+    })
+    first_result = my_dashboard_player_report_query(export_payload)
+
+    def fetch_page(page_number: int) -> Dict[str, Any]:
+        return my_dashboard_player_report_query(
+            export_payload.model_copy(update={"page_number": page_number})
+        )
+
+    date_part = (payload.as_of_date or mlb_business_date()).isoformat()
+    filename = f"{safe_csv_filename(payload.report_type)}-{date_part}-all-rows.csv"
+    return StreamingResponse(
+        stream_paginated_csv(
+            first_result,
+            fetch_page,
+            selected_fields=payload.selected_fields,
+        ),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Report-Row-Count": str(first_result.get("totalSize") or 0),
+        },
+    )
 
 
 @router.get("/my-dashboard/solver")
