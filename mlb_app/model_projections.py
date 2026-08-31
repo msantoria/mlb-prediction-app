@@ -559,7 +559,51 @@ def _matchup_workspace_analysis(offense_team: Dict[str, Any], opposing_pitcher: 
     }
 
 
-def _build_projection_simulation_cards(matchup: Dict[str, Any], away: Dict[str, Any], home: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
+def _pitcher_profile_overlay_payloads_by_pitcher_id(
+    *,
+    away_pitcher_id: Any,
+    home_pitcher_id: Any,
+    away_vs_home_activation: Dict[str, Any],
+    away_vs_home_comparison: Dict[str, Any],
+    home_vs_away_activation: Dict[str, Any],
+    home_vs_away_comparison: Dict[str, Any],
+) -> Dict[str, Dict[str, Any]]:
+    """Map activated side comparisons to their opposing starter IDs."""
+
+    payloads: Dict[str, Dict[str, Any]] = {}
+
+    for pitcher_id, activation, comparison in (
+        (
+            home_pitcher_id,
+            away_vs_home_activation,
+            away_vs_home_comparison,
+        ),
+        (
+            away_pitcher_id,
+            home_vs_away_activation,
+            home_vs_away_comparison,
+        ),
+    ):
+        if (
+            pitcher_id in (None, "")
+            or isinstance(pitcher_id, bool)
+            or activation.get("activated") is not True
+        ):
+            continue
+
+        payloads[str(pitcher_id)] = {
+            "activation": activation,
+            "comparison": comparison,
+        }
+
+    return payloads
+
+
+def _build_projection_simulation_cards(
+    matchup: Dict[str, Any],
+    away: Dict[str, Any],
+    home: Dict[str, Any],
+) -> Dict[str, Any]:
     away_team_id = away.get("team_id")
     home_team_id = home.get("team_id")
     away_team_name = away.get("team_name")
@@ -688,6 +732,25 @@ def _build_projection_simulation_cards(matchup: Dict[str, Any], away: Dict[str, 
             ),
         )
     )
+    pitcher_profile_overlay_payloads = (
+        _pitcher_profile_overlay_payloads_by_pitcher_id(
+            away_pitcher_id=away.get("pitcher_id"),
+            home_pitcher_id=home.get("pitcher_id"),
+            away_vs_home_activation=(
+                away_vs_home_pitcher_profile_activation
+            ),
+            away_vs_home_comparison=(
+                away_vs_home_pitcher_profile_shadow
+            ),
+            home_vs_away_activation=(
+                home_vs_away_pitcher_profile_activation
+            ),
+            home_vs_away_comparison=(
+                home_vs_away_pitcher_profile_shadow
+            ),
+        )
+    )
+
     away_vs_home_starter_pa = (
         away_vs_home_pitcher_profile_activation[
             "model"
@@ -929,7 +992,14 @@ def _build_projection_simulation_cards(matchup: Dict[str, Any], away: Dict[str, 
         },
     }
 
-    return {"away": [away_card, game_total_card], "home": [home_card], "workspace": workspace}
+    return {
+        "away": [away_card, game_total_card],
+        "home": [home_card],
+        "workspace": workspace,
+        "_pitcher_profile_overlay_payloads_by_pitcher_id": (
+            pitcher_profile_overlay_payloads
+        ),
+    }
 
 
 def _projection_offense_inputs(
@@ -2272,10 +2342,30 @@ def build_model_projection_payload(
                 pitcher_matchup_profile_candidates,
                 pitcher_matchup_profile_batch_diagnostics,
             )
-            simulation_cards = _build_projection_simulation_cards(matchup, away, home)
-            away["models"].extend(simulation_cards.get("away", []))
-            home["models"].extend(simulation_cards.get("home", []))
-            workspace = simulation_cards.get("workspace") or {}
+            simulation_cards = (
+                _build_projection_simulation_cards(
+                    matchup,
+                    away,
+                    home,
+                )
+            )
+            away["models"].extend(
+                simulation_cards.get("away", [])
+            )
+            home["models"].extend(
+                simulation_cards.get("home", [])
+            )
+            workspace = (
+                simulation_cards.get("workspace")
+                or {}
+            )
+            pitcher_profile_overlay_payloads = (
+                simulation_cards.get(
+                    "_pitcher_profile_overlay_"
+                    "payloads_by_pitcher_id"
+                )
+                or {}
+            )
 
             game_pk = (
                 matchup.get("game_pk")
@@ -2569,6 +2659,9 @@ def build_model_projection_payload(
                     bootstrap_ready=bool(
                         canonical_shadow_bootstrap_readiness
                         .get("ready")
+                    ),
+                    pitcher_matchup_profile_activation_payloads_by_pitcher_id=(
+                        pitcher_profile_overlay_payloads
                     ),
                     pitcher_usage_evidence_by_id=(
                         canonical_pitcher_usage_evidence

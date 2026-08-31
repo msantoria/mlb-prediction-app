@@ -1701,3 +1701,106 @@ def test_starter_exit_is_dynamic_with_performance_and_workload():
         audit["production_authority_changed"]
         is False
     )
+
+
+def pitcher_profile_activation_payload():
+    production = {
+        "out": 0.65,
+        "single": 0.15,
+        "double": 0.05,
+        "triple": 0.01,
+        "home_run": 0.04,
+        "walk": 0.07,
+        "strikeout": 0.03,
+    }
+    shadow = {
+        "out": 0.05,
+        "single": 0.05,
+        "double": 0.02,
+        "triple": 0.0,
+        "home_run": 0.02,
+        "walk": 0.01,
+        "strikeout": 0.85,
+    }
+
+    return {
+        "activation": {
+            "activated": True,
+            "model": {
+                "probabilities": shadow,
+            },
+            "diagnostics": {
+                "status": "activated",
+                "activation_executed": True,
+                "activation_status": (
+                    "production_candidate_activated"
+                ),
+                "production_authority_changed": True,
+            },
+        },
+        "comparison": {
+            "status": "ready",
+            "executed": True,
+            "production_inputs_unchanged": True,
+            "production_authority_changed": False,
+            "production_probabilities": production,
+            "shadow_probabilities": shadow,
+        },
+    }
+
+
+def test_pitcher_profile_overlay_reaches_execution_inputs():
+    baseline = run(simulation_count=25)
+    activated = run(
+        simulation_count=25,
+        pitcher_matchup_profile_activation_payloads_by_pitcher_id={
+            "200": pitcher_profile_activation_payload(),
+        },
+    )
+
+    assert activated.status == "executed"
+    assert (
+        activated.pitcher_matchup_profile_overlay[
+            "overlay_applied"
+        ]
+        is True
+    )
+    assert activated.execution_inputs.provider_identity != (
+        baseline.execution_inputs.provider_identity
+    )
+    assert activated.execution_inputs.exact_artifact_digest != (
+        baseline.execution_inputs.exact_artifact_digest
+    )
+    assert activated.pitcher_matchup_profile_overlay[
+        "overlaid_matchup_count"
+    ] == 9
+
+
+def test_pitcher_profile_overlay_reaches_player_projection_trials():
+    baseline = run(simulation_count=100)
+    activated = run(
+        simulation_count=100,
+        pitcher_matchup_profile_activation_payloads_by_pitcher_id={
+            "200": pitcher_profile_activation_payload(),
+        },
+    )
+
+    baseline_payload = (
+        baseline.material.canonical_payload
+    )
+    activated_payload = (
+        activated.material.canonical_payload
+    )
+
+    assert activated_payload["batters"] != (
+        baseline_payload["batters"]
+    )
+    assert activated_payload["pitchers"] != (
+        baseline_payload["pitchers"]
+    )
+
+    diagnostics = activated.to_diagnostics()[
+        "pitcher_matchup_profile_simulation_overlay"
+    ]
+    assert diagnostics["simulation_inputs_changed"] is True
+    assert diagnostics["production_authority_changed"] is False
