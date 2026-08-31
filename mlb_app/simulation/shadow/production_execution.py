@@ -51,6 +51,9 @@ from .probability_provider_discovery import (
 from .hitter_profile_simulation_shadow_overlay import (
     build_hitter_profile_simulation_shadow_overlay,
 )
+from .pitcher_matchup_profile_simulation_overlay import (
+    build_pitcher_matchup_profile_simulation_overlay,
+)
 
 
 CANONICAL_PRODUCTION_SHADOW_EXECUTION_VERSION = (
@@ -73,6 +76,9 @@ class CanonicalProductionShadowExecution:
     error_type: Optional[str] = None
     error_message: Optional[str] = None
     hitter_profile_overlay: Optional[
+        Mapping[str, Any]
+    ] = None
+    pitcher_matchup_profile_overlay: Optional[
         Mapping[str, Any]
     ] = None
     execution_version: str = (
@@ -122,6 +128,19 @@ class CanonicalProductionShadowExecution:
         ):
             raise TypeError(
                 "hitter_profile_overlay must be "
+                "a mapping or None"
+            )
+
+        if (
+            self.pitcher_matchup_profile_overlay
+            is not None
+            and not isinstance(
+                self.pitcher_matchup_profile_overlay,
+                Mapping,
+            )
+        ):
+            raise TypeError(
+                "pitcher_matchup_profile_overlay must be "
                 "a mapping or None"
             )
 
@@ -203,6 +222,16 @@ class CanonicalProductionShadowExecution:
                 "hitter_profile_simulation_shadow"
             ] = dict(
                 self.hitter_profile_overlay
+            )
+
+        if (
+            self.pitcher_matchup_profile_overlay
+            is not None
+        ):
+            diagnostics[
+                "pitcher_matchup_profile_simulation_overlay"
+            ] = dict(
+                self.pitcher_matchup_profile_overlay
             )
 
         return diagnostics
@@ -326,6 +355,12 @@ def run_canonical_production_shadow(
             Mapping[str, Any],
         ]
     ] = None,
+    pitcher_matchup_profile_activation_payloads_by_pitcher_id: Optional[
+        Mapping[
+            str,
+            Mapping[str, Any],
+        ]
+    ] = None,
     pitcher_usage_evidence_by_id: Optional[
         Mapping[Any, Any]
     ] = None,
@@ -372,6 +407,7 @@ def run_canonical_production_shadow(
         )
 
     hitter_profile_overlay_diagnostics = None
+    pitcher_matchup_profile_overlay_diagnostics = None
 
     try:
         normalized_simulation_count = int(
@@ -412,6 +448,41 @@ def run_canonical_production_shadow(
                 )
             )
             hitter_profile_overlay_diagnostics = {
+                key: value
+                for key, value in overlay.items()
+                if key
+                not in {
+                    "matchup_input",
+                    "exact_artifact",
+                    "fallback_catalog",
+                }
+            }
+
+            if overlay.get("overlay_applied") is True:
+                matchup_input = overlay[
+                    "matchup_input"
+                ]
+                exact_artifact = overlay[
+                    "exact_artifact"
+                ]
+                fallback_catalog = overlay[
+                    "fallback_catalog"
+                ]
+
+        if (
+            pitcher_matchup_profile_activation_payloads_by_pitcher_id
+        ):
+            overlay = (
+                build_pitcher_matchup_profile_simulation_overlay(
+                    matchup_input=matchup_input,
+                    exact_artifact=exact_artifact,
+                    fallback_catalog=fallback_catalog,
+                    activation_payloads_by_pitcher_id=(
+                        pitcher_matchup_profile_activation_payloads_by_pitcher_id
+                    ),
+                )
+            )
+            pitcher_matchup_profile_overlay_diagnostics = {
                 key: value
                 for key, value in overlay.items()
                 if key
@@ -515,6 +586,9 @@ def run_canonical_production_shadow(
             hitter_profile_overlay=(
                 hitter_profile_overlay_diagnostics
             ),
+            pitcher_matchup_profile_overlay=(
+                pitcher_matchup_profile_overlay_diagnostics
+            ),
         )
     except Exception as exc:
         return CanonicalProductionShadowExecution(
@@ -524,5 +598,8 @@ def run_canonical_production_shadow(
             error_message=str(exc),
             hitter_profile_overlay=(
                 hitter_profile_overlay_diagnostics
+            ),
+            pitcher_matchup_profile_overlay=(
+                pitcher_matchup_profile_overlay_diagnostics
             ),
         )
