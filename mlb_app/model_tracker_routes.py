@@ -385,6 +385,7 @@ def _ensure_user_active(session, user: AppUser) -> None:
 
 
 def _resolve_oauth_user(session, profile: Dict[str, str]) -> tuple[AppUser, AppUserPreference]:
+    prefs: Optional[AppUserPreference] = None
     identity = (
         session.query(AppOAuthIdentity)
         .filter(
@@ -442,7 +443,8 @@ def _resolve_oauth_user(session, profile: Dict[str, str]) -> tuple[AppUser, AppU
         )
         session.add(identity)
 
-    prefs = session.query(AppUserPreference).filter(AppUserPreference.user_id == user.id).first()
+    if prefs is None:
+        prefs = session.query(AppUserPreference).filter(AppUserPreference.user_id == user.id).first()
     if prefs is None:
         now = _utcnow()
         prefs = AppUserPreference(
