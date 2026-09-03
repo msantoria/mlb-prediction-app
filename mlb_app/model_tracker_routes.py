@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import quote, urlencode
 
 import requests
-from fastapi import APIRouter, Cookie, Header, HTTPException, Query, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Cookie, Header, HTTPException, Query, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -413,6 +413,16 @@ def _resolve_oauth_user(session, profile: Dict[str, str]) -> tuple[AppUser, AppU
         if user is None:
             raise HTTPException(status_code=401, detail="OAuth account is no longer available")
         _ensure_user_active(session, user)
+        if user.email != profile["email"]:
+            email_owner = (
+                session.query(AppUser)
+                .filter(AppUser.email == profile["email"], AppUser.id != user.id)
+                .first()
+            )
+            if email_owner is not None:
+                raise HTTPException(status_code=409, detail="Verified email belongs to another account")
+            user.email = profile["email"]
+            user.updated_at = _utcnow()
         identity.provider_email = profile["email"]
         identity.updated_at = _utcnow()
     else:
@@ -503,6 +513,13 @@ def _send_password_reset_email(email: str, reset_url: str) -> None:
         if username:
             client.login(username, password)
         client.send_message(message)
+
+
+def _send_password_reset_email_safely(email: str, reset_url: str) -> None:
+    try:
+        _send_password_reset_email(email, reset_url)
+    except Exception as exc:
+        print(f"[dashboard-auth] Password reset email could not be sent: {type(exc).__name__}")
 
 
 
@@ -1049,7 +1066,7 @@ def my_dashboard_oauth_start(provider: str, request: Request):
     state = secrets.token_urlsafe(32)
     code_verifier = secrets.token_urlsafe(48)
     redirect_uri = _oauth_callback_url(request, provider)
-    authorization_url = f"{config['authorize_url']}?{urlencode({
+    authorization_params = {
         'client_id': config['client_id'],
         'redirect_uri': redirect_uri,
         'response_type': 'code',
@@ -1057,7 +1074,8 @@ def my_dashboard_oauth_start(provider: str, request: Request):
         'state': state,
         'code_challenge': _pkce_challenge(code_verifier),
         'code_challenge_method': 'S256',
-    })}"
+    }
+    authorization_url = f"{config['authorize_url']}?{urlencode(authorization_params)}"
     response = RedirectResponse(authorization_url, status_code=302)
     response.set_cookie(
         key=DASHBOARD_OAUTH_STATE_COOKIE,
@@ -1179,7 +1197,18 @@ def my_dashboard_oauth_exchange(
             raise HTTPException(status_code=400, detail="OAuth sign-in session is invalid or expired")
         _ensure_user_active(session, user)
         prefs = session.query(AppUserPreference).filter(AppUserPreference.user_id == user.id).first()
-        login_code.used_at = now
+        claimed = (
+            session.query(AppOAuthLoginCode)
+            .filter(
+                AppOAuthLoginCode.id == login_code.id,
+                AppOAuthLoginCode.used_at.is_(None),
+                AppOAuthLoginCode.expires_at > now,
+            )
+            .update({"used_at": now}, synchronize_session=False)
+        )
+        if claimed != 1:
+            session.rollback()
+            raise HTTPException(status_code=400, detail="OAuth sign-in link is invalid or expired")
         db_session.last_seen_at = now
         access = access_payload_for_user(
             session,
@@ -1203,6 +1232,7 @@ def my_dashboard_oauth_exchange(
 @router.post("/my-dashboard/auth/forgot-password")
 def my_dashboard_forgot_password(
     request: DashboardForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
 ) -> Dict[str, Any]:
     email = _normalize_email(request.email)
     if not email or "@" not in email:
@@ -1241,15 +1271,9 @@ def my_dashboard_forgot_password(
                 created_at=now,
             )
         )
-        try:
-            _send_password_reset_email(
-                user.email,
-                f"{_frontend_url()}?reset_token={quote(token)}",
-            )
-            session.commit()
-        except Exception as exc:
-            session.rollback()
-            print(f"[dashboard-auth] Password reset email could not be sent: {type(exc).__name__}")
+        reset_url = f"{_frontend_url()}?reset_token={quote(token)}"
+        session.commit()
+        background_tasks.add_task(_send_password_reset_email_safely, user.email, reset_url)
 
     return {"ok": True, "message": DASHBOARD_PASSWORD_RESET_MESSAGE}
 
@@ -1267,6 +1291,18 @@ def my_dashboard_reset_password(
             .first()
         )
         if reset is None or reset.used_at is not None or reset.expires_at <= now:
+            raise HTTPException(status_code=400, detail="Password reset link is invalid or expired")
+        claimed = (
+            session.query(AppPasswordResetToken)
+            .filter(
+                AppPasswordResetToken.id == reset.id,
+                AppPasswordResetToken.used_at.is_(None),
+                AppPasswordResetToken.expires_at > now,
+            )
+            .update({"used_at": now}, synchronize_session=False)
+        )
+        if claimed != 1:
+            session.rollback()
             raise HTTPException(status_code=400, detail="Password reset link is invalid or expired")
         user = session.query(AppUser).filter(AppUser.id == reset.user_id).first()
         if user is None:
