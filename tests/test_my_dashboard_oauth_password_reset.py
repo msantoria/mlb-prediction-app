@@ -2,7 +2,7 @@ import datetime as dt
 from urllib.parse import parse_qs, urlparse
 
 import pytest
-from fastapi import HTTPException, Response
+from fastapi import BackgroundTasks, HTTPException, Response
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -100,6 +100,7 @@ def test_oauth_verified_email_links_existing_account(auth_store):
         session.commit()
         assert user.id == user_id
         assert session.query(AppUser).count() == 1
+        assert user.email == "changed@example.com"
         assert session.query(AppOAuthIdentity).one().provider_email == "changed@example.com"
 
 
@@ -108,10 +109,14 @@ def test_password_reset_is_hashed_one_time_and_revokes_sessions(auth_store, monk
     deliveries = []
     monkeypatch.setattr(routes, "_send_password_reset_email", lambda email, url: deliveries.append((email, url)))
 
+    background_tasks = BackgroundTasks()
     requested = routes.my_dashboard_forgot_password(
-        routes.DashboardForgotPasswordRequest(email="Analyst@Example.com")
+        routes.DashboardForgotPasswordRequest(email="Analyst@Example.com"),
+        background_tasks,
     )
     assert requested == {"ok": True, "message": routes.DASHBOARD_PASSWORD_RESET_MESSAGE}
+    assert len(background_tasks.tasks) == 1
+    background_tasks.tasks[0].func(*background_tasks.tasks[0].args, **background_tasks.tasks[0].kwargs)
     assert deliveries[0][0] == "analyst@example.com"
     raw_token = parse_qs(urlparse(deliveries[0][1]).query)["reset_token"][0]
 
@@ -142,9 +147,12 @@ def test_unknown_password_reset_request_has_identical_response(auth_store, monke
     deliveries = []
     monkeypatch.setattr(routes, "_send_password_reset_email", lambda email, url: deliveries.append((email, url)))
 
+    background_tasks = BackgroundTasks()
     result = routes.my_dashboard_forgot_password(
-        routes.DashboardForgotPasswordRequest(email="missing@example.com")
+        routes.DashboardForgotPasswordRequest(email="missing@example.com"),
+        background_tasks,
     )
 
     assert result == {"ok": True, "message": routes.DASHBOARD_PASSWORD_RESET_MESSAGE}
     assert deliveries == []
+    assert background_tasks.tasks == []
