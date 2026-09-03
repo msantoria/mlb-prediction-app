@@ -7,9 +7,14 @@ import hmac
 import json
 import os
 import secrets
+import smtplib
+from email.message import EmailMessage
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote, urlencode
 
-from fastapi import APIRouter, Cookie, Header, HTTPException, Query, Response
+import requests
+from fastapi import APIRouter, Cookie, Header, HTTPException, Query, Request, Response
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from .admin_access import (
@@ -27,6 +32,9 @@ from .database import (
     AppDashboardItem,
     AppSession,
     AppLoginHistory,
+    AppOAuthIdentity,
+    AppOAuthLoginCode,
+    AppPasswordResetToken,
     AppUser,
     AppUserDirectoryProfile,
     AppUserPreference,
@@ -46,6 +54,13 @@ router = APIRouter(tags=["model-tracker", "my-dashboard"])
 
 DASHBOARD_SESSION_COOKIE = "mlb_dashboard_session"
 DASHBOARD_SESSION_HOURS = 6
+DASHBOARD_OAUTH_STATE_COOKIE = "mlb_dashboard_oauth_state"
+DASHBOARD_OAUTH_STATE_MINUTES = 10
+DASHBOARD_OAUTH_CODE_MINUTES = 2
+DASHBOARD_PASSWORD_RESET_MINUTES = 30
+DASHBOARD_PASSWORD_RESET_MESSAGE = (
+    "If an account exists for that email, a password reset link has been sent."
+)
 FEATURE_CHOICES = [
     "Matchups",
     "Daily Odds",
@@ -116,6 +131,25 @@ class DashboardLoginRequest(BaseModel):
 
     email: str
     password: str = Field(min_length=1, max_length=256)
+
+
+class DashboardOAuthExchangeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str = Field(min_length=20, max_length=512)
+
+
+class DashboardForgotPasswordRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: str
+
+
+class DashboardResetPasswordRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    token: str = Field(min_length=20, max_length=512)
+    password: str = Field(min_length=8, max_length=256)
 
 
 class DashboardItemCreateRequest(BaseModel):
@@ -224,6 +258,235 @@ def _verify_password(password: str, stored: Optional[str]) -> bool:
         return hmac.compare_digest(candidate, expected)
     except Exception:
         return False
+
+
+
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+
+def _frontend_url(path: str = "/my-dashboard") -> str:
+    base = str(os.getenv("DASHBOARD_FRONTEND_URL", "https://mlbgpt.com") or "https://mlbgpt.com").rstrip("/")
+    return f"{base}/{path.lstrip('/')}"
+
+
+
+def _oauth_provider_config(provider: str) -> Optional[Dict[str, str]]:
+    provider = str(provider or "").strip().lower()
+    definitions = {
+        "google": {
+            "client_id": os.getenv("GOOGLE_OAUTH_CLIENT_ID", ""),
+            "client_secret": os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", ""),
+            "authorize_url": "https://accounts.google.com/o/oauth2/v2/auth",
+            "token_url": "https://oauth2.googleapis.com/token",
+            "profile_url": "https://openidconnect.googleapis.com/v1/userinfo",
+            "scope": "openid email profile",
+        },
+        "github": {
+            "client_id": os.getenv("GITHUB_OAUTH_CLIENT_ID", ""),
+            "client_secret": os.getenv("GITHUB_OAUTH_CLIENT_SECRET", ""),
+            "authorize_url": "https://github.com/login/oauth/authorize",
+            "token_url": "https://github.com/login/oauth/access_token",
+            "profile_url": "https://api.github.com/user",
+            "scope": "read:user user:email",
+        },
+    }
+    config = definitions.get(provider)
+    if not config or not config["client_id"] or not config["client_secret"]:
+        return None
+    return config
+
+
+
+def _oauth_callback_url(request: Request, provider: str) -> str:
+    configured = str(os.getenv("DASHBOARD_OAUTH_CALLBACK_BASE_URL", "") or "").strip().rstrip("/")
+    base = configured or str(request.base_url).rstrip("/")
+    return f"{base}/my-dashboard/auth/oauth/{provider}/callback"
+
+
+
+def _oauth_state_cookie_settings() -> Dict[str, Any]:
+    return {
+        "httponly": True,
+        "samesite": "lax",
+        "secure": True,
+        "max_age": DASHBOARD_OAUTH_STATE_MINUTES * 60,
+        "path": "/my-dashboard/auth/oauth",
+    }
+
+
+
+def _oauth_profile(provider: str, config: Dict[str, str], code: str, redirect_uri: str) -> Dict[str, str]:
+    token_response = requests.post(
+        config["token_url"],
+        data={
+            "client_id": config["client_id"],
+            "client_secret": config["client_secret"],
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "grant_type": "authorization_code",
+        },
+        headers={"Accept": "application/json"},
+        timeout=12,
+    )
+    token_response.raise_for_status()
+    access_token = (token_response.json() or {}).get("access_token")
+    if not access_token:
+        raise ValueError("OAuth provider did not return an access token")
+
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Accept": "application/json",
+        "User-Agent": "MLBGPT",
+    }
+    profile_response = requests.get(config["profile_url"], headers=headers, timeout=12)
+    profile_response.raise_for_status()
+    profile = profile_response.json() or {}
+
+    if provider == "google":
+        email = _normalize_email(profile.get("email"))
+        if not email or profile.get("email_verified") is not True:
+            raise ValueError("Google did not return a verified email")
+        subject = str(profile.get("sub") or "")
+        username = str(profile.get("name") or email.split("@", 1)[0]).strip()
+    else:
+        emails_response = requests.get("https://api.github.com/user/emails", headers=headers, timeout=12)
+        emails_response.raise_for_status()
+        emails = emails_response.json() or []
+        verified = [item for item in emails if item.get("verified") and item.get("email")]
+        preferred = next((item for item in verified if item.get("primary")), verified[0] if verified else None)
+        if not preferred:
+            raise ValueError("GitHub did not return a verified email")
+        email = _normalize_email(preferred.get("email"))
+        subject = str(profile.get("id") or "")
+        username = str(profile.get("name") or profile.get("login") or email.split("@", 1)[0]).strip()
+
+    if not subject:
+        raise ValueError("OAuth provider did not return an account identifier")
+    return {
+        "provider": provider,
+        "provider_user_id": subject,
+        "email": email,
+        "username": (username or email.split("@", 1)[0])[:80],
+    }
+
+
+
+def _ensure_user_active(session, user: AppUser) -> None:
+    directory = (
+        session.query(AppUserDirectoryProfile)
+        .filter(AppUserDirectoryProfile.user_id == user.id)
+        .first()
+    )
+    if directory and (not directory.is_active or directory.is_locked):
+        raise HTTPException(status_code=403, detail="This account is inactive or locked")
+
+
+
+def _resolve_oauth_user(session, profile: Dict[str, str]) -> tuple[AppUser, AppUserPreference]:
+    identity = (
+        session.query(AppOAuthIdentity)
+        .filter(
+            AppOAuthIdentity.provider == profile["provider"],
+            AppOAuthIdentity.provider_user_id == profile["provider_user_id"],
+        )
+        .first()
+    )
+    if identity:
+        user = session.query(AppUser).filter(AppUser.id == identity.user_id).first()
+        if user is None:
+            raise HTTPException(status_code=401, detail="OAuth account is no longer available")
+        _ensure_user_active(session, user)
+        identity.provider_email = profile["email"]
+        identity.updated_at = _utcnow()
+    else:
+        user = session.query(AppUser).filter(AppUser.email == profile["email"]).first()
+        if user is None:
+            if is_configured_admin_email(profile["email"]):
+                raise HTTPException(
+                    status_code=403,
+                    detail="The configured owner account must be provisioned before OAuth can be linked.",
+                )
+            now = _utcnow()
+            user = AppUser(
+                email=profile["email"],
+                username=profile["username"],
+                password_hash=None,
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(user)
+            session.flush()
+            prefs = AppUserPreference(
+                user_id=user.id,
+                wants_newsletter=False,
+                feature_interests_json=["Matchups", "Model Projections"],
+                plan_type="free",
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(prefs)
+            default_folder = _get_or_create_default_folder(session, user.id)
+            _seed_default_dashboard(session, user.id, default_folder.id)
+            _get_or_create_today_folder(session, user.id)
+        else:
+            _ensure_user_active(session, user)
+        identity = AppOAuthIdentity(
+            user_id=user.id,
+            provider=profile["provider"],
+            provider_user_id=profile["provider_user_id"],
+            provider_email=profile["email"],
+            created_at=_utcnow(),
+            updated_at=_utcnow(),
+        )
+        session.add(identity)
+
+    prefs = session.query(AppUserPreference).filter(AppUserPreference.user_id == user.id).first()
+    if prefs is None:
+        now = _utcnow()
+        prefs = AppUserPreference(
+            user_id=user.id,
+            wants_newsletter=False,
+            feature_interests_json=[],
+            plan_type="free",
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(prefs)
+    return user, prefs
+
+
+
+def _send_password_reset_email(email: str, reset_url: str) -> None:
+    host = str(os.getenv("SMTP_HOST", "") or "").strip()
+    sender = str(os.getenv("SMTP_FROM_EMAIL", "") or "").strip()
+    if not host or not sender:
+        raise RuntimeError("SMTP_HOST and SMTP_FROM_EMAIL are required")
+    port = int(os.getenv("SMTP_PORT", "587"))
+    username = str(os.getenv("SMTP_USERNAME", "") or "")
+    password = str(os.getenv("SMTP_PASSWORD", "") or "")
+    use_ssl = str(os.getenv("SMTP_USE_SSL", "0")).lower() in {"1", "true", "yes", "on"}
+    use_tls = str(os.getenv("SMTP_USE_TLS", "1")).lower() in {"1", "true", "yes", "on"}
+
+    message = EmailMessage()
+    message["Subject"] = "Reset your MLBGPT password"
+    message["From"] = sender
+    message["To"] = email
+    message.set_content(
+        "A password reset was requested for your MLBGPT account.\n\n"
+        f"Reset your password: {reset_url}\n\n"
+        f"This link expires in {DASHBOARD_PASSWORD_RESET_MINUTES} minutes and can only be used once. "
+        "If you did not request this, you can ignore this email."
+    )
+
+    smtp_class = smtplib.SMTP_SSL if use_ssl else smtplib.SMTP
+    with smtp_class(host, port, timeout=15) as client:
+        if use_tls and not use_ssl:
+            client.starttls()
+        if username:
+            client.login(username, password)
+        client.send_message(message)
 
 
 
@@ -584,6 +847,7 @@ def _issue_dashboard_session(
     prefs: Optional[AppUserPreference],
     *,
     verified_login: bool,
+    authentication_method: Optional[str] = None,
 ) -> Dict[str, Any]:
     now = _utcnow()
     if verified_login:
@@ -595,7 +859,7 @@ def _issue_dashboard_session(
     session.add(AppLoginHistory(
         user_id=user.id,
         session_id=db_session.id,
-        authentication_method="password" if verified_login else "password_registration",
+        authentication_method=authentication_method or ("password" if verified_login else "password_registration"),
         successful=True,
         created_at=now,
     ))
@@ -747,6 +1011,244 @@ def my_dashboard_login(
         )
         session.commit()
         return payload
+
+
+@router.get("/my-dashboard/auth/providers")
+def my_dashboard_auth_providers() -> Dict[str, Any]:
+    return {
+        "providers": {
+            provider: {"configured": _oauth_provider_config(provider) is not None}
+            for provider in ("google", "github")
+        }
+    }
+
+
+@router.get("/my-dashboard/auth/oauth/{provider}")
+def my_dashboard_oauth_start(provider: str, request: Request):
+    provider = str(provider or "").strip().lower()
+    config = _oauth_provider_config(provider)
+    if config is None:
+        raise HTTPException(status_code=503, detail=f"{provider.title()} sign-in is not configured")
+
+    state = secrets.token_urlsafe(32)
+    redirect_uri = _oauth_callback_url(request, provider)
+    authorization_url = f"{config['authorize_url']}?{urlencode({
+        'client_id': config['client_id'],
+        'redirect_uri': redirect_uri,
+        'response_type': 'code',
+        'scope': config['scope'],
+        'state': state,
+    })}"
+    response = RedirectResponse(authorization_url, status_code=302)
+    response.set_cookie(
+        key=DASHBOARD_OAUTH_STATE_COOKIE,
+        value=state,
+        **_oauth_state_cookie_settings(),
+    )
+    return response
+
+
+@router.get("/my-dashboard/auth/oauth/{provider}/callback")
+def my_dashboard_oauth_callback(
+    provider: str,
+    request: Request,
+    code: Optional[str] = Query(default=None),
+    state: Optional[str] = Query(default=None),
+    error: Optional[str] = Query(default=None),
+    mlb_dashboard_oauth_state: Optional[str] = Cookie(
+        default=None,
+        alias=DASHBOARD_OAUTH_STATE_COOKIE,
+    ),
+):
+    provider = str(provider or "").strip().lower()
+    config = _oauth_provider_config(provider)
+    failure_url = f"{_frontend_url()}?auth_error=oauth"
+    if (
+        config is None
+        or error
+        or not code
+        or not state
+        or not mlb_dashboard_oauth_state
+        or not hmac.compare_digest(state, mlb_dashboard_oauth_state)
+    ):
+        response = RedirectResponse(failure_url, status_code=302)
+        response.delete_cookie(DASHBOARD_OAUTH_STATE_COOKIE, path="/my-dashboard/auth/oauth")
+        return response
+
+    try:
+        profile = _oauth_profile(provider, config, code, _oauth_callback_url(request, provider))
+        Session = _session_factory()
+        with Session() as session:
+            user, prefs = _resolve_oauth_user(session, profile)
+            bridge_code = secrets.token_urlsafe(32)
+            success_url = f"{_frontend_url()}?oauth_code={quote(bridge_code)}"
+            response = RedirectResponse(success_url, status_code=302)
+            payload = _issue_dashboard_session(
+                session,
+                response,
+                user,
+                prefs,
+                verified_login=True,
+                authentication_method=f"oauth_{provider}",
+            )
+            db_session = (
+                session.query(AppSession)
+                .filter(AppSession.session_token == payload["session_token"])
+                .one()
+            )
+            session.add(
+                AppOAuthLoginCode(
+                    user_id=user.id,
+                    session_id=db_session.id,
+                    token_hash=_token_hash(bridge_code),
+                    expires_at=_utcnow() + dt.timedelta(minutes=DASHBOARD_OAUTH_CODE_MINUTES),
+                    created_at=_utcnow(),
+                )
+            )
+            session.commit()
+            response.delete_cookie(DASHBOARD_OAUTH_STATE_COOKIE, path="/my-dashboard/auth/oauth")
+            return response
+    except Exception:
+        response = RedirectResponse(failure_url, status_code=302)
+        response.delete_cookie(DASHBOARD_OAUTH_STATE_COOKIE, path="/my-dashboard/auth/oauth")
+        return response
+
+
+@router.post("/my-dashboard/auth/oauth/exchange")
+def my_dashboard_oauth_exchange(
+    request: DashboardOAuthExchangeRequest,
+    response: Response,
+) -> Dict[str, Any]:
+    now = _utcnow()
+    Session = _session_factory()
+    with Session() as session:
+        login_code = (
+            session.query(AppOAuthLoginCode)
+            .filter(AppOAuthLoginCode.token_hash == _token_hash(request.code))
+            .first()
+        )
+        if (
+            login_code is None
+            or login_code.used_at is not None
+            or login_code.expires_at <= now
+        ):
+            raise HTTPException(status_code=400, detail="OAuth sign-in link is invalid or expired")
+        db_session = session.query(AppSession).filter(AppSession.id == login_code.session_id).first()
+        if db_session is None or db_session.expires_at <= now:
+            raise HTTPException(status_code=400, detail="OAuth sign-in session is invalid or expired")
+        user = session.query(AppUser).filter(AppUser.id == login_code.user_id).first()
+        if user is None:
+            raise HTTPException(status_code=400, detail="OAuth sign-in session is invalid or expired")
+        _ensure_user_active(session, user)
+        prefs = session.query(AppUserPreference).filter(AppUserPreference.user_id == user.id).first()
+        login_code.used_at = now
+        db_session.last_seen_at = now
+        access = access_payload_for_user(
+            session,
+            user,
+            session_created_at=db_session.created_at,
+        )
+        response.set_cookie(
+            key=DASHBOARD_SESSION_COOKIE,
+            value=db_session.session_token,
+            **_cookie_settings(),
+        )
+        session.commit()
+        return {
+            "ok": True,
+            "user": _serialize_user(user, prefs, access),
+            "session_token": db_session.session_token,
+            "session_expires_at": db_session.expires_at.isoformat(),
+        }
+
+
+@router.post("/my-dashboard/auth/forgot-password")
+def my_dashboard_forgot_password(
+    request: DashboardForgotPasswordRequest,
+) -> Dict[str, Any]:
+    email = _normalize_email(request.email)
+    if not email or "@" not in email:
+        return {"ok": True, "message": DASHBOARD_PASSWORD_RESET_MESSAGE}
+
+    Session = _session_factory()
+    with Session() as session:
+        user = session.query(AppUser).filter(AppUser.email == email).first()
+        if user is None:
+            return {"ok": True, "message": DASHBOARD_PASSWORD_RESET_MESSAGE}
+
+        now = _utcnow()
+        latest = (
+            session.query(AppPasswordResetToken)
+            .filter(AppPasswordResetToken.user_id == user.id)
+            .order_by(AppPasswordResetToken.created_at.desc())
+            .first()
+        )
+        if latest and latest.created_at > now - dt.timedelta(seconds=60):
+            return {"ok": True, "message": DASHBOARD_PASSWORD_RESET_MESSAGE}
+
+        token = secrets.token_urlsafe(32)
+        (
+            session.query(AppPasswordResetToken)
+            .filter(
+                AppPasswordResetToken.user_id == user.id,
+                AppPasswordResetToken.used_at.is_(None),
+            )
+            .update({"used_at": now}, synchronize_session=False)
+        )
+        session.add(
+            AppPasswordResetToken(
+                user_id=user.id,
+                token_hash=_token_hash(token),
+                expires_at=now + dt.timedelta(minutes=DASHBOARD_PASSWORD_RESET_MINUTES),
+                created_at=now,
+            )
+        )
+        try:
+            _send_password_reset_email(
+                user.email,
+                f"{_frontend_url()}?reset_token={quote(token)}",
+            )
+            session.commit()
+        except Exception as exc:
+            session.rollback()
+            print(f"[dashboard-auth] Password reset email could not be sent: {type(exc).__name__}")
+
+    return {"ok": True, "message": DASHBOARD_PASSWORD_RESET_MESSAGE}
+
+
+@router.post("/my-dashboard/auth/reset-password")
+def my_dashboard_reset_password(
+    request: DashboardResetPasswordRequest,
+) -> Dict[str, Any]:
+    now = _utcnow()
+    Session = _session_factory()
+    with Session() as session:
+        reset = (
+            session.query(AppPasswordResetToken)
+            .filter(AppPasswordResetToken.token_hash == _token_hash(request.token))
+            .first()
+        )
+        if reset is None or reset.used_at is not None or reset.expires_at <= now:
+            raise HTTPException(status_code=400, detail="Password reset link is invalid or expired")
+        user = session.query(AppUser).filter(AppUser.id == reset.user_id).first()
+        if user is None:
+            raise HTTPException(status_code=400, detail="Password reset link is invalid or expired")
+        _ensure_user_active(session, user)
+        user.password_hash = _hash_password(request.password)
+        user.updated_at = now
+        (
+            session.query(AppPasswordResetToken)
+            .filter(
+                AppPasswordResetToken.user_id == user.id,
+                AppPasswordResetToken.used_at.is_(None),
+            )
+            .update({"used_at": now}, synchronize_session=False)
+        )
+        session.query(AppSession).filter(AppSession.user_id == user.id).delete(
+            synchronize_session=False
+        )
+        session.commit()
+    return {"ok": True, "message": "Password updated. Sign in with your new password."}
 
 
 @router.post("/my-dashboard/auth/logout")
