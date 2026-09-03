@@ -699,6 +699,52 @@ class AppDashboardItem(Base):
     )
 
 
+class AppOAuthIdentity(Base):
+    """Verified external identity linked to one application user."""
+
+    __tablename__ = "app_oauth_identities"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    user_id: int = Column(Integer, nullable=False, index=True)
+    provider: str = Column(String(32), nullable=False)
+    provider_user_id: str = Column(String(255), nullable=False)
+    provider_email: str = Column(String(255), nullable=False)
+    created_at: datetime = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: datetime = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_user_id", name="uq_app_oauth_provider_subject"),
+        Index("ix_app_oauth_identities_user_provider", "user_id", "provider"),
+    )
+
+
+class AppOAuthLoginCode(Base):
+    """Short-lived, one-time bridge from OAuth callback to the SPA."""
+
+    __tablename__ = "app_oauth_login_codes"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    user_id: int = Column(Integer, nullable=False, index=True)
+    session_id: int = Column(Integer, nullable=False, index=True)
+    token_hash: str = Column(String(64), nullable=False, unique=True, index=True)
+    expires_at: datetime = Column(DateTime, nullable=False, index=True)
+    used_at: Optional[datetime] = Column(DateTime, nullable=True)
+    created_at: datetime = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class AppPasswordResetToken(Base):
+    """Hashed, expiring, one-time password reset credential."""
+
+    __tablename__ = "app_password_reset_tokens"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    user_id: int = Column(Integer, nullable=False, index=True)
+    token_hash: str = Column(String(64), nullable=False, unique=True, index=True)
+    expires_at: datetime = Column(DateTime, nullable=False, index=True)
+    used_at: Optional[datetime] = Column(DateTime, nullable=True)
+    created_at: datetime = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class AppSession(Base):
     __tablename__ = "app_sessions"
 
