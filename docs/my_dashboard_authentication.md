@@ -46,6 +46,7 @@ Configure any standard SMTP service with the Railway variables above. The sender
 
 Reset controls:
 
+- OAuth authorization uses state validation and PKCE (S256).
 - Tokens are random and stored only as SHA-256 hashes.
 - A token expires after 30 minutes and works once.
 - Issuing a new token invalidates earlier unused tokens.
