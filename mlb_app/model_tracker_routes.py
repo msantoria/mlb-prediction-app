@@ -55,6 +55,7 @@ router = APIRouter(tags=["model-tracker", "my-dashboard"])
 DASHBOARD_SESSION_COOKIE = "mlb_dashboard_session"
 DASHBOARD_SESSION_HOURS = 6
 DASHBOARD_OAUTH_STATE_COOKIE = "mlb_dashboard_oauth_state"
+DASHBOARD_OAUTH_VERIFIER_COOKIE = "mlb_dashboard_oauth_verifier"
 DASHBOARD_OAUTH_STATE_MINUTES = 10
 DASHBOARD_OAUTH_CODE_MINUTES = 2
 DASHBOARD_PASSWORD_RESET_MINUTES = 30
@@ -266,6 +267,12 @@ def _token_hash(token: str) -> str:
 
 
 
+def _pkce_challenge(verifier: str) -> str:
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+
+
+
 def _frontend_url(path: str = "/my-dashboard") -> str:
     base = str(os.getenv("DASHBOARD_FRONTEND_URL", "https://mlbgpt.com") or "https://mlbgpt.com").rstrip("/")
     return f"{base}/{path.lstrip('/')}"
@@ -317,7 +324,13 @@ def _oauth_state_cookie_settings() -> Dict[str, Any]:
 
 
 
-def _oauth_profile(provider: str, config: Dict[str, str], code: str, redirect_uri: str) -> Dict[str, str]:
+def _oauth_profile(
+    provider: str,
+    config: Dict[str, str],
+    code: str,
+    redirect_uri: str,
+    code_verifier: str,
+) -> Dict[str, str]:
     token_response = requests.post(
         config["token_url"],
         data={
@@ -326,6 +339,7 @@ def _oauth_profile(provider: str, config: Dict[str, str], code: str, redirect_ur
             "code": code,
             "redirect_uri": redirect_uri,
             "grant_type": "authorization_code",
+            "code_verifier": code_verifier,
         },
         headers={"Accept": "application/json"},
         timeout=12,
@@ -1033,6 +1047,7 @@ def my_dashboard_oauth_start(provider: str, request: Request):
         raise HTTPException(status_code=503, detail=f"{provider.title()} sign-in is not configured")
 
     state = secrets.token_urlsafe(32)
+    code_verifier = secrets.token_urlsafe(48)
     redirect_uri = _oauth_callback_url(request, provider)
     authorization_url = f"{config['authorize_url']}?{urlencode({
         'client_id': config['client_id'],
@@ -1040,11 +1055,18 @@ def my_dashboard_oauth_start(provider: str, request: Request):
         'response_type': 'code',
         'scope': config['scope'],
         'state': state,
+        'code_challenge': _pkce_challenge(code_verifier),
+        'code_challenge_method': 'S256',
     })}"
     response = RedirectResponse(authorization_url, status_code=302)
     response.set_cookie(
         key=DASHBOARD_OAUTH_STATE_COOKIE,
         value=state,
+        **_oauth_state_cookie_settings(),
+    )
+    response.set_cookie(
+        key=DASHBOARD_OAUTH_VERIFIER_COOKIE,
+        value=code_verifier,
         **_oauth_state_cookie_settings(),
     )
     return response
@@ -1061,6 +1083,10 @@ def my_dashboard_oauth_callback(
         default=None,
         alias=DASHBOARD_OAUTH_STATE_COOKIE,
     ),
+    mlb_dashboard_oauth_verifier: Optional[str] = Cookie(
+        default=None,
+        alias=DASHBOARD_OAUTH_VERIFIER_COOKIE,
+    ),
 ):
     provider = str(provider or "").strip().lower()
     config = _oauth_provider_config(provider)
@@ -1071,14 +1097,22 @@ def my_dashboard_oauth_callback(
         or not code
         or not state
         or not mlb_dashboard_oauth_state
+        or not mlb_dashboard_oauth_verifier
         or not hmac.compare_digest(state, mlb_dashboard_oauth_state)
     ):
         response = RedirectResponse(failure_url, status_code=302)
         response.delete_cookie(DASHBOARD_OAUTH_STATE_COOKIE, path="/my-dashboard/auth/oauth")
+        response.delete_cookie(DASHBOARD_OAUTH_VERIFIER_COOKIE, path="/my-dashboard/auth/oauth")
         return response
 
     try:
-        profile = _oauth_profile(provider, config, code, _oauth_callback_url(request, provider))
+        profile = _oauth_profile(
+            provider,
+            config,
+            code,
+            _oauth_callback_url(request, provider),
+            mlb_dashboard_oauth_verifier,
+        )
         Session = _session_factory()
         with Session() as session:
             user, prefs = _resolve_oauth_user(session, profile)
@@ -1109,10 +1143,12 @@ def my_dashboard_oauth_callback(
             )
             session.commit()
             response.delete_cookie(DASHBOARD_OAUTH_STATE_COOKIE, path="/my-dashboard/auth/oauth")
+        response.delete_cookie(DASHBOARD_OAUTH_VERIFIER_COOKIE, path="/my-dashboard/auth/oauth")
             return response
     except Exception:
         response = RedirectResponse(failure_url, status_code=302)
         response.delete_cookie(DASHBOARD_OAUTH_STATE_COOKIE, path="/my-dashboard/auth/oauth")
+        response.delete_cookie(DASHBOARD_OAUTH_VERIFIER_COOKIE, path="/my-dashboard/auth/oauth")
         return response
 
 
