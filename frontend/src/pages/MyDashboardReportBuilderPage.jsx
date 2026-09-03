@@ -7,7 +7,7 @@ import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS, defaultQueryState, normalizeQuery
 import { CANONICAL_REPORT_TYPES, buildReportRequest, canonicalBootstrapMessage, defaultFieldsForObject, defaultReportSaveAsDraft, initialFieldsByObject, normalizeCanonicalPage, reportExecutionFacts, reportFieldsForMode, savedReportExecutionMode, selectableRequestFields } from '../lib/dashboardReportBuilderState.mjs'
 import { organizeReportFolders, reportFolderSummary } from '../lib/dashboardReportFolders.mjs'
 import { dashboardRenameRequest, renameKeyboardAction } from '../lib/dashboardRenameState.mjs'
-import { dashboardApi, dashboardDownload, hasDashboardCapability, logoutDashboardSession } from '../lib/dashboardSession.mjs'
+import { dashboardApi, dashboardApiUrl, dashboardDownload, hasDashboardCapability, logoutDashboardSession } from '../lib/dashboardSession.mjs'
 import { DASHBOARD_THEME_KEY, DASHBOARD_THEME_OPTIONS, dashboardThemeVariables, normalizeDashboardTheme, resolveDashboardTheme } from '../lib/dashboardThemeState.mjs'
 
 const BUILDER_KEY = 'mlbgpt-report-builder:v3'
@@ -370,7 +370,7 @@ function MyDashboardReportBuilderContent() {
   const resolvedTheme = resolveDashboardTheme(themePreference, systemDark); const themeVariables = dashboardThemeVariables(resolvedTheme)
   useEffect(() => { Object.entries(themeVariables).forEach(([key, value]) => document.documentElement.style.setProperty(key, value)); return () => Object.keys(themeVariables).forEach(key => document.documentElement.style.removeProperty(key)) }, [resolvedTheme])
   const [authChecked, setAuthChecked] = useState(false); const [profile, setProfile] = useState(null); const [workspace, setWorkspace] = useState(null); const [workspaceLoading, setWorkspaceLoading] = useState(false); const [workspaceError, setWorkspaceError] = useState('')
-  const [form, setForm] = useState({ email: '', username: '', password: '', feature_interests: ['Matchups', 'Model Projections'], wants_newsletter: false }); const [authMode, setAuthMode] = useState('signin'); const [savingProfile, setSavingProfile] = useState(false); const [authError, setAuthError] = useState('')
+  const [form, setForm] = useState({ email: '', username: '', password: '', feature_interests: ['Matchups', 'Model Projections'], wants_newsletter: false }); const [authMode, setAuthMode] = useState(() => typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('reset_token') ? 'reset' : 'signin'); const [savingProfile, setSavingProfile] = useState(false); const [authError, setAuthError] = useState(''); const [authMessage, setAuthMessage] = useState(''); const [confirmPassword, setConfirmPassword] = useState(''); const [resetToken, setResetToken] = useState(() => typeof window === 'undefined' ? '' : new URLSearchParams(window.location.search).get('reset_token') || ''); const [oauthProviders, setOauthProviders] = useState({})
   const [activeObject, setActiveObject] = useState(persisted.activeObject || 'hitters'); const [reportDate, setReportDate] = useState(persisted.reportDate || mlbDateIso()); const [filters, setFilters] = useState(() => Object.fromEntries(OBJECTS.map(object => [object.key, CANONICAL_REPORT_TYPES[object.key] ? normalizeSavedFilters(persisted.filters?.[object.key] || {}) : persisted.filters?.[object.key] || emptyFiltersForObject(object.key)]))); const [selectedFieldsByObject, setSelectedFieldsByObject] = useState(() => initialFieldsByObject(OBJECTS, persisted)); const [activeLineupsOnly, setActiveLineupsOnly] = useState(Boolean(persisted.activeLineupsOnly)); const [reportTypes, setReportTypes] = useState([])
   const [results, setResults] = useState({}); const [loading, setLoading] = useState({}); const [error, setError] = useState(''); const [saveMessage, setSaveMessage] = useState(''); const [reportOpen, setReportOpen] = useState(false); const [reportObject, setReportObject] = useState('hitters'); const [reportResult, setReportResult] = useState(null); const [reportColumns, setReportColumns] = useState(DEFAULT_FIELDS); const [generatedAt, setGeneratedAt] = useState(null); const [generatedForDate, setGeneratedForDate] = useState(reportDate); const [reportQuery, setReportQuery] = useState(defaultQueryState()); const [savedShelfOpen, setSavedShelfOpen] = useState(true); const [savedShelfView, setSavedShelfView] = useState('daily'); const [selectedShelfEntryKey, setSelectedShelfEntryKey] = useState(''); const [selectedFolderId, setSelectedFolderId] = useState(''); const [newFolderName, setNewFolderName] = useState(''); const [creatingFolder, setCreatingFolder] = useState(false); const [queryStudioRestore, setQueryStudioRestore] = useState(null)
   const [saveAsOpen, setSaveAsOpen] = useState(false); const [saveAsDraft, setSaveAsDraft] = useState({ title: '', folder_id: '' }); const [savingReport, setSavingReport] = useState(false)
@@ -385,8 +385,60 @@ function MyDashboardReportBuilderContent() {
   async function loadReportTypes() { try { const json = await apiJson('/my-dashboard/report-types'); setReportTypes(safeArray(json.report_types)); return json } catch { setReportTypes([]); return null } }
   async function createReportFolder() { const folderName = newFolderName.trim(); if (!folderName) return; setCreatingFolder(true); setSaveMessage(''); try { const json = await apiJson('/my-dashboard/folders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ folder_name: folderName, folder_date: null, is_default: false }) }); const createdId = String(json?.folder?.id || ''); setNewFolderName(''); setSavedShelfView('custom'); setSelectedShelfEntryKey(createdId ? `custom:${createdId}` : ''); setSelectedFolderId(createdId); await loadWorkspace(); setSaveMessage(`Created report folder: ${json?.folder?.folder_name || folderName}.`) } catch (err) { setSaveMessage(err.message || 'Failed to create report folder.') } finally { setCreatingFolder(false) } }
   async function renameSaved(kind, id, value) { setSaveMessage(''); try { const request = dashboardRenameRequest(kind, id, value); await apiJson(request.path, request.options); await loadWorkspace(); setSaveMessage(`${kind === 'folder' ? 'Folder' : 'Report'} renamed to ${request.name}.`) } catch (err) { setSaveMessage(err.message || `Failed to rename ${kind}.`); throw err } }
-  useEffect(() => { let cancelled = false; (async () => { try { const json = await dashboardApi('/my-dashboard/profile'); if (cancelled) return; if (json.authenticated) { setProfile(json.user); await Promise.all([loadWorkspace(), loadReportTypes()]) } } catch (err) { if (!cancelled && err?.status !== 401) setAuthError('Unable to load dashboard profile.') } finally { if (!cancelled) setAuthChecked(true) } })(); return () => { cancelled = true } }, [])
-  async function submitProfile(event) { event.preventDefault(); setSavingProfile(true); setAuthError(''); try { const isRegistration = authMode === 'register'; const endpoint = isRegistration ? '/my-dashboard/auth/register' : '/my-dashboard/auth/login'; const payload = isRegistration ? form : { email: form.email, password: form.password }; const created = await apiJson(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); setProfile(created.user); await Promise.all([loadWorkspace(), loadReportTypes()]) } catch (err) { setAuthError(err.message || (authMode === 'register' ? 'Failed to create profile' : 'Failed to sign in')) } finally { setSavingProfile(false); setAuthChecked(true) } }
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const params = new URLSearchParams(window.location.search)
+      const oauthCode = params.get('oauth_code')
+      const oauthError = params.get('auth_error')
+      dashboardApi('/my-dashboard/auth/providers').then(json => {
+        if (!cancelled) setOauthProviders(json.providers || {})
+      }).catch(() => {})
+      if (oauthError) {
+        setAuthError('OAuth sign-in failed. Please try again.')
+        params.delete('auth_error')
+        window.history.replaceState({}, '', `${window.location.pathname}${params.size ? `?${params}` : ''}`)
+      }
+      if (oauthCode) {
+        try {
+          const created = await dashboardApi('/my-dashboard/auth/oauth/exchange', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: oauthCode }),
+          })
+          if (cancelled) return
+          params.delete('oauth_code')
+          window.history.replaceState({}, '', `${window.location.pathname}${params.size ? `?${params}` : ''}`)
+          setProfile(created.user)
+          await Promise.all([loadWorkspace(), loadReportTypes()])
+          return
+        } catch (err) {
+          if (!cancelled) setAuthError(err.message || 'OAuth sign-in failed. Please try again.')
+        } finally {
+          params.delete('oauth_code')
+          window.history.replaceState({}, '', `${window.location.pathname}${params.size ? `?${params}` : ''}`)
+        }
+      }
+      if (resetToken) return
+      try {
+        const json = await dashboardApi('/my-dashboard/profile')
+        if (cancelled) return
+        if (json.authenticated) {
+          setProfile(json.user)
+          await Promise.all([loadWorkspace(), loadReportTypes()])
+        }
+      } catch (err) {
+        if (!cancelled && err?.status !== 401) setAuthError('Unable to load dashboard profile.')
+      } finally {
+        if (!cancelled) setAuthChecked(true)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
+  async function submitProfile(event) { event.preventDefault(); setSavingProfile(true); setAuthError(''); setAuthMessage(''); try { const isRegistration = authMode === 'register'; const endpoint = isRegistration ? '/my-dashboard/auth/register' : '/my-dashboard/auth/login'; const payload = isRegistration ? form : { email: form.email, password: form.password }; const created = await apiJson(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); setProfile(created.user); await Promise.all([loadWorkspace(), loadReportTypes()]) } catch (err) { setAuthError(err.message || (authMode === 'register' ? 'Failed to create profile' : 'Failed to sign in')) } finally { setSavingProfile(false); setAuthChecked(true) } }
+  async function requestPasswordReset(event) { event.preventDefault(); setSavingProfile(true); setAuthError(''); setAuthMessage(''); try { const result = await dashboardApi('/my-dashboard/auth/forgot-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: form.email }) }); setAuthMessage(result.message || 'If an account exists for that email, a password reset link has been sent.') } catch (err) { setAuthError(err.message || 'Unable to request a password reset.') } finally { setSavingProfile(false) } }
+  async function resetPassword(event) { event.preventDefault(); setAuthError(''); setAuthMessage(''); if (form.password !== confirmPassword) { setAuthError('Passwords do not match.'); return } setSavingProfile(true); try { const result = await dashboardApi('/my-dashboard/auth/reset-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: resetToken, password: form.password }) }); setForm(value => ({ ...value, password: '' })); setConfirmPassword(''); setResetToken(''); setAuthMode('signin'); const params = new URLSearchParams(window.location.search); params.delete('reset_token'); window.history.replaceState({}, '', `${window.location.pathname}${params.size ? `?${params}` : ''}`); setAuthMessage(result.message || 'Password updated. Sign in with your new password.') } catch (err) { setAuthError(err.message || 'Unable to reset your password.') } finally { setSavingProfile(false) } }
+  function startOAuth(provider) { setAuthError(''); setAuthMessage(''); if (oauthProviders[provider]?.configured === false) { setAuthError(`${provider === 'github' ? 'GitHub' : 'Google'} sign-in is not configured yet.`); return } window.location.assign(dashboardApiUrl(`/my-dashboard/auth/oauth/${provider}`)) }
   async function signOut() { await logoutDashboardSession().catch(() => null); setProfile(null); setWorkspace(null); setResults({}); setAuthMode('signin'); setAuthError('') }
   function setBasic(objectKey, key, value) { setFilters(current => ({ ...current, [objectKey]: { ...(current[objectKey] || emptyFiltersForObject(objectKey)), [key]: value } })) }
   function setMetric(objectKey, metric, side, value) { setFilters(current => ({ ...current, [objectKey]: { ...(current[objectKey] || emptyFilters()), metrics: { ...(current[objectKey]?.metrics || {}), [metric]: { ...(current[objectKey]?.metrics?.[metric] || {}), [side]: value } } } })) }
@@ -475,6 +527,7 @@ function MyDashboardReportBuilderContent() {
       setSavingReport(false)
     }
   }
+  const authHeading = authMode === 'register' ? ['New analyst profile', 'Create your MLBGPT account', 'Create a password-backed profile to save and reopen your reports.'] : authMode === 'forgot' ? ['Account recovery', 'Reset your password', 'Enter your email and we’ll send a secure, one-time reset link.'] : authMode === 'reset' ? ['Choose a new password', 'Reset your MLBGPT password', 'Use eight or more characters. This reset link works once.'] : ['Welcome back', 'Sign in to MyDashboard', 'Use the password associated with your analyst profile.']
   if (!authChecked) return <div data-dashboard-theme={resolvedTheme} style={{ ...themeVariables, ...s.loadingPage }}>Loading Report Builder…</div>
   if (!profile) return <main data-dashboard-theme={resolvedTheme} style={{ ...themeVariables, ...s.authPage, gridTemplateColumns: isNarrow ? '1fr' : 'minmax(0,1.08fr) minmax(400px,.92fr)' }}>
     <div aria-hidden="true" style={s.chromeRibbon} />
@@ -491,21 +544,41 @@ function MyDashboardReportBuilderContent() {
     </section>
     <section style={s.authCard}>
       <ThemePicker />
-      <div style={s.eyebrow}>{authMode === 'register' ? 'New analyst profile' : 'Welcome back'}</div>
-      <h2 style={s.authTitle}>{authMode === 'register' ? 'Create your MLBGPT account' : 'Sign in to MyDashboard'}</h2>
-      <p style={s.copy}>{authMode === 'register' ? 'Create a password-backed profile to save and reopen your reports.' : 'Use the password associated with your analyst profile.'}</p>
-      <div style={s.authTabs}>
-        <button type="button" style={authMode === 'signin' ? s.authTabActive : s.authTab} onClick={() => { setAuthMode('signin'); setAuthError('') }}>Sign In</button>
-        <button type="button" style={authMode === 'register' ? s.authTabActive : s.authTab} onClick={() => { setAuthMode('register'); setAuthError('') }}>Create Account</button>
-      </div>
-      <form onSubmit={submitProfile} style={s.stack}>
+      <div style={s.eyebrow}>{authHeading[0]}</div>
+      <h2 style={s.authTitle}>{authHeading[1]}</h2>
+      <p style={s.copy}>{authHeading[2]}</p>
+      {authMode === 'signin' || authMode === 'register' ? <>
+        <div style={s.authTabs}>
+          <button type="button" style={authMode === 'signin' ? s.authTabActive : s.authTab} onClick={() => { setAuthMode('signin'); setAuthError(''); setAuthMessage('') }}>Sign In</button>
+          <button type="button" style={authMode === 'register' ? s.authTabActive : s.authTab} onClick={() => { setAuthMode('register'); setAuthError(''); setAuthMessage('') }}>Create Account</button>
+        </div>
+        <div style={s.oauthGrid}>
+          <button type="button" style={s.oauthButton} onClick={() => startOAuth('google')}><span style={s.oauthIcon}>G</span>Sign in with Google</button>
+          <button type="button" style={s.oauthButton} onClick={() => startOAuth('github')}><span style={s.oauthIcon}>⌁</span>Sign in with GitHub</button>
+        </div>
+        <div style={s.authDivider}><span>or continue with email</span></div>
+        <form onSubmit={submitProfile} style={s.stack}>
+          <label style={s.authLabel}>Email<input required style={s.input} type="email" autoComplete="email" placeholder="you@example.com" value={form.email} onChange={e => setForm(v => ({ ...v, email: e.target.value }))} /></label>
+          {authMode === 'register' ? <label style={s.authLabel}>Username<input required style={s.input} autoComplete="username" placeholder="Analyst name" value={form.username} onChange={e => setForm(v => ({ ...v, username: e.target.value }))} /></label> : null}
+          <label style={s.authLabel}>Password<input required minLength={authMode === 'register' ? 8 : 1} maxLength={256} style={s.input} type="password" autoComplete={authMode === 'register' ? 'new-password' : 'current-password'} placeholder={authMode === 'register' ? '8 or more characters' : 'Enter your password'} value={form.password} onChange={e => setForm(v => ({ ...v, password: e.target.value }))} /></label>
+          {authMode === 'signin' ? <button type="button" style={s.authLink} onClick={() => { setAuthMode('forgot'); setAuthError(''); setAuthMessage('') }}>Forgot password?</button> : null}
+          {authError ? <div style={s.error}>{authError}</div> : null}
+          {authMessage ? <div style={s.authMessage}>{authMessage}</div> : null}
+          <button style={s.authPrimary} disabled={savingProfile}>{savingProfile ? (authMode === 'register' ? 'Creating…' : 'Signing in…') : (authMode === 'register' ? 'Create Account' : 'Enter Report Builder →')}</button>
+        </form>
+      </> : authMode === 'forgot' ? <form onSubmit={requestPasswordReset} style={s.stack}>
         <label style={s.authLabel}>Email<input required style={s.input} type="email" autoComplete="email" placeholder="you@example.com" value={form.email} onChange={e => setForm(v => ({ ...v, email: e.target.value }))} /></label>
-        {authMode === 'register' ? <label style={s.authLabel}>Username<input required style={s.input} autoComplete="username" placeholder="Analyst name" value={form.username} onChange={e => setForm(v => ({ ...v, username: e.target.value }))} /></label> : null}
-        <label style={s.authLabel}>Password<input required minLength={authMode === 'register' ? 8 : 1} maxLength={256} style={s.input} type="password" autoComplete={authMode === 'register' ? 'new-password' : 'current-password'} placeholder={authMode === 'register' ? '8 or more characters' : 'Enter your password'} value={form.password} onChange={e => setForm(v => ({ ...v, password: e.target.value }))} /></label>
         {authError ? <div style={s.error}>{authError}</div> : null}
-        <button style={s.authPrimary} disabled={savingProfile}>{savingProfile ? (authMode === 'register' ? 'Creating…' : 'Signing in…') : (authMode === 'register' ? 'Create Account' : 'Enter Report Builder →')}</button>
-      </form>
-      <p style={s.authTruth}>Password-backed sessions use the current verified MyDashboard security contract.</p>
+        {authMessage ? <div style={s.authMessage}>{authMessage}</div> : null}
+        <button style={s.authPrimary} disabled={savingProfile}>{savingProfile ? 'Sending…' : 'Send Reset Link'}</button>
+        <button type="button" style={s.authLinkCentered} onClick={() => { setAuthMode('signin'); setAuthError(''); setAuthMessage('') }}>Back to sign in</button>
+      </form> : <form onSubmit={resetPassword} style={s.stack}>
+        <label style={s.authLabel}>New password<input required minLength={8} maxLength={256} style={s.input} type="password" autoComplete="new-password" placeholder="8 or more characters" value={form.password} onChange={e => setForm(v => ({ ...v, password: e.target.value }))} /></label>
+        <label style={s.authLabel}>Confirm password<input required minLength={8} maxLength={256} style={s.input} type="password" autoComplete="new-password" placeholder="Enter it again" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} /></label>
+        {authError ? <div style={s.error}>{authError}</div> : null}
+        <button style={s.authPrimary} disabled={savingProfile}>{savingProfile ? 'Updating…' : 'Update Password'}</button>
+      </form>}
+      <p style={s.authTruth}>Secure sessions, verified OAuth emails, and one-time password reset links protect MyDashboard access.</p>
     </section>
   </main>
   if (saveAsOpen) return <SaveAsDialog open folders={safeArray(workspace?.folders)} draft={saveAsDraft} setDraft={setSaveAsDraft} saving={savingReport} onSave={commitSaveReport} onClose={() => setSaveAsOpen(false)} />
@@ -541,6 +614,13 @@ const s = {
   authPrimary: { width: '100%', padding: '13px 18px', color: '#fff', fontFamily: FRANKLIN, fontSize: 14, background: 'linear-gradient(105deg,#1d2027,#6f63f5 76%,#d5d3ff)', border: '1px solid rgba(255,255,255,.75)', borderRadius: 999, boxShadow: '0 10px 30px rgba(91,75,220,.24)' },
   authTabs: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7, margin: '18px 0 14px', padding: 4, background: C.panel2, borderRadius: 999 },
   authTab: { padding: '9px 12px', color: C.muted, fontFamily: FRANKLIN, fontSize: 12, background: 'transparent', border: 0, borderRadius: 999 },
+  oauthGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 },
+  oauthButton: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 42, padding: '10px 12px', color: C.text, fontFamily: FRANKLIN, fontSize: 12, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, cursor: 'pointer' },
+  oauthIcon: { display: 'grid', placeItems: 'center', width: 20, height: 20, color: C.text, fontFamily: 'Arial, sans-serif', fontSize: 13, fontWeight: 700, background: C.panel2, borderRadius: 999 },
+  authDivider: { display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '16px 0', color: C.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '.08em' },
+  authLink: { justifySelf: 'end', marginTop: -3, padding: 0, color: C.blue, fontFamily: FRANKLIN, fontSize: 11, background: 'transparent', border: 0, cursor: 'pointer' },
+  authLinkCentered: { justifySelf: 'center', padding: 3, color: C.blue, fontFamily: FRANKLIN, fontSize: 11, background: 'transparent', border: 0, cursor: 'pointer' },
+  authMessage: { padding: '10px 12px', color: C.green, fontSize: 11, lineHeight: 1.5, background: 'rgba(40,183,139,.08)', border: '1px solid rgba(40,183,139,.26)', borderRadius: 10 },
   authTabActive: { padding: '9px 12px', color: '#fff', fontFamily: FRANKLIN, fontSize: 12, background: 'linear-gradient(105deg,#22252c,#776df5)', border: '1px solid rgba(255,255,255,.52)', borderRadius: 999 },
   hero: { display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', padding: 20, marginBottom: 14, borderRadius: 24, border: '1px solid var(--md-glass-border)', background: 'var(--md-glass-strong)', boxShadow: 'var(--md-inset),var(--md-shadow)', backdropFilter: 'blur(18px)' },
   saveOverlay: { position: 'fixed', inset: 0, zIndex: 1200, display: 'grid', placeItems: 'center', padding: 16, color: C.text, colorScheme: 'var(--md-color-scheme)', fontFamily: CENTURY, background: 'rgba(5,7,12,.82)', backdropFilter: 'blur(10px)' },
