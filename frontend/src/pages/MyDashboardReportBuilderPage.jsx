@@ -411,6 +411,7 @@ function MyDashboardReportBuilderContent() {
           window.history.replaceState({}, '', `${window.location.pathname}${params.size ? `?${params}` : ''}`)
           setProfile(created.user)
           await Promise.all([loadWorkspace(), loadReportTypes()])
+          setAuthChecked(true)
           return
         } catch (err) {
           if (!cancelled) setAuthError(err.message || 'OAuth sign-in failed. Please try again.')
@@ -419,7 +420,10 @@ function MyDashboardReportBuilderContent() {
           window.history.replaceState({}, '', `${window.location.pathname}${params.size ? `?${params}` : ''}`)
         }
       }
-      if (resetToken) return
+      if (resetToken) {
+        setAuthChecked(true)
+        return
+      }
       try {
         const json = await dashboardApi('/my-dashboard/profile')
         if (cancelled) return
