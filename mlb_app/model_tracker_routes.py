@@ -1143,7 +1143,7 @@ def my_dashboard_oauth_callback(
             )
             session.commit()
             response.delete_cookie(DASHBOARD_OAUTH_STATE_COOKIE, path="/my-dashboard/auth/oauth")
-        response.delete_cookie(DASHBOARD_OAUTH_VERIFIER_COOKIE, path="/my-dashboard/auth/oauth")
+            response.delete_cookie(DASHBOARD_OAUTH_VERIFIER_COOKIE, path="/my-dashboard/auth/oauth")
             return response
     except Exception:
         response = RedirectResponse(failure_url, status_code=302)
