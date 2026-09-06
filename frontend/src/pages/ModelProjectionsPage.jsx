@@ -1136,6 +1136,120 @@ function ProjectionsTab({ game }) {
         </Tag>
       </div>
 
+      <div
+        style={{
+          ...s.metricCard,
+          marginBottom: '16px',
+          borderColor: (
+            view.simulationContext.fullyVerified
+              ? '#238636'
+              : '#9e6a03'
+          ),
+          background: (
+            view.simulationContext.fullyVerified
+              ? 'rgba(46, 160, 67, 0.08)'
+              : 'rgba(158, 106, 3, 0.08)'
+          ),
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            flexWrap: 'wrap',
+            gap: '10px',
+          }}
+        >
+          <div>
+            <div style={s.metricLabel}>
+              Canonical simulation lineup
+            </div>
+            <h3
+              style={{
+                margin: '0 0 6px',
+                color: '#e6edf3',
+                fontSize: '18px',
+              }}
+            >
+              {view.simulationContext.title}
+            </h3>
+            <div
+              style={{
+                color: '#8b949e',
+                fontSize: '13px',
+                lineHeight: 1.5,
+              }}
+            >
+              {view.simulationContext.message}
+            </div>
+          </div>
+
+          <Tag
+            tone={
+              view.simulationContext.fullyVerified
+                ? 'success'
+                : 'warning'
+            }
+          >
+            {view.simulationContext.lineupSourceLabel}
+          </Tag>
+        </div>
+
+        <div
+          style={{
+            marginTop: '12px',
+            display: 'grid',
+            gridTemplateColumns: (
+              'repeat(auto-fit, minmax(180px, 1fr))'
+            ),
+            columnGap: '18px',
+          }}
+        >
+          <StatRow
+            k="Lineup Selection"
+            v={
+              view.simulationContext.selectionReady
+                ? 'ready'
+                : 'blocked'
+            }
+            format="text"
+          />
+          <StatRow
+            k="Player Profiles"
+            v={
+              view.simulationContext.profileReady
+                ? 'ready'
+                : (
+                    view.simulationContext.lineupSource
+                      === 'confirmed'
+                      ? 'confirmed source'
+                      : 'blocked'
+                  )
+            }
+            format="text"
+          />
+          <StatRow
+            k="Exact Artifact"
+            v={
+              view.simulationContext.exactArtifactReady
+                ? 'ready'
+                : 'blocked'
+            }
+            format="text"
+          />
+          <StatRow
+            k="Canonical Execution"
+            v={
+              view.simulationContext.executionCompleted
+                ? 'completed'
+                : 'blocked'
+            }
+            format="text"
+          />
+        </div>
+      </div>
+
       <div style={s.grid}>
         <GenericPanel title="Run Identity">
           <StatRow

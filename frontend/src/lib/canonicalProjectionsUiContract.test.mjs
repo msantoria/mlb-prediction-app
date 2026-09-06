@@ -176,3 +176,25 @@ test('projections tab explains pitcher workload scope', async () => {
     /no role is inferred from workload/i,
   )
 })
+
+
+test('projections tab displays canonical lineup execution context', async () => {
+  const source = await pageSource()
+
+  assert.match(
+    source,
+    /view\.simulationContext\.title/,
+  )
+  assert.match(
+    source,
+    /view\.simulationContext\.lineupSourceLabel/,
+  )
+  assert.match(source, /Lineup Selection/)
+  assert.match(source, /Player Profiles/)
+  assert.match(source, /Exact Artifact/)
+  assert.match(source, /Canonical Execution/)
+  assert.match(
+    source,
+    /view\.simulationContext\.fullyVerified/,
+  )
+})

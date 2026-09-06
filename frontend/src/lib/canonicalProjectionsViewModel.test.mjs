@@ -803,3 +803,166 @@ test('formats the complete canonical typical-role taxonomy', () => {
     )
   }
 })
+
+
+test('labels an executed projected-lineup simulation', () => {
+  const source = payload()
+
+  source.diagnostics.canonical_production_lineup_selection = {
+    status: 'ready',
+    selected_source: 'projected',
+    selection: {
+      ready: true,
+      lineup_source: 'projected',
+    },
+  }
+  source.diagnostics
+    .canonical_selected_lineup_profile_materialization = {
+      status: 'ready',
+      ready: true,
+      selected_source: 'projected',
+    }
+  source.diagnostics
+    .canonical_shadow_exact_artifact_discovery = {
+      status: 'ready',
+      ready: true,
+    }
+  source.diagnostics
+    .canonical_shadow_production_execution = {
+      status: 'executed',
+      executed: true,
+    }
+
+  const context = (
+    buildCanonicalProjectionsViewModel(source)
+      .simulationContext
+  )
+
+  assert.equal(context.state, 'projected')
+  assert.equal(context.fullyVerified, true)
+  assert.equal(
+    context.lineupSourceLabel,
+    'Projected lineups',
+  )
+  assert.match(
+    context.title,
+    /ran with projected lineups/i,
+  )
+  assert.equal(context.profileReady, true)
+  assert.equal(context.exactArtifactReady, true)
+  assert.equal(context.executionCompleted, true)
+})
+
+
+test('labels an executed confirmed-lineup simulation', () => {
+  const source = payload()
+
+  source.diagnostics.canonical_production_lineup_selection = {
+    status: 'ready',
+    selected_source: 'confirmed',
+    selection: {
+      ready: true,
+      lineup_source: 'confirmed',
+    },
+  }
+  source.diagnostics
+    .canonical_shadow_exact_artifact_discovery = {
+      status: 'ready',
+      ready: true,
+    }
+  source.diagnostics
+    .canonical_shadow_production_execution = {
+      status: 'executed',
+      executed: true,
+    }
+
+  const context = (
+    buildCanonicalProjectionsViewModel(source)
+      .simulationContext
+  )
+
+  assert.equal(context.state, 'confirmed')
+  assert.equal(context.fullyVerified, true)
+  assert.equal(
+    context.lineupSourceLabel,
+    'Confirmed lineups',
+  )
+  assert.match(
+    context.title,
+    /ran with confirmed lineups/i,
+  )
+})
+
+
+test('does not claim projected execution without exact evidence', () => {
+  const source = payload()
+
+  source.diagnostics.canonical_production_lineup_selection = {
+    status: 'ready',
+    selected_source: 'projected',
+    selection: {
+      ready: true,
+      lineup_source: 'projected',
+    },
+  }
+  source.diagnostics
+    .canonical_selected_lineup_profile_materialization = {
+      status: 'blocked',
+      ready: false,
+    }
+  source.diagnostics
+    .canonical_shadow_production_execution = {
+      status: 'blocked',
+      executed: false,
+    }
+
+  const context = (
+    buildCanonicalProjectionsViewModel(source)
+      .simulationContext
+  )
+
+  assert.equal(context.state, 'blocked')
+  assert.equal(context.fullyVerified, false)
+  assert.equal(context.profileReady, false)
+  assert.equal(context.exactArtifactReady, false)
+  assert.equal(context.executionCompleted, false)
+})
+
+
+test('reads lineup execution diagnostics from shared simulation', () => {
+  const source = payload()
+  const shadow = source.diagnostics.canonical_shadow
+
+  const view = buildCanonicalProjectionsViewModel({
+    sharedSimulation: {
+      diagnostics: {
+        canonical_shadow: shadow,
+        canonical_production_lineup_selection: {
+          status: 'ready',
+          selected_source: 'projected',
+        },
+        canonical_selected_lineup_profile_materialization: {
+          status: 'ready',
+          ready: true,
+        },
+        canonical_shadow_exact_artifact_discovery: {
+          status: 'ready',
+          ready: true,
+        },
+        canonical_shadow_production_execution: {
+          status: 'executed',
+          executed: true,
+        },
+      },
+    },
+  })
+
+  assert.equal(
+    view.simulationContext.state,
+    'projected',
+  )
+  assert.equal(
+    view.simulationContext.fullyVerified,
+    true,
+  )
+})
