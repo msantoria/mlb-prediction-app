@@ -554,6 +554,142 @@ function unavailableProjectionState(
 }
 
 
+function canonicalSimulationContext(
+  topLevelDiagnostics,
+  sharedDiagnostics,
+  projectionsAvailable,
+) {
+  const diagnostic = key => {
+    const topLevel = asObject(
+      topLevelDiagnostics[key],
+    )
+
+    if (Object.keys(topLevel).length) {
+      return topLevel
+    }
+
+    return asObject(sharedDiagnostics[key])
+  }
+
+  const selection = diagnostic(
+    'canonical_production_lineup_selection',
+  )
+  const selected = asObject(selection.selection)
+  const materialization = diagnostic(
+    'canonical_selected_lineup_profile_materialization',
+  )
+  const artifact = diagnostic(
+    'canonical_shadow_exact_artifact_discovery',
+  )
+  const execution = diagnostic(
+    'canonical_shadow_production_execution',
+  )
+
+  const lineupSource = (
+    selection.selected_source ||
+    selected.lineup_source ||
+    null
+  )
+  const selectionReady = (
+    selection.status === 'ready' ||
+    selected.ready === true
+  )
+  const profileReady = (
+    materialization.ready === true
+  )
+  const exactArtifactReady = (
+    artifact.ready === true ||
+    artifact.status === 'ready'
+  )
+  const executionCompleted = (
+    execution.executed === true ||
+    execution.status === 'executed'
+  )
+
+  const fullyVerified = (
+    projectionsAvailable &&
+    selectionReady &&
+    executionCompleted &&
+    (
+      lineupSource !== 'projected' ||
+      (
+        profileReady &&
+        exactArtifactReady
+      )
+    )
+  )
+
+  const labels = {
+    confirmed: 'Confirmed lineups',
+    projected: 'Projected lineups',
+  }
+  const lineupSourceLabel = (
+    labels[lineupSource] ||
+    'Lineup source unavailable'
+  )
+
+  let state = 'unverified'
+  let title = (
+    'Canonical simulation context unavailable'
+  )
+  let message = (
+    'This payload does not include enough same-run '
+    + 'diagnostic evidence to identify its lineup source.'
+  )
+
+  if (fullyVerified && lineupSource === 'projected') {
+    state = 'projected'
+    title = (
+      'Canonical simulation ran with projected lineups'
+    )
+    message = (
+      'Confirmed lineups were unavailable. The canonical '
+      + 'simulation used projected batting orders with '
+      + 'player-level profiles and an exact probability artifact.'
+    )
+  } else if (
+    fullyVerified &&
+    lineupSource === 'confirmed'
+  ) {
+    state = 'confirmed'
+    title = (
+      'Canonical simulation ran with confirmed lineups'
+    )
+    message = (
+      'The canonical simulation used the confirmed batting '
+      + 'orders attached to this same run.'
+    )
+  } else if (selectionReady && !executionCompleted) {
+    state = 'blocked'
+    title = 'Canonical lineup selected; simulation blocked'
+    message = (
+      'A canonical lineup was selected, but execution did '
+      + 'not complete for this payload.'
+    )
+  } else if (executionCompleted) {
+    state = 'executed_unverified'
+    title = 'Canonical simulation completed'
+    message = (
+      'Execution completed, but the lineup-source evidence '
+      + 'needed for a confirmed or projected label is incomplete.'
+    )
+  }
+
+  return {
+    state,
+    title,
+    message,
+    lineupSource,
+    lineupSourceLabel,
+    selectionReady,
+    profileReady,
+    exactArtifactReady,
+    executionCompleted,
+    fullyVerified,
+  }
+}
+
+
 export function buildCanonicalProjectionsViewModel(
   game,
 ) {
@@ -598,9 +734,18 @@ export function buildCanonicalProjectionsViewModel(
       .map(pitcherRow),
   )
 
+  const simulationContext = (
+    canonicalSimulationContext(
+      topLevelDiagnostics,
+      sharedDiagnostics,
+      available,
+    )
+  )
+
   return {
     available,
     unavailable,
+    simulationContext,
     status: projections.status || (
       available ? 'available' : 'unavailable'
     ),
