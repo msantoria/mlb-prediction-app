@@ -85,6 +85,7 @@ from mlb_app.simulation.shadow import (
     discover_canonical_shadow_exact_artifact,
     discover_canonical_shadow_fallback_catalog,
     discover_canonical_shadow_lineups,
+    discover_canonical_production_lineup,
     discover_canonical_shadow_probability_provider,
     discover_confirmed_catcher_assignments,
     execute_live_baserunning_shadow_pair,
@@ -2372,10 +2373,34 @@ def build_model_projection_payload(
                 or matchup.get("gamePk")
             )
 
-            canonical_shadow_lineup_discovery = (
+            canonical_confirmed_lineup_discovery = (
                 discover_canonical_shadow_lineups(
                     game_pk=game_pk,
                 )
+            )
+            canonical_production_lineup_selection = (
+                discover_canonical_production_lineup(
+                    game_pk=game_pk,
+                    away_team_id=away.get("team_id"),
+                    home_team_id=home.get("team_id"),
+                    target_game_date=(
+                        matchup.get("game_date")
+                        or target_date
+                    ),
+                    confirmed_discovery=(
+                        canonical_confirmed_lineup_discovery
+                    ),
+                )
+            )
+            canonical_shadow_lineup_discovery = (
+                canonical_production_lineup_selection
+                .lineups
+            )
+            workspace[
+                "canonicalProductionLineupSelection"
+            ] = (
+                canonical_production_lineup_selection
+                .to_diagnostics()
             )
 
             canonical_pregame_bullpen_provider = (
@@ -3192,7 +3217,13 @@ def build_model_projection_payload(
                 shared_diagnostics[
                     "canonical_shadow_lineup_discovery"
                 ] = (
-                    canonical_shadow_lineup_discovery
+                    canonical_confirmed_lineup_discovery
+                    .to_diagnostics()
+                )
+                shared_diagnostics[
+                    "canonical_production_lineup_selection"
+                ] = (
+                    canonical_production_lineup_selection
                     .to_diagnostics()
                 )
 
