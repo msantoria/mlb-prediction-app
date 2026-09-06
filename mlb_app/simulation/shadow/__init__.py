@@ -126,6 +126,14 @@ from .lineup_discovery import (
     CanonicalShadowLineupDiscovery,
     discover_canonical_shadow_lineups,
 )
+from .selected_lineup import (
+    CANONICAL_SELECTED_LINEUP_VERSION,
+    CanonicalLineupSideCandidate,
+    CanonicalSelectedLineup,
+    CanonicalSelectedLineupSelection,
+    build_canonical_lineup_side_candidate,
+    select_canonical_lineup,
+)
 from .input_assembly import (
     CANONICAL_SHADOW_INPUT_ASSEMBLY_VERSION,
     CanonicalShadowExecutionInputs,
@@ -215,6 +223,7 @@ __all__ = [
     "CANONICAL_SHADOW_EXACT_ARTIFACT_DISCOVERY_VERSION",
     "CANONICAL_SHADOW_FALLBACK_CATALOG_DISCOVERY_VERSION",
     "CANONICAL_SHADOW_LINEUP_DISCOVERY_VERSION",
+    "CANONICAL_SELECTED_LINEUP_VERSION",
     "DEFAULT_PRODUCTION_SHADOW_SIMULATION_COUNT",
     "MIN_EXACT_BATTER_RECORDS_PER_SIDE",
     "CANONICAL_PITCHER_ROLE_EVIDENCE_SOURCE_VERSION",
@@ -284,6 +293,9 @@ __all__ = [
     "CanonicalShadowExactArtifactDiscovery",
     "CanonicalShadowFallbackCatalogDiscovery",
     "CanonicalShadowLineupDiscovery",
+    "CanonicalLineupSideCandidate",
+    "CanonicalSelectedLineup",
+    "CanonicalSelectedLineupSelection",
     "CanonicalProductionShadowExecution",
     "CanonicalShadowProbabilityProviderDiscovery",
     "CanonicalShadowExecutionMaterial",
@@ -297,6 +309,8 @@ __all__ = [
     "discover_canonical_shadow_exact_artifact",
     "discover_canonical_shadow_fallback_catalog",
     "discover_canonical_shadow_lineups",
+    "build_canonical_lineup_side_candidate",
+    "select_canonical_lineup",
     "discover_canonical_shadow_probability_provider",
     "run_canonical_production_shadow",
     "canonical_shadow_execution_bundle_to_material",
