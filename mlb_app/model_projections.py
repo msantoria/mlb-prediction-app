@@ -91,6 +91,7 @@ from mlb_app.simulation.shadow import (
     execute_live_baserunning_shadow_pair,
     evaluate_canonical_extras_walkoff_activation,
     finalize_canonical_baserunning_production_settlements,
+    materialize_canonical_selected_lineup_profiles,
     load_baserunning_production_prior,
     load_canonical_baserunning_production_settlements,
     run_canonical_production_shadow,
@@ -2403,6 +2404,33 @@ def build_model_projection_payload(
                 .to_diagnostics()
             )
 
+            canonical_lineup_profile_materialization = (
+                materialize_canonical_selected_lineup_profiles(
+                    session=session,
+                    matchup=matchup,
+                    away_context=away,
+                    home_context=home,
+                    lineups=(
+                        canonical_shadow_lineup_discovery
+                    ),
+                    season=date_obj.year,
+                )
+            )
+            away = (
+                canonical_lineup_profile_materialization
+                .away_context
+            )
+            home = (
+                canonical_lineup_profile_materialization
+                .home_context
+            )
+            workspace[
+                "canonicalSelectedLineupProfileMaterialization"
+            ] = (
+                canonical_lineup_profile_materialization
+                .to_diagnostics()
+            )
+
             canonical_pregame_bullpen_provider = (
                 _fetch_configured_pregame_bullpen_evidence(
                     matchup=matchup,
@@ -3224,6 +3252,13 @@ def build_model_projection_payload(
                     "canonical_production_lineup_selection"
                 ] = (
                     canonical_production_lineup_selection
+                    .to_diagnostics()
+                )
+
+                shared_diagnostics[
+                    "canonical_selected_lineup_profile_materialization"
+                ] = (
+                    canonical_lineup_profile_materialization
                     .to_diagnostics()
                 )
 

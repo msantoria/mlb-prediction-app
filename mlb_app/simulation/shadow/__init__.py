@@ -147,6 +147,11 @@ from .production_lineup_selection import (
     discover_canonical_production_lineup,
     fetch_projected_lineup_schedule,
 )
+from .selected_lineup_profile_materialization import (
+    CANONICAL_SELECTED_LINEUP_PROFILE_MATERIALIZATION_VERSION,
+    CanonicalSelectedLineupProfileMaterialization,
+    materialize_canonical_selected_lineup_profiles,
+)
 from .input_assembly import (
     CANONICAL_SHADOW_INPUT_ASSEMBLY_VERSION,
     CanonicalShadowExecutionInputs,
@@ -239,6 +244,7 @@ __all__ = [
     "CANONICAL_SELECTED_LINEUP_VERSION",
     "CANONICAL_PROJECTED_LINEUP_DISCOVERY_VERSION",
     "CANONICAL_PRODUCTION_LINEUP_SELECTION_VERSION",
+    "CANONICAL_SELECTED_LINEUP_PROFILE_MATERIALIZATION_VERSION",
     "PROJECTED_LINEUP_LOOKBACK_DAYS",
     "PROJECTED_LINEUP_SOURCE",
     "DEFAULT_PRODUCTION_SHADOW_SIMULATION_COUNT",
@@ -315,6 +321,7 @@ __all__ = [
     "CanonicalSelectedLineupSelection",
     "CanonicalProjectedLineupDiscovery",
     "CanonicalProductionLineupSelection",
+    "CanonicalSelectedLineupProfileMaterialization",
     "CanonicalProductionShadowExecution",
     "CanonicalShadowProbabilityProviderDiscovery",
     "CanonicalShadowExecutionMaterial",
@@ -333,6 +340,7 @@ __all__ = [
     "discover_canonical_projected_lineup",
     "discover_canonical_production_lineup",
     "fetch_projected_lineup_schedule",
+    "materialize_canonical_selected_lineup_profiles",
     "discover_canonical_shadow_probability_provider",
     "run_canonical_production_shadow",
     "canonical_shadow_execution_bundle_to_material",
