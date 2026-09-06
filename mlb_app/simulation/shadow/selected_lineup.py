@@ -185,6 +185,10 @@ class CanonicalSelectedLineup:
                 "9 unique players"
             )
 
+    @property
+    def ready(self) -> bool:
+        return True
+
     def readiness_matchup_fields(
         self,
     ) -> Dict[str, Any]:
@@ -199,6 +203,39 @@ class CanonicalSelectedLineup:
             ],
             "lineup_source": self.lineup_source,
             "lineup_digest": self.lineup_digest,
+        }
+
+    def to_diagnostics(self) -> Dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "status": "ready",
+            "ready": True,
+            "source": self.lineup_source,
+            "lineup_source": self.lineup_source,
+            "source_identifier": (
+                self.source_identifier
+            ),
+            "source_as_of": self.source_as_of,
+            "confidence": self.confidence,
+            "lineup_digest": self.lineup_digest,
+            "away": {
+                "ready": True,
+                "validated_player_count": len(
+                    self.away_player_ids
+                ),
+                "required_player_count": 9,
+            },
+            "home": {
+                "ready": True,
+                "validated_player_count": len(
+                    self.home_player_ids
+                ),
+                "required_player_count": 9,
+            },
+            "player_identifiers_exposed": False,
+            "activation_permitted": False,
+            "production_authority_changed": False,
+            "authoritative_source": "legacy",
         }
 
 
