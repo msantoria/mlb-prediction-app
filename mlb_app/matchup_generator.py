@@ -323,6 +323,8 @@ def _generate_matchups_for_date_uncached(session: Session, date_str: str) -> Lis
             "away_pitcher_id": away_pitcher_id,
             "home_pitcher_name": game.get("home", {}).get("probablePitcher", {}).get("fullName"),
             "away_pitcher_name": game.get("away", {}).get("probablePitcher", {}).get("fullName"),
+            "home_pitcher_hand": game.get("home", {}).get("probablePitcher", {}).get("pitchHand", {}).get("code"),
+            "away_pitcher_hand": game.get("away", {}).get("probablePitcher", {}).get("pitchHand", {}).get("code"),
             "home_pitcher_status": _pitcher_status(home_pitcher_id),
             "away_pitcher_status": _pitcher_status(away_pitcher_id),
             "home_pitcher_source": _pitcher_source(home_pitcher_id),
