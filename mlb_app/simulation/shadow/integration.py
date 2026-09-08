@@ -110,6 +110,32 @@ def attach_canonical_shadow(
     )
 
     if enabled and canonical_payload is not None:
+        canonical_outcomes = canonical_payload.get(
+            "outcomes"
+        )
+
+        if isinstance(canonical_outcomes, dict):
+            shadow_payload["canonical_outcomes"] = {
+                "schema_version": (
+                    "canonical_game_outcomes_transport_v1"
+                ),
+                "run_id": canonical_payload.get("run_id"),
+                "model_version": canonical_payload.get(
+                    "model_version"
+                ),
+                "simulation_count": (
+                    canonical_outcomes.get(
+                        "simulation_count"
+                    )
+                    or canonical_payload.get(
+                        "simulation_count"
+                    )
+                ),
+                **deepcopy(canonical_outcomes),
+                "authoritative": False,
+                "authoritative_source": "canonical_shadow",
+            }
+
         try:
             projection_rows = (
                 canonical_player_projection_rows(

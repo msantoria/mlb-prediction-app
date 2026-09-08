@@ -198,3 +198,29 @@ test('projections tab displays canonical lineup execution context', async () => 
     /view\.simulationContext\.fullyVerified/,
   )
 })
+
+
+test('simulation tab displays transported canonical outcomes', async () => {
+  const source = await pageSource()
+
+  assert.match(
+    source,
+    /buildCanonicalSimulationViewModel/,
+  )
+  assert.match(source, /Canonical Simulation/)
+  assert.match(
+    source,
+    /canonical\.title/,
+  )
+  assert.match(
+    source,
+    /canonical\.lineupSourceLabel/,
+  )
+  assert.match(source, /canonical\.simulationCount/)
+  assert.match(source, /canonical\.awayWinProbability/)
+  assert.match(source, /canonical\.totalExpectedRuns/)
+  assert.match(
+    source,
+    /legacy 3,000-run simulation is not shown/,
+  )
+})

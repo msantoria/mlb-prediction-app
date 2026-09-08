@@ -6,6 +6,9 @@ import {
 import {
   buildCanonicalProjectionsViewModel,
 } from '../lib/canonicalProjectionsViewModel.mjs'
+import {
+  buildCanonicalSimulationViewModel,
+} from '../lib/canonicalSimulationViewModel.mjs'
 
 const API = API_BASE
 
@@ -820,16 +823,164 @@ function ModelContractPanel({ game }) {
 }
 
 function SimulationTab({ workspace, game }) {
+  const canonical = (
+    buildCanonicalSimulationViewModel(game)
+  )
+
+  if (canonical.available) {
+    const totals = canonical.totalProbabilities
+    const teamTotals = (
+      canonical.teamTotalProbabilities
+    )
+
+    return (
+      <div style={s.splitGrid}>
+        <GenericPanel
+          title="Canonical Simulation"
+          subtitle={
+            canonical.modelVersion ||
+            'canonical event-driven simulation'
+          }
+          tag={canonical.lineupSourceLabel}
+          tagTone="diagnostic"
+        >
+          <StatRow
+            k="Status"
+            v={canonical.title}
+          />
+          <StatRow
+            k="Simulation Count"
+            v={canonical.simulationCount}
+            format="num"
+          />
+          <StatRow
+            k="Run ID"
+            v={canonical.runId}
+          />
+          <StatRow
+            k="Lineup Source"
+            v={canonical.lineupSourceLabel}
+          />
+          <StatRow
+            k="Authority"
+            v={
+              canonical.authoritative
+                ? 'Production'
+                : 'Canonical shadow'
+            }
+          />
+        </GenericPanel>
+
+        <GenericPanel
+          title="Game Simulation"
+          subtitle={canonical.message}
+        >
+          <StatRow
+            k="Total Expected Runs"
+            v={canonical.totalExpectedRuns}
+            format="num"
+          />
+          <StatRow
+            k="Away Expected Runs"
+            v={canonical.awayExpectedRuns}
+            format="num"
+          />
+          <StatRow
+            k="Home Expected Runs"
+            v={canonical.homeExpectedRuns}
+            format="num"
+          />
+          <StatRow
+            k="Away Win Probability"
+            v={canonical.awayWinProbability}
+            format="pct"
+          />
+          <StatRow
+            k="Home Win Probability"
+            v={canonical.homeWinProbability}
+            format="pct"
+          />
+          <StatRow
+            k="Extra Innings Probability"
+            v={canonical.extraInningsProbability}
+            format="pct"
+          />
+          <StatRow
+            k="Walk-Off Probability"
+            v={canonical.walkOffProbability}
+            format="pct"
+          />
+        </GenericPanel>
+
+        <GenericPanel title="Game Totals">
+          <StatRow k="Over 6.5" v={totals['over_6.5']} format="pct" />
+          <StatRow k="Over 7.5" v={totals['over_7.5']} format="pct" />
+          <StatRow k="Over 8.5" v={totals['over_8.5']} format="pct" />
+          <StatRow k="Over 9.5" v={totals['over_9.5']} format="pct" />
+          <StatRow k="Under 8.5" v={totals['under_8.5']} format="pct" />
+          <StatRow k="Under 9.5" v={totals['under_9.5']} format="pct" />
+        </GenericPanel>
+
+        <GenericPanel title="Team Totals">
+          <StatRow k="Away 3+ Runs" v={teamTotals.away_3_plus} format="pct" />
+          <StatRow k="Away 4+ Runs" v={teamTotals.away_4_plus} format="pct" />
+          <StatRow k="Away 5+ Runs" v={teamTotals.away_5_plus} format="pct" />
+          <StatRow k="Home 3+ Runs" v={teamTotals.home_3_plus} format="pct" />
+          <StatRow k="Home 4+ Runs" v={teamTotals.home_4_plus} format="pct" />
+          <StatRow k="Home 5+ Runs" v={teamTotals.home_5_plus} format="pct" />
+        </GenericPanel>
+      </div>
+    )
+  }
+
+  if (canonical.claimed) {
+    return (
+      <div style={s.noData}>
+        <div
+          style={{
+            color: '#e6edf3',
+            fontSize: '16px',
+            fontWeight: 800,
+            marginBottom: '8px',
+          }}
+        >
+          {canonical.title}
+        </div>
+        <div>{canonical.message}</div>
+        <div style={{ marginTop: '8px' }}>
+          The legacy 3,000-run simulation is not shown as
+          the selected canonical lineup run.
+        </div>
+      </div>
+    )
+  }
+
   const sharedSim = getSharedDerivedSimulation(game)
-  const sim = Object.keys(sharedSim || {}).length ? sharedSim : (workspace?.bullpenAdjustedGameSimulation || {})
-  const totals = sim.calibrated_total_probabilities || sim.total_probabilities || {}
-  const teamTotals = sim.calibrated_team_total_probabilities || sim.team_total_probabilities || {}
+  const sim = Object.keys(sharedSim || {}).length
+    ? sharedSim
+    : (workspace?.bullpenAdjustedGameSimulation || {})
+  const totals = (
+    sim.calibrated_total_probabilities ||
+    sim.total_probabilities ||
+    {}
+  )
+  const teamTotals = (
+    sim.calibrated_team_total_probabilities ||
+    sim.team_total_probabilities ||
+    {}
+  )
 
   return (
     <div style={s.splitGrid}>
       <ModelContractPanel game={game} />
 
-      <GenericPanel title="Game Simulation" subtitle={sim.model_version || 'bullpen adjusted simulation'}>
+      <GenericPanel
+        title="Legacy Game Simulation"
+        subtitle={
+          sim.model_version ||
+          'legacy bullpen adjusted simulation'
+        }
+      >
         <StatRow k="Total Expected Runs" v={sim.total_expected_runs} format="num" />
         <StatRow k="Away Expected Runs" v={sim.away_expected_runs} format="num" />
         <StatRow k="Home Expected Runs" v={sim.home_expected_runs} format="num" />
@@ -839,7 +990,7 @@ function SimulationTab({ workspace, game }) {
         <StatRow k="Dynamic Starter Exit" v={sim.dynamic_starter_exit ? 'true' : 'false'} />
       </GenericPanel>
 
-      <GenericPanel title="Game Totals">
+      <GenericPanel title="Legacy Game Totals">
         <StatRow k="Over 6.5" v={totals['over_6.5']} format="pct" />
         <StatRow k="Over 7.5" v={totals['over_7.5']} format="pct" />
         <StatRow k="Over 8.5" v={totals['over_8.5']} format="pct" />
@@ -848,7 +999,7 @@ function SimulationTab({ workspace, game }) {
         <StatRow k="Under 9.5" v={totals['under_9.5']} format="pct" />
       </GenericPanel>
 
-      <GenericPanel title="Team Totals">
+      <GenericPanel title="Legacy Team Totals">
         <StatRow k="Away 3+ Runs" v={teamTotals.away_3_plus} format="pct" />
         <StatRow k="Away 4+ Runs" v={teamTotals.away_4_plus} format="pct" />
         <StatRow k="Away 5+ Runs" v={teamTotals.away_5_plus} format="pct" />
