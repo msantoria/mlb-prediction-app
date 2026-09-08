@@ -1173,3 +1173,69 @@ def test_game_realism_requires_executed_activation():
     assert active[
         "extras_walkoff_model_status"
     ] == "active"
+
+
+def test_executed_shadow_attaches_same_run_game_outcomes():
+    execution = executed_shadow(simulation_count=3)
+
+    result = (
+        model_projections
+        ._attach_production_shadow_comparison(
+            legacy_result=legacy_payload(),
+            production_execution=execution,
+        )
+    )
+
+    shadow = result["diagnostics"]["canonical_shadow"]
+    outcomes = shadow["canonical_outcomes"]
+    source = execution.material.canonical_payload[
+        "outcomes"
+    ]
+
+    assert outcomes["schema_version"] == (
+        "canonical_game_outcomes_transport_v1"
+    )
+    assert outcomes["simulation_count"] == 3
+    assert outcomes["run_id"] == (
+        execution.material.canonical_payload["run_id"]
+    )
+    assert outcomes["away_win_probability"] == (
+        source["away_win_probability"]
+    )
+    assert outcomes["home_win_probability"] == (
+        source["home_win_probability"]
+    )
+    assert outcomes["away_run_distribution"] == (
+        source["away_run_distribution"]
+    )
+    assert outcomes["home_run_distribution"] == (
+        source["home_run_distribution"]
+    )
+    assert outcomes["total_run_distribution"] == (
+        source["total_run_distribution"]
+    )
+    assert outcomes["authoritative"] is False
+    assert outcomes["authoritative_source"] == (
+        "canonical_shadow"
+    )
+
+    # The additive transport must not replace legacy authority.
+    assert result["simulation_count"] == 3000
+    assert result["away_win_probability"] == 0.48
+
+
+def test_blocked_shadow_does_not_attach_canonical_outcomes():
+    legacy = legacy_payload()
+
+    result = (
+        model_projections
+        ._attach_production_shadow_comparison(
+            legacy_result=legacy,
+            production_execution=BlockedExecution(),
+        )
+    )
+
+    assert result is legacy
+    assert "canonical_outcomes" not in (
+        result.get("diagnostics", {})
+    )
