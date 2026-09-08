@@ -39,6 +39,89 @@ def _projection_cache_key(target_date: str) -> str:
     return model_projection_date_key(target_date)
 
 
+def _canonical_outcome_transport_complete(
+    payload: Any,
+) -> bool:
+    """
+    Reject warmed payloads that claim completed canonical execution
+    without transporting the same run's game outcomes.
+
+    Games with no completed canonical execution remain valid.
+    """
+
+    if not isinstance(payload, dict):
+        return False
+
+    games = payload.get("games")
+
+    if not isinstance(games, list):
+        return False
+
+    for game in games:
+        if not isinstance(game, dict):
+            continue
+
+        shared_simulation = game.get("sharedSimulation")
+
+        if not isinstance(shared_simulation, dict):
+            shared_simulation = {}
+
+        shared_diagnostics = shared_simulation.get(
+            "diagnostics"
+        )
+
+        if not isinstance(shared_diagnostics, dict):
+            shared_diagnostics = {}
+
+        execution = (
+            game.get(
+                "canonical_shadow_production_execution"
+            )
+            or shared_diagnostics.get(
+                "canonical_shadow_production_execution"
+            )
+            or {}
+        )
+
+        if not isinstance(execution, dict):
+            execution = {}
+
+        executed = (
+            execution.get("executed") is True
+            or execution.get("status") == "executed"
+        )
+
+        if not executed:
+            continue
+
+        canonical_shadow = shared_diagnostics.get(
+            "canonical_shadow"
+        )
+
+        if not isinstance(canonical_shadow, dict):
+            return False
+
+        outcomes = canonical_shadow.get(
+            "canonical_outcomes"
+        )
+
+        if not isinstance(outcomes, dict):
+            return False
+
+        if outcomes.get("schema_version") != (
+            "canonical_game_outcomes_transport_v1"
+        ):
+            return False
+
+        if outcomes.get("simulation_count") in (
+            None,
+            0,
+        ):
+            return False
+
+    return True
+
+
 def _attach_projection_artifact_metadata(payload: Dict[str, Any], target_date: str) -> Dict[str, Any]:
     metadata = artifact_metadata(
         artifact_type="model_projection_date",
@@ -210,7 +293,12 @@ def get_model_projection_payload(target_date: str) -> Dict[str, Any]:
     """Read the warmed projection artifact without building inside a user request."""
     cache_key = _projection_cache_key(target_date)
     cached = get_cache(cache_key, env_ttl("MODEL_PROJECTION_CACHE_TTL_SECONDS"))
-    if cached is not None:
+    if (
+        cached is not None
+        and _canonical_outcome_transport_complete(
+            cached
+        )
+    ):
         if isinstance(cached, dict):
             cached.setdefault("cache_hit", True)
             cached.setdefault("cache_key", cache_key)
@@ -223,7 +311,16 @@ def get_model_projection_payload(target_date: str) -> Dict[str, Any]:
             .filter(SharedReportArtifact.artifact_key == cache_key)
             .first()
         )
-        if artifact is not None and isinstance(artifact.payload_json, dict):
+        if (
+            artifact is not None
+            and isinstance(
+                artifact.payload_json,
+                dict,
+            )
+            and _canonical_outcome_transport_complete(
+                artifact.payload_json
+            )
+        ):
             payload = dict(artifact.payload_json)
             payload.update({
                 "cache_hit": False,

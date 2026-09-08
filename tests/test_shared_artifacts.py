@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from mlb_app.model_projection_routes import _apply_projection_probability_contract, _attach_projection_artifact_metadata, _projection_cache_key
+from mlb_app.model_projection_routes import (
+    _apply_projection_probability_contract,
+    _attach_projection_artifact_metadata,
+    _canonical_outcome_transport_complete,
+    _projection_cache_key,
+)
 from mlb_app.schedule_calendar import build_schedule_calendar_snapshot, get_or_build_schedule_calendar_snapshot
 from mlb_app.shared_artifacts import (
     MODEL_PROJECTION_WORKSPACE_VERSION,
@@ -170,19 +175,87 @@ def test_projection_workspace_version_changes_cache_namespace() -> None:
     )
 
 
-def test_model_projection_workspace_v6_invalidates_prior_environment_payload_cache():
-    date = "2026-08-16"
+def test_model_projection_workspace_v7_invalidates_pre_outcome_payload_cache():
+    date = "2026-09-08"
 
     key = model_projection_date_key(date)
 
     assert MODEL_PROJECTION_WORKSPACE_VERSION == (
-        "model_projection_workspace_v6"
+        "model_projection_workspace_v7"
     )
     assert key.endswith(
-        "model_projection_workspace_v6:"
+        "model_projection_workspace_v7:"
         + date
     )
     assert (
-        "model_projection_workspace_v3"
+        "model_projection_workspace_v6"
         not in key
+    )
+
+
+def _transport_payload(*, executed, outcomes=None):
+    canonical_shadow = {}
+
+    if outcomes is not None:
+        canonical_shadow["canonical_outcomes"] = outcomes
+
+    return {
+        "games": [
+            {
+                "canonical_shadow_production_execution": {
+                    "status": (
+                        "executed"
+                        if executed
+                        else "blocked"
+                    ),
+                    "executed": executed,
+                },
+                "sharedSimulation": {
+                    "diagnostics": {
+                        "canonical_shadow": (
+                            canonical_shadow
+                        ),
+                    },
+                },
+            },
+        ],
+    }
+
+
+def test_completed_execution_requires_canonical_outcomes():
+    payload = _transport_payload(
+        executed=True,
+    )
+
+    assert (
+        _canonical_outcome_transport_complete(payload)
+        is False
+    )
+
+
+def test_completed_execution_accepts_versioned_outcomes():
+    payload = _transport_payload(
+        executed=True,
+        outcomes={
+            "schema_version": (
+                "canonical_game_outcomes_transport_v1"
+            ),
+            "simulation_count": 25,
+        },
+    )
+
+    assert (
+        _canonical_outcome_transport_complete(payload)
+        is True
+    )
+
+
+def test_blocked_execution_does_not_require_outcomes():
+    payload = _transport_payload(
+        executed=False,
+    )
+
+    assert (
+        _canonical_outcome_transport_complete(payload)
+        is True
     )

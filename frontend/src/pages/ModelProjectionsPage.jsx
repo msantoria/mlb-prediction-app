@@ -456,58 +456,263 @@ function TotalProjectionPanel({ model, sim = {}, environmentProfile = {} }) {
   )
 }
 
-function OverviewTab({ game, awayRunModel, homeRunModel, totalModel }) {
+function OverviewTab({
+  game,
+  awayRunModel,
+  homeRunModel,
+  totalModel,
+}) {
   const away = game?.teams?.away || {}
   const home = game?.teams?.home || {}
   const awayInputs = awayRunModel?.inputs || {}
   const homeInputs = homeRunModel?.inputs || {}
   const totalInputs = totalModel?.inputs || {}
+  const canonical = (
+    buildCanonicalSimulationViewModel(game)
+  )
+
+  if (canonical.claimed && !canonical.available) {
+    return (
+      <div style={s.noData}>
+        <div
+          style={{
+            color: '#e6edf3',
+            fontSize: '16px',
+            fontWeight: 800,
+            marginBottom: '8px',
+          }}
+        >
+          {canonical.title}
+        </div>
+        <div>{canonical.message}</div>
+        <div style={{ marginTop: '8px' }}>
+          Legacy projections are withheld because a
+          canonical lineup was selected for this game.
+        </div>
+      </div>
+    )
+  }
 
   const sharedSim = getSharedDerivedSimulation(game)
   const directInputs = getSharedDirectInputs(game)
-  const totals = sharedSim.calibrated_total_probabilities || sharedSim.total_probabilities || {}
-  const teamTotals = sharedSim.calibrated_team_total_probabilities || sharedSim.team_total_probabilities || {}
+  const usingCanonical = canonical.available
 
-  const totalExpectedRuns = sharedSim.total_expected_runs ?? totalInputs.total_expected_runs ?? totalModel?.score
-  const awayExpectedRuns = sharedSim.away_expected_runs ?? awayInputs.expected_runs ?? awayRunModel?.score
-  const homeExpectedRuns = sharedSim.home_expected_runs ?? homeInputs.expected_runs ?? homeRunModel?.score
-  const awayWinProbability = sharedSim.away_win_probability ?? awayInputs.win_probability
-  const homeWinProbability = sharedSim.home_win_probability ?? homeInputs.win_probability
+  const overviewSim = usingCanonical
+    ? {
+        total_expected_runs: (
+          canonical.totalExpectedRuns
+        ),
+        away_expected_runs: (
+          canonical.awayExpectedRuns
+        ),
+        home_expected_runs: (
+          canonical.homeExpectedRuns
+        ),
+        away_win_probability: (
+          canonical.awayWinProbability
+        ),
+        home_win_probability: (
+          canonical.homeWinProbability
+        ),
+        extra_innings_probability: (
+          canonical.extraInningsProbability
+        ),
+        total_probabilities: (
+          canonical.totalProbabilities
+        ),
+        team_total_probabilities: (
+          canonical.teamTotalProbabilities
+        ),
+        simulation_count: (
+          canonical.simulationCount
+        ),
+        model_version: canonical.modelVersion,
+      }
+    : sharedSim
+
+  const totals = (
+    overviewSim.calibrated_total_probabilities ||
+    overviewSim.total_probabilities ||
+    {}
+  )
+  const teamTotals = (
+    overviewSim.calibrated_team_total_probabilities ||
+    overviewSim.team_total_probabilities ||
+    {}
+  )
+
+  const totalExpectedRuns = (
+    overviewSim.total_expected_runs ??
+    (
+      usingCanonical
+        ? null
+        : (
+            totalInputs.total_expected_runs ??
+            totalModel?.score
+          )
+    )
+  )
+  const awayExpectedRuns = (
+    overviewSim.away_expected_runs ??
+    (
+      usingCanonical
+        ? null
+        : (
+            awayInputs.expected_runs ??
+            awayRunModel?.score
+          )
+    )
+  )
+  const homeExpectedRuns = (
+    overviewSim.home_expected_runs ??
+    (
+      usingCanonical
+        ? null
+        : (
+            homeInputs.expected_runs ??
+            homeRunModel?.score
+          )
+    )
+  )
+  const awayWinProbability = (
+    overviewSim.away_win_probability ??
+    (
+      usingCanonical
+        ? null
+        : awayInputs.win_probability
+    )
+  )
+  const homeWinProbability = (
+    overviewSim.home_win_probability ??
+    (
+      usingCanonical
+        ? null
+        : homeInputs.win_probability
+    )
+  )
 
   return (
     <>
+      <div
+        style={{
+          ...s.metricCard,
+          marginBottom: '14px',
+        }}
+      >
+        <div style={s.metricLabel}>
+          Overview source
+        </div>
+        <div
+          style={{
+            color: '#e6edf3',
+            fontWeight: 800,
+          }}
+        >
+          {usingCanonical
+            ? canonical.title
+            : 'Legacy simulation fallback'}
+        </div>
+        <div
+          style={{
+            color: '#8b949e',
+            fontSize: '13px',
+            marginTop: '6px',
+          }}
+        >
+          {usingCanonical
+            ? (
+                `${canonical.lineupSourceLabel} · `
+                + `${canonical.simulationCount} trials`
+              )
+            : (
+                'No canonical execution was claimed; '
+                + 'legacy shared-simulation values are shown.'
+              )}
+        </div>
+      </div>
+
       <div style={s.grid}>
-        <MetricCard labelText="Projected Total" value={totalExpectedRuns} />
-        <MetricCard labelText={`${game?.away_team?.name || away?.team_name || 'Away'} Runs`} value={awayExpectedRuns} />
-        <MetricCard labelText={`${game?.home_team?.name || home?.team_name || 'Home'} Runs`} value={homeExpectedRuns} />
-        <MetricCard labelText={`${game?.away_team?.name || away?.team_name || 'Away'} Win`} value={awayWinProbability} format="pct" />
-        <MetricCard labelText={`${game?.home_team?.name || home?.team_name || 'Home'} Win`} value={homeWinProbability} format="pct" />
-        <MetricCard labelText="Over 8.5" value={totals['over_8.5'] ?? totalInputs.over_8_5} format="pct" />
+        <MetricCard
+          labelText="Projected Total"
+          value={totalExpectedRuns}
+        />
+        <MetricCard
+          labelText={`${game?.away_team?.name || away?.team_name || 'Away'} Runs`}
+          value={awayExpectedRuns}
+        />
+        <MetricCard
+          labelText={`${game?.home_team?.name || home?.team_name || 'Home'} Runs`}
+          value={homeExpectedRuns}
+        />
+        <MetricCard
+          labelText={`${game?.away_team?.name || away?.team_name || 'Away'} Win`}
+          value={awayWinProbability}
+          format="pct"
+        />
+        <MetricCard
+          labelText={`${game?.home_team?.name || home?.team_name || 'Home'} Win`}
+          value={homeWinProbability}
+          format="pct"
+        />
+        <MetricCard
+          labelText="Over 8.5"
+          value={
+            totals['over_8.5'] ??
+            (
+              usingCanonical
+                ? null
+                : totalInputs.over_8_5
+            )
+          }
+          format="pct"
+        />
       </div>
 
       <div style={s.splitGrid}>
         <TeamProjectionPanel
           side="Away"
-          teamName={game?.away_team?.name || away?.team_name}
-          pitcherName={game?.away_pitcher?.name || away?.pitcher_name}
+          teamName={
+            game?.away_team?.name ||
+            away?.team_name
+          }
+          pitcherName={
+            game?.away_pitcher?.name ||
+            away?.pitcher_name
+          }
           model={awayRunModel}
-          sim={sharedSim}
+          sim={overviewSim}
           teamTotals={teamTotals}
-          directInputs={directInputs.away_offense_profile}
+          directInputs={
+            directInputs.away_offense_profile
+          }
         />
         <TeamProjectionPanel
           side="Home"
-          teamName={game?.home_team?.name || home?.team_name}
-          pitcherName={game?.home_pitcher?.name || home?.pitcher_name}
+          teamName={
+            game?.home_team?.name ||
+            home?.team_name
+          }
+          pitcherName={
+            game?.home_pitcher?.name ||
+            home?.pitcher_name
+          }
           model={homeRunModel}
-          sim={sharedSim}
+          sim={overviewSim}
           teamTotals={teamTotals}
-          directInputs={directInputs.home_offense_profile}
+          directInputs={
+            directInputs.home_offense_profile
+          }
         />
       </div>
 
       <div style={{ marginTop: '14px' }}>
-        <TotalProjectionPanel model={totalModel} sim={sharedSim} environmentProfile={directInputs.environment_profile} />
+        <TotalProjectionPanel
+          model={totalModel}
+          sim={overviewSim}
+          environmentProfile={
+            directInputs.environment_profile
+          }
+        />
       </div>
     </>
   )

@@ -224,3 +224,38 @@ test('simulation tab displays transported canonical outcomes', async () => {
     /legacy 3,000-run simulation is not shown/,
   )
 })
+
+
+test('overview shares canonical simulation authority', async () => {
+  const source = await pageSource()
+
+  assert.match(
+    source,
+    /const canonical = \(\s*buildCanonicalSimulationViewModel\(game\)/,
+  )
+  assert.match(
+    source,
+    /canonical\.claimed && !canonical\.available/,
+  )
+  assert.match(
+    source,
+    /Legacy projections are withheld/,
+  )
+  assert.match(source, /Overview source/)
+  assert.match(
+    source,
+    /Legacy simulation fallback/,
+  )
+  assert.match(
+    source,
+    /No canonical execution was claimed/,
+  )
+  assert.match(
+    source,
+    /canonical\.simulationCount/,
+  )
+  assert.match(
+    source,
+    /usingCanonical\s*\? null/,
+  )
+})
