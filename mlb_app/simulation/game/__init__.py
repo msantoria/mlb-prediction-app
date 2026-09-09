@@ -56,6 +56,14 @@ from .batted_ball_resolution import (
     derive_canonical_batted_ball_seed,
     resolve_canonical_batted_ball_outcome,
 )
+from .defensive_opportunity import (
+    CANONICAL_DEFENSIVE_OPPORTUNITY_VERSION,
+    CanonicalDefensiveCoverageUnit,
+    CanonicalDefensiveDifficulty,
+    CanonicalDefensiveOpportunity,
+    CanonicalFieldZone,
+    resolve_canonical_defensive_opportunity,
+)
 from .bullpen_selector import (
     CANONICAL_BULLPEN_SELECTOR_VERSION,
     CanonicalBullpenPitcher,
@@ -236,6 +244,11 @@ __all__ = [
     "CanonicalRunnerBaserunningProfile",
     "CanonicalSampledBaserunning",
     "CanonicalBattedBallResolution",
+    "CANONICAL_DEFENSIVE_OPPORTUNITY_VERSION",
+    "CanonicalDefensiveCoverageUnit",
+    "CanonicalDefensiveDifficulty",
+    "CanonicalDefensiveOpportunity",
+    "CanonicalFieldZone",
     "build_canonical_baserunning_evidence_provider",
     "build_canonical_baserunning_state_provider",
     "build_canonical_bullpen_selector",
@@ -349,6 +362,7 @@ __all__ = [
     "run_canonical_trials",
     "run_canonical_trial_execution_plan",
     "resolve_canonical_batted_ball_outcome",
+    "resolve_canonical_defensive_opportunity",
     "resolve_canonical_sampled_baserunning",
     "resolve_canonical_sampled_plate_appearance",
     "reduce_canonical_game_box_score",

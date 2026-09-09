@@ -22,6 +22,10 @@ from mlb_app.simulation.events import (
     build_play_event,
 )
 
+from .defensive_opportunity import (
+    CanonicalDefensiveOpportunity,
+    resolve_canonical_defensive_opportunity,
+)
 from .factory_input import MAX_CANONICAL_SEED
 from .probability import (
     CanonicalPlateAppearanceOutcome,
@@ -77,8 +81,10 @@ class CanonicalBattedBallResolution:
     sampled: CanonicalSampledPlateAppearance
     event: PlayEvent
     context: BattedBallContext
+    defensive_opportunity: CanonicalDefensiveOpportunity
     advancement: RunnerAdvancementResult
     context_seed: int
+    defensive_seed: int
     advancement_seed: int
     force_play_seed: Optional[int] = None
     force_play_draw: Optional[float] = None
@@ -228,6 +234,10 @@ def resolve_canonical_batted_ball_outcome(
         sampled=sampled,
         purpose="context",
     )
+    defensive_seed = derive_canonical_batted_ball_seed(
+        sampled=sampled,
+        purpose="defensive_opportunity",
+    )
     advancement_seed = derive_canonical_batted_ball_seed(
         sampled=sampled,
         purpose="advancement",
@@ -277,6 +287,13 @@ def resolve_canonical_batted_ball_outcome(
         raise RuntimeError(
             "batted-ball outcome produced no context"
         )
+
+    defensive_opportunity = (
+        resolve_canonical_defensive_opportunity(
+            context=context,
+            resolution_seed=defensive_seed,
+        )
+    )
 
     advancement = BaselineRunnerAdvancementSampler(
         rng=random.Random(advancement_seed),
@@ -373,8 +390,10 @@ def resolve_canonical_batted_ball_outcome(
         sampled=sampled,
         event=event,
         context=context,
+        defensive_opportunity=defensive_opportunity,
         advancement=advancement,
         context_seed=context_seed,
+        defensive_seed=defensive_seed,
         advancement_seed=advancement_seed,
         force_play_seed=(
             force_play_seed
