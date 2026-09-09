@@ -6,6 +6,10 @@ from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Tuple
 
+from .defensive_alignment import (
+    CanonicalDefensiveAlignment,
+)
+
 from mlb_app.simulation.events import (
     GameState,
     PlayEvent,
@@ -54,6 +58,7 @@ class CanonicalLineup:
 
     team_side: str
     player_ids: Tuple[str, ...]
+    defensive_alignment: CanonicalDefensiveAlignment | None = None
 
     def __post_init__(self) -> None:
         if self.team_side not in {"away", "home"}:
@@ -72,6 +77,32 @@ class CanonicalLineup:
             raise ValueError(
                 "lineup player identifiers must be unique"
             )
+
+        alignment = self.defensive_alignment
+
+        if alignment is not None:
+            if not isinstance(
+                alignment,
+                CanonicalDefensiveAlignment,
+            ):
+                raise TypeError(
+                    "defensive_alignment must be a "
+                    "CanonicalDefensiveAlignment"
+                )
+
+            if alignment.team_side != self.team_side:
+                raise ValueError(
+                    "defensive alignment team_side must "
+                    "match canonical lineup"
+                )
+
+            if not set(
+                alignment.identified_player_ids
+            ).issubset(set(self.player_ids)):
+                raise ValueError(
+                    "defensive fielder identities must "
+                    "belong to canonical lineup"
+                )
 
     def batter(self, batting_order_index: int) -> str:
         return self.player_ids[
