@@ -22,6 +22,7 @@ from mlb_app.simulation.game import (
     CanonicalPlateAppearanceOutcome,
     CanonicalPlateAppearanceQuery,
     CanonicalProbabilityProviderIdentity,
+    CanonicalSampledDefensiveOutcome,
     CanonicalSampledPlateAppearance,
     derive_canonical_batted_ball_seed,
     resolve_canonical_batted_ball_outcome,
@@ -239,6 +240,25 @@ def test_batted_ball_resolution_attaches_opportunity():
     )
     assert resolution.defensive_seed not in {
         resolution.context_seed,
+        resolution.advancement_seed,
+    }
+    assert isinstance(
+        resolution.defensive_outcome,
+        CanonicalSampledDefensiveOutcome,
+    )
+    assert resolution.defensive_outcome.authoritative is False
+    assert resolution.defensive_outcome.sampling_seed == (
+        resolution.defensive_outcome_seed
+    )
+    assert resolution.defensive_outcome_seed == (
+        derive_canonical_batted_ball_seed(
+            sampled=value,
+            purpose="defensive_outcome",
+        )
+    )
+    assert resolution.defensive_outcome_seed not in {
+        resolution.context_seed,
+        resolution.defensive_seed,
         resolution.advancement_seed,
     }
 
