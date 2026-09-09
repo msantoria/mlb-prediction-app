@@ -34,6 +34,10 @@ from .defensive_outcome_reconciliation import (
     CanonicalDefensiveOutcomeReconciliation,
     reconcile_canonical_defensive_outcome,
 )
+from .defensive_event_rematerialization import (
+    CanonicalDefensiveEventRematerialization,
+    rematerialize_canonical_defensive_event,
+)
 from .defensive_alignment import (
     CanonicalDefensiveFielderResolution,
     resolve_canonical_defensive_fielder,
@@ -105,6 +109,9 @@ class CanonicalBattedBallResolution:
     ]
     defensive_reconciliation: (
         CanonicalDefensiveOutcomeReconciliation
+    )
+    defensive_event_rematerialization: (
+        CanonicalDefensiveEventRematerialization
     )
     advancement: RunnerAdvancementResult
     context_seed: int
@@ -481,6 +488,20 @@ def resolve_canonical_batted_ball_outcome(
         pitcher_id=query.pitcher_id,
     )
 
+    defensive_event_rematerialization = (
+        rematerialize_canonical_defensive_event(
+            original_event=event,
+            original_advancement=advancement,
+            reconciliation=defensive_reconciliation,
+            context=context,
+            advancement_seed=advancement_seed,
+        )
+    )
+    event = defensive_event_rematerialization.event
+    advancement = (
+        defensive_event_rematerialization.advancement
+    )
+
     return CanonicalBattedBallResolution(
         sampled=sampled,
         event=event,
@@ -491,6 +512,9 @@ def resolve_canonical_batted_ball_outcome(
         defensive_hit_type=defensive_hit_type,
         defensive_reconciliation=(
             defensive_reconciliation
+        ),
+        defensive_event_rematerialization=(
+            defensive_event_rematerialization
         ),
         advancement=advancement,
         context_seed=context_seed,

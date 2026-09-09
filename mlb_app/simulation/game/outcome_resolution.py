@@ -90,10 +90,10 @@ def resolve_canonical_sampled_plate_appearance(
             sampled
         ).event
 
-        if outcome in {
-            CanonicalPlateAppearanceOutcome.SINGLE,
-            CanonicalPlateAppearanceOutcome.DOUBLE,
-            CanonicalPlateAppearanceOutcome.TRIPLE,
+        if event.event_type in {
+            CanonicalPlateAppearanceOutcome.SINGLE.value,
+            CanonicalPlateAppearanceOutcome.DOUBLE.value,
+            CanonicalPlateAppearanceOutcome.TRIPLE.value,
         }:
             return _credit_batter_rbi(event)
 

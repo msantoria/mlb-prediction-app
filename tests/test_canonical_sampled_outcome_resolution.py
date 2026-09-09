@@ -311,3 +311,110 @@ def test_resolution_rejects_non_sample_contract():
         resolve_canonical_sampled_plate_appearance(
             object()
         )
+
+
+@pytest.fixture(autouse=True)
+def preserve_primary_batted_ball_event_contract(
+    monkeypatch,
+):
+    """
+    Keep this module focused on primary-outcome resolution.
+
+    Defensive event authority is exercised separately by the
+    defensive rematerialization contract tests.
+    """
+    from mlb_app.simulation.game.defensive_event_rematerialization import (
+        CanonicalDefensiveEventRematerialization,
+    )
+
+    def preserve(**kwargs):
+        return CanonicalDefensiveEventRematerialization(
+            original_event=kwargs["original_event"],
+            event=kwargs["original_event"],
+            advancement=kwargs["original_advancement"],
+            applied=False,
+            authoritative=False,
+            blocker="test_primary_outcome_contract",
+        )
+
+    monkeypatch.setattr(
+        "mlb_app.simulation.game."
+        "batted_ball_resolution."
+        "rematerialize_canonical_defensive_event",
+        preserve,
+    )
+
+
+def test_rbi_authority_follows_rematerialized_event(
+    monkeypatch,
+):
+    from types import SimpleNamespace
+
+    state = GameState(
+        bases=(None, None, "away_batter_3"),
+    )
+    defensive_hit = (
+        resolve_canonical_sampled_plate_appearance(
+            sampled(
+                CanonicalPlateAppearanceOutcome.DOUBLE,
+                state=state,
+            )
+        )
+    )
+
+    monkeypatch.setattr(
+        "mlb_app.simulation.game."
+        "outcome_resolution."
+        "resolve_canonical_batted_ball_outcome",
+        lambda _sampled: SimpleNamespace(
+            event=defensive_hit
+        ),
+    )
+
+    event = resolve_canonical_sampled_plate_appearance(
+        sampled(
+            CanonicalPlateAppearanceOutcome.OUT,
+            state=state,
+        )
+    )
+
+    assert event.event_type == "double"
+    assert event.runs_scored == ("away_batter_3",)
+    assert (
+        event.attribution.rbi_credited_to
+        == event.batter_id
+    )
+    assert event.attribution.rbi_count == 1
+
+
+def test_converted_out_does_not_retain_sampled_hit_rbi(
+    monkeypatch,
+):
+    from types import SimpleNamespace
+
+    converted_out = (
+        resolve_canonical_sampled_plate_appearance(
+            sampled(
+                CanonicalPlateAppearanceOutcome.OUT,
+            )
+        )
+    )
+
+    monkeypatch.setattr(
+        "mlb_app.simulation.game."
+        "outcome_resolution."
+        "resolve_canonical_batted_ball_outcome",
+        lambda _sampled: SimpleNamespace(
+            event=converted_out
+        ),
+    )
+
+    event = resolve_canonical_sampled_plate_appearance(
+        sampled(
+            CanonicalPlateAppearanceOutcome.SINGLE,
+        )
+    )
+
+    assert event.event_type == "out"
+    assert event.attribution.rbi_credited_to is None
+    assert event.attribution.rbi_count == 0
