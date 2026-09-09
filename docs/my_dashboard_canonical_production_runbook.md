@@ -6,6 +6,8 @@ The default Hitters and Pitchers reports read `dashboard_player_current`. They d
 
 Do not claim My Dashboard is populated from a successful deploy alone. A successful production refresh and plausible status counts are separate requirements.
 
+For system-wide architecture and current invariants, also read [`MLBGPT_SYSTEM_REFERENCE.md`](MLBGPT_SYSTEM_REFERENCE.md).
+
 ## Read-only inspection
 
 From a Railway shell or equivalent environment with the production `DATABASE_URL`:
@@ -47,6 +49,27 @@ The operator command:
 
 Missing-player deactivation is off by default. Use `--transition-missing-players` only after confirming the team and roster source set is complete. A source or projection failure preserves the previous `dashboard_player_current` projection.
 
+## Active-roster completeness and transient failures
+
+`fetch_verified_active_rosters(...)` collects the verified active rosters concurrently but retains an all-team completeness contract. If any team's verified roster request fails, the new canonical projection is rejected rather than promoting a knowingly incomplete roster set.
+
+This is intentionally different from deleting or corrupting the current data:
+
+- the failed refresh is recorded as failed;
+- the previous successfully promoted `dashboard_player_current` rows remain available;
+- report queries and CSV exports can continue to read that prior good projection;
+- a later scheduled run can succeed normally if the upstream/network condition was transient.
+
+Therefore, one failed Railway cron run does not automatically mean current report data was destroyed or that manual database repair is required.
+
+When diagnosing a roster failure, distinguish between:
+
+- a transient `ConnectionError`/timeout from one team request;
+- a persistent upstream/source failure;
+- an actual canonical population or coverage failure after roster collection.
+
+Do not weaken the all-team integrity contract as an incident reaction without a dedicated design/test change. If retry behavior is added later, preserve the verified-source and atomic-promotion guarantees unless the architecture is deliberately redefined.
+
 ## Optional historical snapshot backfill
 
 After a successful current refresh:
@@ -80,7 +103,7 @@ Treat the projection as production-ready only when all of the following are true
 - default hitter/pitcher reports return the same full-population counts across pagination;
 - changing weights does not change `totalSize`.
 
-The service intentionally does not hard-code a claim such as “200+ hitters” because roster availability, season timing, aggregate coverage, and the active-window policy affect the actual population. Record the observed counts in issue #1055 after the production run.
+The service intentionally does not hard-code a claim such as “200+ hitters” because roster availability, season timing, aggregate coverage, and the active-window policy affect the actual population.
 
 ## Field coverage
 
@@ -110,24 +133,31 @@ The query endpoint supports these additional validated related reports:
 
 They use explicit field catalogs from `GET /my-dashboard/report-types`, SQL validation, stable pagination, and canonical-player joins. Arsenal split rows only include active resolved hitters. These one-to-many reports do not redefine the default active-player population.
 
-## Suggested Railway schedule
+## Scheduled Railway worker
 
-The checked-in Railway refresh worker now runs the canonical refresh after its
-matchup, Statcast, hitter-backfill, lineup, and model refresh work. Keep the
-worker on the existing production cadence and use the same production
-`DATABASE_URL` as the API:
+The checked-in Railway worker is `scripts/run_refresh_job.py`. It runs the canonical My Dashboard refresh after the earlier **enabled** refresh stages complete. Heavy Statcast ETL and hitter backfill are optional feature-toggled stages and must not be assumed to execute on every scheduled run.
+
+Current important toggles/defaults include:
 
 ```text
+RUN_FAST_MATCHUP_REFRESH=1
+WARM_MATCHUP_SNAPSHOTS=0
+RUN_STATCAST_ETL=0
+RUN_HITTER_STATCAST_BACKFILL=0
+RUN_HITTING_MATCHUPS_REFRESH=1
 RUN_CANONICAL_DASHBOARD_REFRESH=1
+CLEAR_AI_CACHE_AFTER_REFRESH=1
 ```
 
-For an isolated operator run, execute:
+Use the same production `DATABASE_URL` as the API.
+
+For an isolated operator run:
 
 ```bash
 python scripts/refresh_dashboard_player_projection.py --refresh
 ```
 
-Recommended environment controls:
+Recommended canonical environment controls:
 
 ```text
 DASHBOARD_ACTIVE_PLAYER_WINDOW_DAYS=30
@@ -136,16 +166,19 @@ DASHBOARD_COVERAGE_GATE_MIN_HITTER_POPULATION=50
 DASHBOARD_MIN_HITTER_CRITICAL_FIELD_COVERAGE=0.25
 ```
 
-The coverage gate rejects a promotion when model score, confidence, xwOBA, or
-xBA falls below the configured ratio for a normal-sized hitter population.
-The previous current projection remains available after rejection.
+The coverage gate rejects a promotion when model score, confidence, xwOBA, or xBA falls below the configured ratio for a normal-sized hitter population. The previous current projection remains available after rejection.
 
 Do not run overlapping projection refreshes. The command is idempotent for identical approved content, but simultaneous source collection wastes capacity and makes run evidence harder to interpret.
 
+### Cache-clear warnings
+
+AI Data Assistant cache clearing in `scripts/run_refresh_job.py` is best-effort. A cache-clear warning should not be treated as the fatal root cause unless the worker explicitly reports it as the terminating stage.
+
+Read cron logs in execution order and identify the first fatal application-stage exception. The worker can successfully finish matchup/hitting-matchup work and still fail later in the canonical dashboard stage.
+
 ## Production verification
 
-For the July 23, 2026 incident, retain this pre-repair baseline in the deployment
-record:
+For the original July 23, 2026 repair, the historical pre-repair baseline was:
 
 | Measure | Before deployment |
 | --- | ---: |
@@ -157,32 +190,32 @@ record:
 | Confirmed hitters reported by lineup discovery | 72 |
 | Confirmed hitters returned by the legacy route | 6 |
 
-After deployment, record the same measures from the refresh result and canonical
-status endpoint. Do not mark the incident restored unless the current projection
-date is `2026-07-23`, the refresh run is successful, all critical coverage gates
-pass, and the Confirmed 1–9 report count is derived from the complete confirmed
-MLBAM-ID population rather than a top-ten candidate list.
+Those numbers are incident history, not current production expectations.
 
-1. Deploy the merged schema, status endpoint, report queries, and operator command.
-2. Run status-only inspection and save the empty/prior baseline.
-3. Run the explicit current refresh.
+For any current deployment or repair:
+
+1. Deploy the code/schema change and verify backend health.
+2. Run status-only inspection and save the prior baseline.
+3. Run the explicit current refresh if required.
 4. Save the emitted JSON counts.
 5. Call `GET /my-dashboard/canonical/status` from production.
 6. Query `all_active_hitters` and `all_active_pitchers` without filters.
 7. Page through results and confirm stable, gap-free totals.
 8. Apply one team filter and one metric filter.
 9. Apply a weight-only change and confirm count stability with ordering change.
-10. Query the two related report types.
-11. Open the Report Builder on desktop and mobile and switch among primary objects.
-12. Smoke-test Matchups, Matchup Detail, Daily Odds, Model Projections, and AI Data Assistant.
-13. Attach counts, versions, timestamps, tests, build result, deployment logs, and smoke-test results to issue #1055.
+10. Query the supported related report types.
+11. Test an all-row CSV export and verify expected row count.
+12. Open the Report Builder on desktop and mobile and switch among primary objects.
+13. Smoke-test Matchups, Matchup Detail, Daily Odds, Model Projections, and AI Data Assistant.
+14. Preserve counts, versions, timestamps, tests, build result, deployment logs, and smoke-test results in the relevant PR/incident record.
 
 ## Failure and rollback
 
 - If verified team/roster collection fails, the current projection is not promoted.
 - If the snapshot builder returns empty or incomplete coverage, promotion is rejected.
-- If promotion fails after staging, snapshots and current changes roll back.
+- If a critical coverage gate fails, promotion is rejected.
+- If promotion fails after staging, snapshots/current changes roll back according to the transaction boundary.
 - The failure is recorded in `dashboard_projection_runs`.
 - Continue serving the previous current projection while repairing the source.
-- Do not delete `dashboard_players`, `dashboard_player_snapshots`, `dashboard_player_current`, or `my_dashboard_records`.
-- Roll back application code normally if required; the additive tables and immutable snapshots are safe to retain.
+- Do not delete `dashboard_players`, `dashboard_player_snapshots`, `dashboard_player_current`, or `my_dashboard_records` as a routine incident response.
+- Roll back application code normally if required; additive tables and immutable snapshots are safe to retain unless a dedicated migration says otherwise.
