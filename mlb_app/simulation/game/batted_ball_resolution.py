@@ -26,6 +26,10 @@ from .defensive_opportunity import (
     CanonicalDefensiveOpportunity,
     resolve_canonical_defensive_opportunity,
 )
+from .defensive_outcome_sampling import (
+    CanonicalSampledDefensiveOutcome,
+    sample_canonical_defensive_outcome,
+)
 from .factory_input import MAX_CANONICAL_SEED
 from .probability import (
     CanonicalPlateAppearanceOutcome,
@@ -82,9 +86,11 @@ class CanonicalBattedBallResolution:
     event: PlayEvent
     context: BattedBallContext
     defensive_opportunity: CanonicalDefensiveOpportunity
+    defensive_outcome: CanonicalSampledDefensiveOutcome
     advancement: RunnerAdvancementResult
     context_seed: int
     defensive_seed: int
+    defensive_outcome_seed: int
     advancement_seed: int
     force_play_seed: Optional[int] = None
     force_play_draw: Optional[float] = None
@@ -238,6 +244,12 @@ def resolve_canonical_batted_ball_outcome(
         sampled=sampled,
         purpose="defensive_opportunity",
     )
+    defensive_outcome_seed = (
+        derive_canonical_batted_ball_seed(
+            sampled=sampled,
+            purpose="defensive_outcome",
+        )
+    )
     advancement_seed = derive_canonical_batted_ball_seed(
         sampled=sampled,
         purpose="advancement",
@@ -293,6 +305,10 @@ def resolve_canonical_batted_ball_outcome(
             context=context,
             resolution_seed=defensive_seed,
         )
+    )
+    defensive_outcome = sample_canonical_defensive_outcome(
+        opportunity=defensive_opportunity,
+        sampling_seed=defensive_outcome_seed,
     )
 
     advancement = BaselineRunnerAdvancementSampler(
@@ -391,9 +407,11 @@ def resolve_canonical_batted_ball_outcome(
         event=event,
         context=context,
         defensive_opportunity=defensive_opportunity,
+        defensive_outcome=defensive_outcome,
         advancement=advancement,
         context_seed=context_seed,
         defensive_seed=defensive_seed,
+        defensive_outcome_seed=defensive_outcome_seed,
         advancement_seed=advancement_seed,
         force_play_seed=(
             force_play_seed
