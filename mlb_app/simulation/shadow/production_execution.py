@@ -40,6 +40,9 @@ from .input_assembly import (
     CanonicalShadowExecutionInputs,
     assemble_canonical_shadow_execution_inputs,
 )
+from .defensive_alignment_materialization import (
+    CanonicalDefensiveAlignmentMaterialization,
+)
 from .lineup_discovery import (
     CanonicalShadowLineupDiscovery,
 )
@@ -245,6 +248,9 @@ def _build_matchup_input(
     provider_discovery: (
         CanonicalShadowProbabilityProviderDiscovery
     ),
+    defensive_alignment_materialization: Optional[
+        CanonicalDefensiveAlignmentMaterialization
+    ] = None,
     away_pitching_plan_classification: Optional[
         Mapping[str, Any]
     ] = None,
@@ -300,10 +306,32 @@ def _build_matchup_input(
         away_lineup=CanonicalLineup(
             team_side="away",
             player_ids=lineups.away_player_ids,
+            defensive_alignment=(
+                defensive_alignment_materialization
+                .away_alignment
+                if (
+                    defensive_alignment_materialization
+                    is not None
+                    and defensive_alignment_materialization
+                    .ready
+                )
+                else None
+            ),
         ),
         home_lineup=CanonicalLineup(
             team_side="home",
             player_ids=lineups.home_player_ids,
+            defensive_alignment=(
+                defensive_alignment_materialization
+                .home_alignment
+                if (
+                    defensive_alignment_materialization
+                    is not None
+                    and defensive_alignment_materialization
+                    .ready
+                )
+                else None
+            ),
         ),
         away_pitching_plan=(
             away_plan_materialization.pitching_plan
@@ -339,6 +367,9 @@ def run_canonical_production_shadow(
     simulation_count: int = (
         DEFAULT_PRODUCTION_SHADOW_SIMULATION_COUNT
     ),
+    defensive_alignment_materialization: Optional[
+        CanonicalDefensiveAlignmentMaterialization
+    ] = None,
     away_pitching_plan_classification: Optional[
         Mapping[str, Any]
     ] = None,
@@ -424,6 +455,9 @@ def run_canonical_production_shadow(
             lineups=lineups,
             bullpens=bullpens,
             provider_discovery=provider_discovery,
+            defensive_alignment_materialization=(
+                defensive_alignment_materialization
+            ),
             away_pitching_plan_classification=(
                 away_pitching_plan_classification
             ),

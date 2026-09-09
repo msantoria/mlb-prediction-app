@@ -121,6 +121,11 @@ from .fallback_catalog_discovery import (
     CanonicalShadowFallbackCatalogDiscovery,
     discover_canonical_shadow_fallback_catalog,
 )
+from .defensive_alignment_materialization import (
+    CANONICAL_DEFENSIVE_ALIGNMENT_MATERIALIZATION_VERSION,
+    CanonicalDefensiveAlignmentMaterialization,
+    materialize_canonical_defensive_alignments,
+)
 from .lineup_discovery import (
     CANONICAL_SHADOW_LINEUP_DISCOVERY_VERSION,
     CanonicalShadowLineupDiscovery,
@@ -315,6 +320,8 @@ __all__ = [
     "CanonicalShadowExecutionInputs",
     "CanonicalShadowExactArtifactDiscovery",
     "CanonicalShadowFallbackCatalogDiscovery",
+    "CANONICAL_DEFENSIVE_ALIGNMENT_MATERIALIZATION_VERSION",
+    "CanonicalDefensiveAlignmentMaterialization",
     "CanonicalShadowLineupDiscovery",
     "CanonicalLineupSideCandidate",
     "CanonicalSelectedLineup",
@@ -340,6 +347,7 @@ __all__ = [
     "discover_canonical_projected_lineup",
     "discover_canonical_production_lineup",
     "fetch_projected_lineup_schedule",
+    "materialize_canonical_defensive_alignments",
     "materialize_canonical_selected_lineup_profiles",
     "discover_canonical_shadow_probability_provider",
     "run_canonical_production_shadow",
