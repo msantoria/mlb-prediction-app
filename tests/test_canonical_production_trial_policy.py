@@ -19,7 +19,7 @@ def test_default_production_count_is_stable(
 
     policy = build_canonical_production_trial_policy()
 
-    assert policy.simulation_count == 250
+    assert policy.simulation_count == 1000
     assert (
         policy.simulation_count
         == DEFAULT_CANONICAL_PRODUCTION_SIMULATION_COUNT
@@ -95,12 +95,12 @@ def test_policy_is_deterministic():
 def test_version_is_explicit():
     assert (
         CANONICAL_PRODUCTION_TRIAL_POLICY_VERSION
-        == "canonical_production_trial_policy_v1"
+        == "canonical_production_trial_policy_v2"
     )
 
 
 
-def test_default_balances_precision_and_route_latency(
+def test_default_provides_one_thousand_trial_resolution(
     monkeypatch,
 ):
     monkeypatch.delenv(
@@ -111,8 +111,8 @@ def test_default_balances_precision_and_route_latency(
     policy = build_canonical_production_trial_policy()
     diagnostics = policy.to_diagnostics()
 
-    assert policy.simulation_count == 250
-    assert 1 / policy.simulation_count == 0.004
+    assert policy.simulation_count == 1000
+    assert 1 / policy.simulation_count == 0.001
     assert diagnostics[
         "default_simulation_count"
-    ] == 250
+    ] == 1000
