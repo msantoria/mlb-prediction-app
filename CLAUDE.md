@@ -1,33 +1,51 @@
-# MLB Prediction App — Architecture Notes
+# MLBGPT — Coding Agent Entry Point
 
-## CRITICAL: Two Separate Railway Services
+Before making production changes, read:
 
-This project has **two independent Railway services**. Forgetting this breaks the app.
+1. [`README.md`](README.md) for the current repository/product overview.
+2. [`docs/MLBGPT_SYSTEM_REFERENCE.md`](docs/MLBGPT_SYSTEM_REFERENCE.md) for architecture, authority, refresh semantics, Model Projections, My Dashboard, and invariants.
+3. The specialized runbook for the subsystem being changed.
 
-| Service | Builder | Role | Domain |
-|---------|---------|------|--------|
-| `mlb-prediction-app` | Dockerfile | FastAPI backend + API | backend `*.up.railway.app` URL |
-| Frontend service | Railpack (Node) | React SPA | `mlbgpt.com` (custom domain) |
+Executable code and tests on the current `main` branch are the final source of truth. Old plans, issue descriptions, probe notes, and PR bodies are historical evidence unless current code still implements them.
 
-The frontend calls the backend via `VITE_API_BASE_URL` (set in Railway env vars at build time).
-If `VITE_API_BASE_URL` is unset, API calls fall back to relative URLs — which **breaks** because
-the frontend service has no API routes.
+## Critical deployment topology
 
-## CORS Policy
+MLBGPT uses **two independent Railway services**.
 
-The backend (`mlb_app/app.py`) must allow:
-1. `https://mlbgpt.com` and `https://www.mlbgpt.com` — the live custom domain
-2. `https://*.up.railway.app` — the frontend's Railway-generated URL (used internally and during deploys)
+| Service | Runtime | Role |
+| --- | --- | --- |
+| Backend | Docker, Python 3.11, Uvicorn/FastAPI | API, PostgreSQL, models, refreshes, reports |
+| Frontend | Node/Railpack, React/Vite | `mlbgpt.com` SPA |
 
-This is handled via `allow_origin_regex=r"https://.*\.up\.railway\.app"` + explicit origin list.
-**Never restrict CORS to only the custom domain — the Railway service URL must always be allowed.**
+The frontend calls the backend through `VITE_API_BASE_URL`, which is set at **frontend build time**. The frontend service does not own FastAPI routes.
 
-## Stack
+Production backend persistence uses `DATABASE_URL` and PostgreSQL. Do not treat SQLite fallback as production behavior.
 
-- **Backend**: Python 3.11, FastAPI, SQLAlchemy, PostgreSQL (SQLite fallback), Uvicorn
-- **Frontend**: React 18, Vite, React Router
+## CORS
 
-## Deployment
+The backend must allow the live MLBGPT domains and the required Railway service domains. Do not restrict CORS to only the custom frontend domain without verifying deployment/internal traffic.
 
-- Push to `main` triggers GitHub Actions → `railway up --detach --service mlb-prediction-app`
-- Frontend service deploys automatically via Railway's Railpack on push to `main`
+## High-value invariants
+
+Do not casually change these contracts:
+
+- Missing, `null`, unavailable, and zero are different states.
+- Canonical player identity uses MLBAM IDs; do not replace it with name-only matching.
+- Failed/incomplete canonical My Dashboard refreshes must not overwrite the previous verified current projection.
+- Complete confirmed lineups take precedence over projected lineups under the canonical selected-lineup contract.
+- Partial or blocked confirmed/projected input must not be silently mixed into a synthetic batting order.
+- Projected player-level offense contexts are replaced atomically for both teams only when the materialization contract passes.
+- Canonical simulation claims require explicit same-run readiness/execution/outcome evidence.
+- Do not relabel legacy simulation values as canonical values.
+- Do not mix canonical and legacy fields inside one claimed canonical Overview/result.
+- Model Projection artifact-version bumps are semantic cache boundaries; current workspace contract is v7 as of the system-reference verification point.
+- All-row My Dashboard exports are server-streamed; do not restore browser-side sequential pagination without evidence.
+- Use MLB business-date handling for implicit slate dates; do not substitute raw UTC container date.
+- Diagnose cron jobs stage-by-stage. Warning-only cache-clear failures are not automatically the fatal refresh cause.
+- Prefer narrow fixes to broad rewrites of working production paths.
+
+## Validation
+
+Run focused tests for the contract being changed, then relevant regressions. For production paths, verify actual response semantics for an explicit MLB date; HTTP 200 alone is not acceptance evidence.
+
+For full details and current merged architecture history, use [`docs/MLBGPT_SYSTEM_REFERENCE.md`](docs/MLBGPT_SYSTEM_REFERENCE.md).
