@@ -1804,3 +1804,108 @@ def test_pitcher_profile_overlay_reaches_player_projection_trials():
     ]
     assert diagnostics["simulation_inputs_changed"] is True
     assert diagnostics["production_authority_changed"] is False
+
+def test_ready_defensive_alignment_enters_matchup_input():
+    from mlb_app.simulation.shadow import (
+        materialize_canonical_defensive_alignments,
+    )
+
+    position_rows = (
+        ("C", "2"),
+        ("1B", "3"),
+        ("2B", "4"),
+        ("3B", "5"),
+        ("SS", "6"),
+        ("LF", "7"),
+        ("CF", "8"),
+        ("RF", "9"),
+    )
+
+    def records(prefix):
+        return [
+            {
+                "batter_id": f"{prefix}{index}",
+                "position": position,
+                "position_code": code,
+            }
+            for index, (position, code) in enumerate(
+                position_rows,
+                start=1,
+            )
+        ] + [
+            {
+                "batter_id": f"{prefix}9",
+                "position": "DH",
+                "position_code": "10",
+            },
+        ]
+
+    materialization = (
+        materialize_canonical_defensive_alignments(
+            lineups=lineups(),
+            away_records=records("a"),
+            home_records=records("h"),
+            source_identifier="mlb-boxscore:123",
+            source_as_of="2026-09-09T12:00:00Z",
+            confidence="confirmed",
+        )
+    )
+
+    result = run(
+        defensive_alignment_materialization=(
+            materialization
+        )
+    )
+
+    matchup_input = (
+        result.execution_inputs.matchup_input
+    )
+
+    assert result.executed is True
+    assert materialization.ready is True
+    assert (
+        matchup_input.away_lineup.defensive_alignment
+        is materialization.away_alignment
+    )
+    assert (
+        matchup_input.home_lineup.defensive_alignment
+        is materialization.home_alignment
+    )
+
+
+def test_blocked_defensive_alignment_preserves_execution():
+    from mlb_app.simulation.shadow import (
+        materialize_canonical_defensive_alignments,
+    )
+
+    materialization = (
+        materialize_canonical_defensive_alignments(
+            lineups=lineups(),
+            away_records=[],
+            home_records=[],
+            source_identifier="mlb-boxscore:123",
+            source_as_of="2026-09-09T12:00:00Z",
+            confidence="confirmed",
+        )
+    )
+
+    result = run(
+        defensive_alignment_materialization=(
+            materialization
+        )
+    )
+
+    matchup_input = (
+        result.execution_inputs.matchup_input
+    )
+
+    assert result.executed is True
+    assert materialization.ready is False
+    assert (
+        matchup_input.away_lineup.defensive_alignment
+        is None
+    )
+    assert (
+        matchup_input.home_lineup.defensive_alignment
+        is None
+    )
