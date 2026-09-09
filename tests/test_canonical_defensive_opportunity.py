@@ -189,7 +189,10 @@ def pitching_plan(side):
     )
 
 
-def sampled(sequence=0):
+def sampled(
+    sequence=0,
+    outcome=CanonicalPlateAppearanceOutcome.SINGLE,
+):
     matchup = CanonicalMatchupInput(
         game_pk=123,
         away_lineup=lineup("away"),
@@ -217,7 +220,7 @@ def sampled(sequence=0):
             trial_index=2,
             trial_seed=12345,
         ),
-        outcome=CanonicalPlateAppearanceOutcome.SINGLE,
+        outcome=outcome,
         draw=0.25,
         sampling_seed=67890,
     )
@@ -303,3 +306,60 @@ def test_sequence_changes_defensive_seed():
     assert first_resolution.defensive_seed != (
         second_resolution.defensive_seed
     )
+
+
+
+def test_defense_created_hit_receives_type_and_clears_blocker():
+    resolution = None
+
+    for sequence in range(1000):
+        candidate = resolve_canonical_batted_ball_outcome(
+            sampled(
+                sequence=sequence,
+                outcome=CanonicalPlateAppearanceOutcome.OUT,
+            )
+        )
+
+        if candidate.defensive_hit_type is not None:
+            resolution = candidate
+            break
+
+    assert resolution is not None
+    assert resolution.defensive_hit_type_seed == (
+        derive_canonical_batted_ball_seed(
+            sampled=resolution.sampled,
+            purpose="defensive_hit_type",
+        )
+    )
+    assert (
+        resolution.defensive_hit_type.sampling_seed
+        == resolution.defensive_hit_type_seed
+    )
+    assert resolution.defensive_reconciliation.ready is True
+    assert resolution.defensive_reconciliation.blockers == ()
+    assert (
+        resolution.defensive_reconciliation
+        .reconciled_outcome
+        == resolution.defensive_hit_type.hit_type
+    )
+    assert (
+        resolution.defensive_reconciliation
+        .requires_event_rematerialization
+        is True
+    )
+
+
+def test_non_hit_defensive_result_has_no_hit_type_seed():
+    resolution = None
+
+    for sequence in range(1000):
+        candidate = resolve_canonical_batted_ball_outcome(
+            sampled(sequence=sequence)
+        )
+
+        if candidate.defensive_hit_type is None:
+            resolution = candidate
+            break
+
+    assert resolution is not None
+    assert resolution.defensive_hit_type_seed is None
