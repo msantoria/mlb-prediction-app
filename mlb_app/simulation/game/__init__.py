@@ -64,6 +64,15 @@ from .defensive_opportunity import (
     CanonicalFieldZone,
     resolve_canonical_defensive_opportunity,
 )
+from .defensive_outcome_reconciliation import (
+    CANONICAL_DEFENSIVE_OUTCOME_RECONCILIATION_VERSION,
+    PRIMARY_HIT_OUTCOMES,
+    RECONCILED_HIT_OUTCOMES,
+    SUPPORTED_PRIMARY_OUTCOMES,
+    CanonicalDefensiveOutcomeReconciliation,
+    CanonicalReconciledBattedBallOutcome,
+    reconcile_canonical_defensive_outcome,
+)
 from .defensive_outcome_sampling import (
     CANONICAL_DEFENSIVE_OUTCOME_ORDER,
     CANONICAL_DEFENSIVE_OUTCOME_SAMPLING_VERSION,
@@ -256,7 +265,13 @@ __all__ = [
     "CanonicalSampledBaserunning",
     "CanonicalBattedBallResolution",
     "CANONICAL_DEFENSIVE_OPPORTUNITY_VERSION",
+    "CANONICAL_DEFENSIVE_OUTCOME_RECONCILIATION_VERSION",
     "CANONICAL_DEFENSIVE_OUTCOME_ORDER",
+    "PRIMARY_HIT_OUTCOMES",
+    "RECONCILED_HIT_OUTCOMES",
+    "SUPPORTED_PRIMARY_OUTCOMES",
+    "CanonicalDefensiveOutcomeReconciliation",
+    "CanonicalReconciledBattedBallOutcome",
     "CANONICAL_DEFENSIVE_OUTCOME_SAMPLING_VERSION",
     "BASELINE_DEFENSIVE_OUTCOME_PROBABILITIES",
     "CanonicalDefensiveOutcome",
@@ -383,6 +398,7 @@ __all__ = [
     "resolve_canonical_defensive_opportunity",
     "build_baseline_defensive_outcome_probabilities",
     "sample_canonical_defensive_outcome",
+    "reconcile_canonical_defensive_outcome",
     "resolve_canonical_sampled_baserunning",
     "resolve_canonical_sampled_plate_appearance",
     "reduce_canonical_game_box_score",

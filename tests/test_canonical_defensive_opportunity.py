@@ -15,6 +15,7 @@ from mlb_app.simulation.game import (
     CanonicalDefensiveCoverageUnit,
     CanonicalDefensiveDifficulty,
     CanonicalDefensiveOpportunity,
+    CanonicalDefensiveOutcomeReconciliation,
     CanonicalFieldZone,
     CanonicalLineup,
     CanonicalMatchupInput,
@@ -247,6 +248,14 @@ def test_batted_ball_resolution_attaches_opportunity():
         CanonicalSampledDefensiveOutcome,
     )
     assert resolution.defensive_outcome.authoritative is False
+    assert isinstance(
+        resolution.defensive_reconciliation,
+        CanonicalDefensiveOutcomeReconciliation,
+    )
+    assert (
+        resolution.defensive_reconciliation.authoritative
+        is False
+    )
     assert resolution.defensive_outcome.sampling_seed == (
         resolution.defensive_outcome_seed
     )
