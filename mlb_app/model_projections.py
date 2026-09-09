@@ -2691,6 +2691,10 @@ def build_model_projection_payload(
                     ),
                 })
 
+            canonical_production_trial_policy = (
+                build_canonical_production_trial_policy()
+            )
+
             canonical_legacy_fallback_execution = (
                 run_canonical_production_shadow(
                     game_pk=game_pk,
@@ -2712,6 +2716,10 @@ def build_model_projection_payload(
                     bootstrap_ready=bool(
                         canonical_shadow_bootstrap_readiness
                         .get("ready")
+                    ),
+                    simulation_count=(
+                        canonical_production_trial_policy
+                        .simulation_count
                     ),
                     pitcher_matchup_profile_activation_payloads_by_pitcher_id=(
                         pitcher_profile_overlay_payloads
@@ -2817,10 +2825,6 @@ def build_model_projection_payload(
                         ),
                     )
                 )
-
-            canonical_production_trial_policy = (
-                build_canonical_production_trial_policy()
-            )
 
             canonical_live_baserunning_pair = (
                 execute_live_baserunning_shadow_pair(

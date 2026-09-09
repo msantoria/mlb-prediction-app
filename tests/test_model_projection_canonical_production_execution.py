@@ -57,3 +57,37 @@ def test_baserunning_fail_open_constructor_matches_contract():
         == "production prior unavailable"
     )
     assert failure.ready is False
+
+
+
+def test_production_policy_controls_both_execution_paths():
+    import inspect
+
+    from mlb_app.model_projections import (
+        build_model_projection_payload,
+    )
+
+    source = inspect.getsource(
+        build_model_projection_payload
+    )
+    policy_position = source.index(
+        "canonical_production_trial_policy ="
+    )
+    fallback_position = source.index(
+        "canonical_legacy_fallback_execution ="
+    )
+    paired_position = source.index(
+        "canonical_live_baserunning_pair ="
+    )
+
+    assert policy_position < fallback_position
+    assert fallback_position < paired_position
+
+    shared_count_argument = (
+        "simulation_count=(\n"
+        "                        "
+        "canonical_production_trial_policy\n"
+        "                        .simulation_count\n"
+        "                    )"
+    )
+    assert source.count(shared_count_argument) == 2
