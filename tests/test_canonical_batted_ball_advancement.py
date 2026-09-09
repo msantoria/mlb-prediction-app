@@ -984,3 +984,35 @@ def test_failed_tag_after_caught_fly_can_record_third_out(
         "caught_fly",
         "tag_out",
     )
+
+
+@pytest.fixture(autouse=True)
+def preserve_primary_batted_ball_event_contract(
+    monkeypatch,
+):
+    """
+    Keep this module focused on primary-outcome resolution.
+
+    Defensive event authority is exercised separately by the
+    defensive rematerialization contract tests.
+    """
+    from mlb_app.simulation.game.defensive_event_rematerialization import (
+        CanonicalDefensiveEventRematerialization,
+    )
+
+    def preserve(**kwargs):
+        return CanonicalDefensiveEventRematerialization(
+            original_event=kwargs["original_event"],
+            event=kwargs["original_event"],
+            advancement=kwargs["original_advancement"],
+            applied=False,
+            authoritative=False,
+            blocker="test_primary_outcome_contract",
+        )
+
+    monkeypatch.setattr(
+        "mlb_app.simulation.game."
+        "batted_ball_resolution."
+        "rematerialize_canonical_defensive_event",
+        preserve,
+    )
