@@ -34,6 +34,10 @@ from .defensive_outcome_reconciliation import (
     CanonicalDefensiveOutcomeReconciliation,
     reconcile_canonical_defensive_outcome,
 )
+from .defensive_hit_type import (
+    CanonicalSampledDefensiveHitType,
+    sample_canonical_defensive_hit_type,
+)
 from .factory_input import MAX_CANONICAL_SEED
 from .probability import (
     CanonicalPlateAppearanceOutcome,
@@ -91,6 +95,9 @@ class CanonicalBattedBallResolution:
     context: BattedBallContext
     defensive_opportunity: CanonicalDefensiveOpportunity
     defensive_outcome: CanonicalSampledDefensiveOutcome
+    defensive_hit_type: Optional[
+        CanonicalSampledDefensiveHitType
+    ]
     defensive_reconciliation: (
         CanonicalDefensiveOutcomeReconciliation
     )
@@ -98,6 +105,7 @@ class CanonicalBattedBallResolution:
     context_seed: int
     defensive_seed: int
     defensive_outcome_seed: int
+    defensive_hit_type_seed: Optional[int]
     advancement_seed: int
     force_play_seed: Optional[int] = None
     force_play_draw: Optional[float] = None
@@ -257,6 +265,12 @@ def resolve_canonical_batted_ball_outcome(
             purpose="defensive_outcome",
         )
     )
+    defensive_hit_type_seed = (
+        derive_canonical_batted_ball_seed(
+            sampled=sampled,
+            purpose="defensive_hit_type",
+        )
+    )
     advancement_seed = derive_canonical_batted_ball_seed(
         sampled=sampled,
         purpose="advancement",
@@ -317,10 +331,26 @@ def resolve_canonical_batted_ball_outcome(
         opportunity=defensive_opportunity,
         sampling_seed=defensive_outcome_seed,
     )
+    defensive_hit_type = (
+        sample_canonical_defensive_hit_type(
+            defensive_sample=defensive_outcome,
+            sampling_seed=defensive_hit_type_seed,
+        )
+        if (
+            defensive_outcome.outcome.value
+            == "base_hit"
+        )
+        else None
+    )
     defensive_reconciliation = (
         reconcile_canonical_defensive_outcome(
             primary_outcome=outcome,
             defensive_sample=defensive_outcome,
+            resolved_hit_type=(
+                defensive_hit_type.hit_type
+                if defensive_hit_type is not None
+                else None
+            ),
         )
     )
 
@@ -421,6 +451,7 @@ def resolve_canonical_batted_ball_outcome(
         context=context,
         defensive_opportunity=defensive_opportunity,
         defensive_outcome=defensive_outcome,
+        defensive_hit_type=defensive_hit_type,
         defensive_reconciliation=(
             defensive_reconciliation
         ),
@@ -428,6 +459,11 @@ def resolve_canonical_batted_ball_outcome(
         context_seed=context_seed,
         defensive_seed=defensive_seed,
         defensive_outcome_seed=defensive_outcome_seed,
+        defensive_hit_type_seed=(
+            defensive_hit_type_seed
+            if defensive_hit_type is not None
+            else None
+        ),
         advancement_seed=advancement_seed,
         force_play_seed=(
             force_play_seed
