@@ -34,6 +34,10 @@ from .defensive_outcome_reconciliation import (
     CanonicalDefensiveOutcomeReconciliation,
     reconcile_canonical_defensive_outcome,
 )
+from .defensive_alignment import (
+    CanonicalDefensiveFielderResolution,
+    resolve_canonical_defensive_fielder,
+)
 from .defensive_hit_type import (
     CanonicalSampledDefensiveHitType,
     sample_canonical_defensive_hit_type,
@@ -94,6 +98,7 @@ class CanonicalBattedBallResolution:
     event: PlayEvent
     context: BattedBallContext
     defensive_opportunity: CanonicalDefensiveOpportunity
+    defensive_fielder: CanonicalDefensiveFielderResolution
     defensive_outcome: CanonicalSampledDefensiveOutcome
     defensive_hit_type: Optional[
         CanonicalSampledDefensiveHitType
@@ -104,6 +109,7 @@ class CanonicalBattedBallResolution:
     advancement: RunnerAdvancementResult
     context_seed: int
     defensive_seed: int
+    defensive_fielder_seed: int
     defensive_outcome_seed: int
     defensive_hit_type_seed: Optional[int]
     advancement_seed: int
@@ -259,6 +265,12 @@ def resolve_canonical_batted_ball_outcome(
         sampled=sampled,
         purpose="defensive_opportunity",
     )
+    defensive_fielder_seed = (
+        derive_canonical_batted_ball_seed(
+            sampled=sampled,
+            purpose="defensive_fielder",
+        )
+    )
     defensive_outcome_seed = (
         derive_canonical_batted_ball_seed(
             sampled=sampled,
@@ -327,6 +339,21 @@ def resolve_canonical_batted_ball_outcome(
             resolution_seed=defensive_seed,
         )
     )
+    fielding_lineup = (
+        query.matchup_input.home_lineup
+        if query.state.half == "top"
+        else query.matchup_input.away_lineup
+    )
+    defensive_fielder = (
+        resolve_canonical_defensive_fielder(
+            opportunity=defensive_opportunity,
+            team_side=fielding_lineup.team_side,
+            alignment=(
+                fielding_lineup.defensive_alignment
+            ),
+            selection_seed=defensive_fielder_seed,
+        )
+    )
     defensive_outcome = sample_canonical_defensive_outcome(
         opportunity=defensive_opportunity,
         sampling_seed=defensive_outcome_seed,
@@ -349,6 +376,15 @@ def resolve_canonical_batted_ball_outcome(
             resolved_hit_type=(
                 defensive_hit_type.hit_type
                 if defensive_hit_type is not None
+                else None
+            ),
+            error_fielder_id=(
+                defensive_fielder.player_id
+                if (
+                    defensive_outcome.outcome.value
+                    == "fielding_error"
+                    and defensive_fielder.ready
+                )
                 else None
             ),
         )
@@ -450,6 +486,7 @@ def resolve_canonical_batted_ball_outcome(
         event=event,
         context=context,
         defensive_opportunity=defensive_opportunity,
+        defensive_fielder=defensive_fielder,
         defensive_outcome=defensive_outcome,
         defensive_hit_type=defensive_hit_type,
         defensive_reconciliation=(
@@ -458,6 +495,7 @@ def resolve_canonical_batted_ball_outcome(
         advancement=advancement,
         context_seed=context_seed,
         defensive_seed=defensive_seed,
+        defensive_fielder_seed=defensive_fielder_seed,
         defensive_outcome_seed=defensive_outcome_seed,
         defensive_hit_type_seed=(
             defensive_hit_type_seed

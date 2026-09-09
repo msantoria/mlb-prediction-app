@@ -251,6 +251,20 @@ def test_batted_ball_resolution_attaches_opportunity():
         CanonicalSampledDefensiveOutcome,
     )
     assert resolution.defensive_outcome.authoritative is False
+    assert resolution.defensive_fielder.ready is False
+    assert resolution.defensive_fielder.player_id is None
+    assert resolution.defensive_fielder.blockers == (
+        "defensive_alignment_unavailable",
+    )
+    assert resolution.defensive_fielder.selection_seed == (
+        resolution.defensive_fielder_seed
+    )
+    assert resolution.defensive_fielder_seed == (
+        derive_canonical_batted_ball_seed(
+            sampled=value,
+            purpose="defensive_fielder",
+        )
+    )
     assert isinstance(
         resolution.defensive_reconciliation,
         CanonicalDefensiveOutcomeReconciliation,

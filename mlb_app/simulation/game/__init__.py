@@ -64,6 +64,16 @@ from .defensive_opportunity import (
     CanonicalFieldZone,
     resolve_canonical_defensive_opportunity,
 )
+from .defensive_alignment import (
+    CANONICAL_DEFENSIVE_ALIGNMENT_VERSION,
+    CANONICAL_DEFENSIVE_FIELDER_RESOLUTION_VERSION,
+    CANONICAL_DEFENSIVE_POSITION_ORDER,
+    CanonicalDefensiveAlignment,
+    CanonicalDefensiveFielder,
+    CanonicalDefensiveFielderResolution,
+    CanonicalDefensivePosition,
+    resolve_canonical_defensive_fielder,
+)
 from .defensive_hit_type import (
     BASELINE_HIT_TYPE_WEIGHTS,
     CANONICAL_DEFENSIVE_HIT_TYPE_ORDER,
@@ -275,6 +285,13 @@ __all__ = [
     "CanonicalSampledBaserunning",
     "CanonicalBattedBallResolution",
     "CANONICAL_DEFENSIVE_OPPORTUNITY_VERSION",
+    "CANONICAL_DEFENSIVE_ALIGNMENT_VERSION",
+    "CANONICAL_DEFENSIVE_FIELDER_RESOLUTION_VERSION",
+    "CANONICAL_DEFENSIVE_POSITION_ORDER",
+    "CanonicalDefensiveAlignment",
+    "CanonicalDefensiveFielder",
+    "CanonicalDefensiveFielderResolution",
+    "CanonicalDefensivePosition",
     "CANONICAL_DEFENSIVE_HIT_TYPE_ORDER",
     "CANONICAL_DEFENSIVE_HIT_TYPE_VERSION",
     "BASELINE_HIT_TYPE_WEIGHTS",
@@ -416,6 +433,7 @@ __all__ = [
     "sample_canonical_defensive_outcome",
     "reconcile_canonical_defensive_outcome",
     "build_canonical_defensive_hit_type_distribution",
+    "resolve_canonical_defensive_fielder",
     "sample_canonical_defensive_hit_type",
     "resolve_canonical_sampled_baserunning",
     "resolve_canonical_sampled_plate_appearance",
