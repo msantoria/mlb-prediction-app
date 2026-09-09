@@ -85,6 +85,7 @@ from mlb_app.simulation.shadow import (
     discover_canonical_shadow_exact_artifact,
     discover_canonical_shadow_fallback_catalog,
     discover_canonical_shadow_lineups,
+    discover_canonical_production_defensive_alignments,
     discover_canonical_production_lineup,
     discover_canonical_shadow_probability_provider,
     discover_confirmed_catcher_assignments,
@@ -2397,10 +2398,24 @@ def build_model_projection_payload(
                 canonical_production_lineup_selection
                 .lineups
             )
+            canonical_defensive_alignment_discovery = (
+                discover_canonical_production_defensive_alignments(
+                    game_pk=game_pk,
+                    lineup_selection=(
+                        canonical_production_lineup_selection
+                    ),
+                )
+            )
             workspace[
                 "canonicalProductionLineupSelection"
             ] = (
                 canonical_production_lineup_selection
+                .to_diagnostics()
+            )
+            workspace[
+                "canonicalDefensiveAlignmentDiscovery"
+            ] = (
+                canonical_defensive_alignment_discovery
                 .to_diagnostics()
             )
 
@@ -2721,6 +2736,10 @@ def build_model_projection_payload(
                         canonical_production_trial_policy
                         .simulation_count
                     ),
+                    defensive_alignment_materialization=(
+                        canonical_defensive_alignment_discovery
+                        .materialization
+                    ),
                     pitcher_matchup_profile_activation_payloads_by_pitcher_id=(
                         pitcher_profile_overlay_payloads
                     ),
@@ -2858,6 +2877,10 @@ def build_model_projection_payload(
                     simulation_count=(
                         canonical_production_trial_policy
                         .simulation_count
+                    ),
+                    defensive_alignment_materialization=(
+                        canonical_defensive_alignment_discovery
+                        .materialization
                     ),
                 )
             )
@@ -3256,6 +3279,13 @@ def build_model_projection_payload(
                     "canonical_production_lineup_selection"
                 ] = (
                     canonical_production_lineup_selection
+                    .to_diagnostics()
+                )
+
+                shared_diagnostics[
+                    "canonical_defensive_alignment_discovery"
+                ] = (
+                    canonical_defensive_alignment_discovery
                     .to_diagnostics()
                 )
 

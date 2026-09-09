@@ -146,6 +146,11 @@ from .projected_lineup_discovery import (
     CanonicalProjectedLineupDiscovery,
     discover_canonical_projected_lineup,
 )
+from .production_defensive_alignment_discovery import (
+    CANONICAL_PRODUCTION_DEFENSIVE_ALIGNMENT_DISCOVERY_VERSION,
+    CanonicalProductionDefensiveAlignmentDiscovery,
+    discover_canonical_production_defensive_alignments,
+)
 from .production_lineup_selection import (
     CANONICAL_PRODUCTION_LINEUP_SELECTION_VERSION,
     CanonicalProductionLineupSelection,
@@ -248,6 +253,8 @@ __all__ = [
     "CANONICAL_SHADOW_LINEUP_DISCOVERY_VERSION",
     "CANONICAL_SELECTED_LINEUP_VERSION",
     "CANONICAL_PROJECTED_LINEUP_DISCOVERY_VERSION",
+    "CANONICAL_PRODUCTION_DEFENSIVE_ALIGNMENT_DISCOVERY_VERSION",
+    "CanonicalProductionDefensiveAlignmentDiscovery",
     "CANONICAL_PRODUCTION_LINEUP_SELECTION_VERSION",
     "CANONICAL_SELECTED_LINEUP_PROFILE_MATERIALIZATION_VERSION",
     "PROJECTED_LINEUP_LOOKBACK_DAYS",
@@ -345,6 +352,7 @@ __all__ = [
     "build_canonical_lineup_side_candidate",
     "select_canonical_lineup",
     "discover_canonical_projected_lineup",
+    "discover_canonical_production_defensive_alignments",
     "discover_canonical_production_lineup",
     "fetch_projected_lineup_schedule",
     "materialize_canonical_defensive_alignments",
