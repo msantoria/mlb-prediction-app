@@ -30,6 +30,10 @@ from .defensive_outcome_sampling import (
     CanonicalSampledDefensiveOutcome,
     sample_canonical_defensive_outcome,
 )
+from .defensive_outcome_reconciliation import (
+    CanonicalDefensiveOutcomeReconciliation,
+    reconcile_canonical_defensive_outcome,
+)
 from .factory_input import MAX_CANONICAL_SEED
 from .probability import (
     CanonicalPlateAppearanceOutcome,
@@ -87,6 +91,9 @@ class CanonicalBattedBallResolution:
     context: BattedBallContext
     defensive_opportunity: CanonicalDefensiveOpportunity
     defensive_outcome: CanonicalSampledDefensiveOutcome
+    defensive_reconciliation: (
+        CanonicalDefensiveOutcomeReconciliation
+    )
     advancement: RunnerAdvancementResult
     context_seed: int
     defensive_seed: int
@@ -310,6 +317,12 @@ def resolve_canonical_batted_ball_outcome(
         opportunity=defensive_opportunity,
         sampling_seed=defensive_outcome_seed,
     )
+    defensive_reconciliation = (
+        reconcile_canonical_defensive_outcome(
+            primary_outcome=outcome,
+            defensive_sample=defensive_outcome,
+        )
+    )
 
     advancement = BaselineRunnerAdvancementSampler(
         rng=random.Random(advancement_seed),
@@ -408,6 +421,9 @@ def resolve_canonical_batted_ball_outcome(
         context=context,
         defensive_opportunity=defensive_opportunity,
         defensive_outcome=defensive_outcome,
+        defensive_reconciliation=(
+            defensive_reconciliation
+        ),
         advancement=advancement,
         context_seed=context_seed,
         defensive_seed=defensive_seed,
