@@ -34,6 +34,7 @@ def attach_canonical_shadow(
     *,
     legacy_result: Dict[str, Any],
     enabled: bool = False,
+    probability_observation_limit: int | None = None,
     canonical_payload=None,
     probability_resolution_diagnostics: Optional[
         CanonicalProbabilityResolutionDiagnostics
@@ -203,7 +204,8 @@ def attach_canonical_shadow(
             shadow_payload[
                 "probability_resolution"
             ] = probability_resolution_diagnostics_to_dict(
-                probability_resolution_diagnostics
+                probability_resolution_diagnostics,
+                observation_limit=probability_observation_limit,
             )
         except Exception as exc:
             shadow_payload[

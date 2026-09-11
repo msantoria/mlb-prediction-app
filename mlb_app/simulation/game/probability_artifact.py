@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+from functools import cached_property
 from typing import Tuple
 
 from .matchup_input import (
@@ -132,7 +133,7 @@ class CanonicalProbabilityArtifact:
                 "batter-pitcher matchup rows"
             )
 
-    @property
+    @cached_property
     def digest(self) -> str:
         payload_parts = [
             self.artifact_version,

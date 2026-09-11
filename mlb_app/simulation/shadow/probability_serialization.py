@@ -17,6 +17,8 @@ CANONICAL_PROBABILITY_DIAGNOSTICS_SHADOW_VERSION = (
 
 def probability_resolution_diagnostics_to_dict(
     diagnostics: CanonicalProbabilityResolutionDiagnostics,
+    *,
+    observation_limit: int | None = None,
 ) -> Dict[str, Any]:
     """Serialize an immutable diagnostics snapshot for shadow output."""
 
@@ -36,7 +38,18 @@ def probability_resolution_diagnostics_to_dict(
             "unsupported probability diagnostics version"
         )
 
+    if observation_limit is not None and observation_limit < 0:
+        raise ValueError("observation_limit cannot be negative")
+    observations = diagnostics.observations
+    if observation_limit is not None:
+        observations = observations[:observation_limit]
+
     return {
+        "observation_transport": {
+            "total_count": diagnostics.total_resolutions,
+            "included_count": len(observations),
+            "truncated": len(observations) < diagnostics.total_resolutions,
+        },
         "schema_version": (
             CANONICAL_PROBABILITY_DIAGNOSTICS_SHADOW_VERSION
         ),
@@ -92,6 +105,6 @@ def probability_resolution_diagnostics_to_dict(
                     observation.diagnostics_version
                 ),
             }
-            for observation in diagnostics.observations
+            for observation in observations
         ],
     }

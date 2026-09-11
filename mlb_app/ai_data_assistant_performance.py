@@ -41,34 +41,15 @@ def _add_timing(name: str, elapsed_ms: int) -> None:
 
 
 def cached_build_model_projection_payload(session, target_date: str) -> Dict[str, Any]:
-    cache_key = make_cache_key("model_projection", "full", target_date)
-    ttl_seconds = env_ttl("MODEL_PROJECTION_CACHE_TTL_SECONDS")
-
-    cached = get_cache(cache_key, ttl_seconds)
-    if cached is not None:
-        timing = _timing()
-        if timing is not None:
-            timing["projection_cache_hit"] = timing.get("projection_cache_hit", 0) + 1
-        if isinstance(cached, dict):
-            cached.setdefault("cache_hit", True)
-            cached.setdefault("cache_key", cache_key)
-            cached.setdefault("ttl_seconds", ttl_seconds)
-        return cached
+    # Import lazily: the route graph imports the assistant during startup.
+    # User requests consume the same verified artifact as Model Projections.
+    # A cache miss must never launch a full canonical slate simulation.
+    from .model_projection_routes import get_model_projection_payload
 
     start = _now()
-    payload = _original_projection_builder(session, target_date)
-    elapsed_ms = _ms(start)
-    _add_timing("projection_payload_ms", elapsed_ms)
-    stored = set_cache(cache_key, payload)
-    timing = _timing()
-    if timing is not None:
-        timing["projection_cache_miss"] = timing.get("projection_cache_miss", 0) + 1
-    if isinstance(stored, dict):
-        stored.setdefault("cache_hit", False)
-        stored.setdefault("cache_key", cache_key)
-        stored.setdefault("ttl_seconds", ttl_seconds)
-        stored.setdefault("built_ms", elapsed_ms)
-    return stored
+    payload = get_model_projection_payload(target_date)
+    _add_timing("projection_payload_ms", _ms(start))
+    return payload
 
 
 def apply_performance_patch() -> None:

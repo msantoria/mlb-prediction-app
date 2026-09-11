@@ -1805,6 +1805,7 @@ def _attach_production_shadow_comparison(
     result = attach_canonical_shadow(
         legacy_result=legacy_result,
         enabled=True,
+        probability_observation_limit=100,
         canonical_payload=(
             material.canonical_payload
         ),
