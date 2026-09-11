@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 import hashlib
+from functools import cached_property
 from typing import Optional, Tuple
 
 from .matchup_input import (
@@ -142,7 +143,7 @@ class CanonicalProbabilityFallbackCatalog:
                 "duplicate tier-identity rows"
             )
 
-    @property
+    @cached_property
     def digest(self) -> str:
         parts = [
             self.schema_version,

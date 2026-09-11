@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import datetime
 import os
+from threading import Lock
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException
 
 from .database import SharedReportArtifact, create_tables, get_engine, get_session
 from .model_projection_performance_cache import build_model_projection_payload
+from .model_projection_transport import compact_projection_payload
 from .model_projection_probability import build_model_projection_probability
 from .model_tracker_routes import router as model_tracker_router
 from .performance import estimate_payload_bytes, record_probability_source, record_span, timing_span
@@ -21,8 +23,15 @@ from .shared_artifacts import (
     model_projection_probability_key,
     payload_input_hash,
 )
-from .shared_payload_cache import env_ttl, get_cache
+from .shared_payload_cache import env_ttl, get_cache, set_cache
 from mlb_app.simulation.game_simulation_builder import build_game_simulation as build_shared_game_simulation
+
+_projection_warm_lock = Lock()
+
+
+class ProjectionRefreshInProgress(RuntimeError):
+    pass
+
 
 router = APIRouter()
 router.include_router(model_tracker_router)
@@ -229,7 +238,7 @@ def _build_uncached_projection_payload(target_date: str) -> Dict[str, Any]:
             date=target_date,
             probability_source="model_projections",
         ):
-            payload = build_model_projection_payload(session, target_date)
+            payload = compact_projection_payload(build_model_projection_payload(session, target_date))
             session.commit()
     payload = _apply_projection_probability_contract(payload, target_date)
     payload = _attach_projection_artifact_metadata(payload, target_date)
@@ -246,6 +255,17 @@ def _build_uncached_projection_payload(target_date: str) -> Dict[str, Any]:
 
 
 def warm_model_projection_payload(target_date: str) -> Dict[str, Any]:
+    # One full-slate CPU/memory-heavy build at a time per API process. A timed
+    # out cron request can still be running when its replacement arrives.
+    if not _projection_warm_lock.acquire(blocking=False):
+        raise ProjectionRefreshInProgress("A model projection refresh is already running")
+    try:
+        return _warm_model_projection_payload(target_date)
+    finally:
+        _projection_warm_lock.release()
+
+
+def _warm_model_projection_payload(target_date: str) -> Dict[str, Any]:
     """Build and store the projection payload explicitly for cron/warm jobs."""
     payload = _build_uncached_projection_payload(target_date)
     stored = cache_artifact(
@@ -300,7 +320,7 @@ def get_model_projection_payload(target_date: str) -> Dict[str, Any]:
         )
     ):
         if isinstance(cached, dict):
-            cached.setdefault("cache_hit", True)
+            cached["cache_hit"] = True
             cached.setdefault("cache_key", cache_key)
             cached.setdefault("data_status", "ready")
         return cached
@@ -321,7 +341,7 @@ def get_model_projection_payload(target_date: str) -> Dict[str, Any]:
                 artifact.payload_json
             )
         ):
-            payload = dict(artifact.payload_json)
+            payload = compact_projection_payload(artifact.payload_json)
             payload.update({
                 "cache_hit": False,
                 "durable_artifact_hit": True,
@@ -329,7 +349,7 @@ def get_model_projection_payload(target_date: str) -> Dict[str, Any]:
                 "data_status": "ready",
                 "last_successful_at": artifact.updated_at.isoformat() if artifact.updated_at else None,
             })
-            return payload
+            return set_cache(cache_key, payload)
     return {
         "date": target_date,
         "games": [],
@@ -398,5 +418,7 @@ def snapshot_model_projections(date_str: str) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail="date_str must be YYYY-MM-DD") from exc
     try:
         return warm_model_projection_payload(date_str)
+    except ProjectionRefreshInProgress as exc:
+        raise HTTPException(status_code=409, detail=str(exc), headers={"Retry-After": "30"}) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail={"message": "Failed to warm model projections", "error": str(exc)}) from exc

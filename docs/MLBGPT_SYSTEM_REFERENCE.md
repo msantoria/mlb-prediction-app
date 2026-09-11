@@ -367,6 +367,33 @@ When reading a Railway cron log, identify the first fatal application-stage exce
 
 ## 9. Caching and durable artifacts
 
+### Projection performance and diagnostic transport
+
+Model Projection reads, including AI Data Assistant and My Dashboard solver
+consumers, use the warmed artifact. A missing artifact returns `not_ready`;
+these readers must not launch a full-slate simulation. Valid durable artifacts
+are promoted into the process cache for subsequent reads.
+
+Projection transport retains every game, outcome, player projection, readiness
+field, and aggregate diagnostic. Only per-plate-appearance probability debug
+observations and per-trial pitcher appearance audit arrays are limited to 100
+rows, with explicit total/included counts and truncation metadata. Full audit
+objects remain available to internal simulation/role calculations before the
+transport boundary. Low-level probability serialization defaults to full
+observations for audit callers; production attachment requests a bounded sample.
+
+Existing v7 durable artifacts are compacted on read, so a deployment can serve
+the last verified outcomes without waiting for another refresh. The semantic
+outcome namespace remains v7 because model results and authority are unchanged.
+
+Immutable probability artifact/catalog digests are calculated once per instance,
+not once per simulated plate appearance. Replaced artifacts get fresh digests.
+
+Only one Model Projection warm operation runs per API process at a time.
+Overlapping snapshot requests receive HTTP 409 with `Retry-After: 30`; they do
+not start a duplicate build or clear the last good artifact. This guard matches
+the current single-process Uvicorn deployment; it is not a distributed lock.
+
 The repository has multiple independent cache/storage layers:
 
 - process-local response caches;
