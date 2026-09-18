@@ -112,6 +112,7 @@ from .draftkings_projection_routes import (
 from .daily_odds_routes import router as daily_odds_router
 from .simulation.inning_simulator import simulate_half_innings
 from .model_projection_routes import router as model_projection_router
+from .predicts_routes import router as predicts_router
 from .ai_data_assistant_routes import router as ai_data_assistant_router
 from .news_routes import router as news_router
 from .starting_pitcher_arsenal_refresh import refresh_starting_pitcher_arsenal
@@ -1068,6 +1069,8 @@ def _snapshot_final_game(game_pk: int) -> Dict[str, Any]:
     try:
         with Session() as session:
             snapshot = persist_final_snapshot(session, feed)
+            from .predicts_service import grade_safely
+            grade_safely(game_pk)
             return {
                 "game_pk": game_pk,
                 "status": "snapshotted",
@@ -1430,6 +1433,7 @@ def create_app():
     app.include_router(batter_router)
     app.include_router(daily_odds_router)
     app.include_router(model_projection_router)
+    app.include_router(predicts_router)
     app.include_router(ai_data_assistant_router)
     app.include_router(news_router)
     app.include_router(model_tracker_router)

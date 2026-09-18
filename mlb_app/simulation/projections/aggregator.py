@@ -7,6 +7,7 @@ import hashlib
 import json
 import math
 from statistics import fmean, median
+from bisect import bisect_left, bisect_right
 from typing import (
     Dict,
     Iterable,
@@ -47,6 +48,7 @@ BATTER_METRICS = (
     "caught_stealing",
     "doubles",
     "hit_by_pitch",
+    "hits",
     "home_runs",
     "plate_appearances",
     "rbi",
@@ -57,6 +59,7 @@ BATTER_METRICS = (
     "singles",
     "stolen_bases",
     "strikeouts",
+    "total_bases",
     "triples",
     "walks",
 )
@@ -92,9 +95,10 @@ def summarize_values(
 
     ordered = tuple(sorted(normalized))
 
+    centre = fmean(ordered)
     return StatisticalSummary(
         count=len(ordered),
-        mean=_round(fmean(ordered)),
+        mean=_round(centre),
         median=_round(median(ordered)),
         p10=_round(_percentile(ordered, 0.10)),
         p25=_round(_percentile(ordered, 0.25)),
@@ -102,6 +106,9 @@ def summarize_values(
         p90=_round(_percentile(ordered, 0.90)),
         minimum=_round(ordered[0]),
         maximum=_round(ordered[-1]),
+        sd=_round(math.sqrt(fmean((value-centre)**2 for value in ordered))),
+        p0=(bisect_right(ordered, 0)-bisect_left(ordered, 0))/len(ordered),
+        **{f"p{k}_plus": (len(ordered)-bisect_left(ordered, k))/len(ordered) for k in range(1, 7)},
     )
 
 
@@ -288,7 +295,7 @@ def _aggregate_batters(
             for metric in BATTER_METRICS:
                 metric_values[metric].append(
                     float(
-                        getattr(line, metric)
+                        (line.singles+2*line.doubles+3*line.triples+4*line.home_runs if metric=="total_bases" else getattr(line, metric))
                         if line is not None
                         else 0
                     )

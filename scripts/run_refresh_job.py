@@ -525,6 +525,11 @@ def main() -> int:
         _log(f"Canonical MyDashboard refresh failed: {exc}")
         return 1
 
+    # Read only already-warmed canonical artifacts after all prerequisites succeeded.
+    from mlb_app.predicts_service import refresh_safely
+    from mlb_app.my_dashboard_dataset_runtime import mlb_business_date
+    _log(f"Predicts stage: {refresh_safely(mlb_business_date().isoformat())}")
+
     _log("Refresh job completed successfully")
     return 0
 

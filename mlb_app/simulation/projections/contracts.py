@@ -24,6 +24,14 @@ class StatisticalSummary:
     p90: float
     minimum: float
     maximum: float
+    sd: float | None = None
+    p0: float | None = None
+    p1_plus: float | None = None
+    p2_plus: float | None = None
+    p3_plus: float | None = None
+    p4_plus: float | None = None
+    p5_plus: float | None = None
+    p6_plus: float | None = None
 
     def __post_init__(self) -> None:
         if self.count <= 0:

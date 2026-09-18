@@ -249,6 +249,11 @@ def _metric_map(
             )
         }
 
+        # Older artifacts remain valid; never infer tails from a mean.
+        for key in ("sd", "p0", "p1_plus", "p2_plus", "p3_plus", "p4_plus", "p5_plus", "p6_plus"):
+            if summary.get(key) is not None:
+                result[name][key] = float(summary[key])
+
     return {
         key: result[key]
         for key in sorted(result)
