@@ -98,6 +98,8 @@ def grade(session, now, game_pk=None):
                 "result": None if residual is None else "over" if residual>0 else "under" if residual<0 else "equal"}
         values = dict(snapshot_id=snapshot.id, final_snapshot_id=final.id, graded_at=now,
             payload={"status": "graded" if line else "did_not_appear", "metrics": metrics,
+                     "prediction_stage": snapshot.payload.get("prediction_stage", "model_projection_baseline"),
+                     "decision_board": snapshot.payload.get("decision_board", {}),
                      "source": "final_game_snapshots", "final_snapshot_version": final.snapshot_version})
         if session.get_bind().dialect.name == "postgresql":
             from sqlalchemy.dialects.postgresql import insert
