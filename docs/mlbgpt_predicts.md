@@ -180,13 +180,16 @@ working baseline → pregame snapshot → Final → residual learning chain.
 ## Backfill and troubleshooting
 
 ```sh
-python scripts/backfill_predicts_outcomes.py --after-game-pk 0 --limit 100
+python scripts/backfill_predicts_outcomes.py --start-date 2026-09-01 --end-date 2026-09-17 --dry-run
+python scripts/backfill_predicts_outcomes.py --start-date 2026-09-01 --end-date 2026-09-17
 ```
 
-The command prints a checkpoint after each committed game. Resume with the last
-`resume_after`. Running again is safe. It grades only genuine saved snapshots;
-it will not synthesize old predictions using today's trends or mutable artifacts.
-Historical periods without saved pregame snapshots remain unavailable for training.
+The command commits one date at a time and is safe to resume. It imports only saved
+pregame projection artifacts at their original capture time; it does not attach
+today's trends or mutable features to old predictions. Model health reports daily
+month coverage and explicit source gaps. The normal refresh job runs this current-
+month recovery idempotently. Historical periods without a saved pregame artifact
+remain unavailable for training.
 
 - Empty board: check warmed artifact, date, explicit start timestamp, pregame status
   and worker rejection log. Started games without a pregame capture cannot be added.

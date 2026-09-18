@@ -1,31 +1,24 @@
 #!/usr/bin/env python3
-"""Resumable join of genuine saved pregame snapshots to existing Finals. No reconstruction."""
+"""Resumable date-range import of genuine saved pregame projections."""
 import argparse
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
-import sys
+import json, sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from sqlalchemy import select
-from mlb_app.predicts_models import PredictsGame
 from mlb_app.predicts_service import session_factory
-from mlb_app.predicts_snapshots import grade
-
+from mlb_app.predicts_backfill import backfill_range
 
 def main():
+    today=date.today()
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--after-game-pk",type=int,default=0)
-    parser.add_argument("--limit",type=int,default=100)
+    parser.add_argument('--start-date',type=date.fromisoformat,default=today.replace(day=1))
+    parser.add_argument('--end-date',type=date.fromisoformat,default=today-timedelta(days=1))
+    parser.add_argument('--dry-run',action='store_true')
     args=parser.parse_args()
-    if not 1<=args.limit<=1000:
-        parser.error("limit must be 1–1000")
     with session_factory()() as session:
-        ids=list(session.scalars(select(PredictsGame.game_pk).where(PredictsGame.game_pk>args.after_game_pk).order_by(PredictsGame.game_pk).limit(args.limit)))
-        for pk in ids:
-            count=grade(session,datetime.utcnow(),pk)
-            session.commit()
-            print(f"game_pk={pk} graded={count} resume_after={pk}",flush=True)
-    return 0
+        result=backfill_range(session,args.start_date,args.end_date,now=datetime.utcnow(),dry_run=args.dry_run)
+    print(json.dumps(result,sort_keys=True))
+    return 0 if all(d['status']!='source_error' for d in result['days']) else 1
 
-
-if __name__=="__main__":
+if __name__=='__main__':
     raise SystemExit(main())

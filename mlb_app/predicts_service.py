@@ -13,6 +13,7 @@ from .predicts_snapshots import promote, lock_due, grade
 from .predicts_backtest import training_records, evaluate
 from .predicts_residuals import fit, adjust, TARGETS
 from .predicts_validation import MODEL_VERSION, FEATURE_VERSION
+from .predicts_status import coverage, get_status, save_status
 
 logger = logging.getLogger(__name__)
 
@@ -38,13 +39,17 @@ def refresh(session, target_date, now=None):
     artifact = session.execute(select(SharedReportArtifact).where(
         SharedReportArtifact.artifact_key==model_projection_date_key(target_date.isoformat()))).scalar_one_or_none()
     if artifact is None:
+        result = {"status":"unavailable", "reason":"No warmed Model Projections artifact", "graded":graded}
+        save_status(session,"refresh",target_date,result,now)
         session.commit()
-        return {"status":"unavailable", "reason":"No warmed Model Projections artifact", "graded":graded}
+        return result
     payload = {**artifact.payload_json,"predicts_source_generated_at":artifact.generated_at.isoformat()+"Z"}
     rows,rejected = collect(session,payload,target_date,now)
     if not rows:
-        return {"status":"no_eligible_pregame_games", "date":target_date.isoformat(),
-                "games":{}, "graded":graded, "rejected":rejected}
+        result = {"status":"no_eligible_pregame_games", "date":target_date.isoformat(),
+                  "games":{}, "graded":graded, "rejected":rejected}
+        save_status(session,"refresh",target_date,result,now); session.commit()
+        return result
     records = training_records(session,target_date,now)
     models = {key:fit(values) for key,values in records.items()}
     for model in models.values():
@@ -72,9 +77,10 @@ def refresh(session, target_date, now=None):
             counts["started_during_refresh"] += 1
             continue
         counts[promote(session,players,captured)] += 1
-    session.commit()
-    return {"status":"ready" if rows else "no_eligible_pregame_games", "date":target_date.isoformat(),
-            "games":dict(counts),"graded":graded,"rejected":rejected}
+    result = {"status":"ready", "date":target_date.isoformat(),
+              "games":dict(counts),"graded":graded,"rejected":rejected}
+    save_status(session,"refresh",target_date,result,now); session.commit()
+    return result
 
 
 def refresh_safely(target_date):
@@ -127,4 +133,6 @@ def health(session,today):
         "cold_start":session.scalar(select(func.count()).select_from(PredictsModelRun).where(
             PredictsModelRun.model_version==MODEL_VERSION))==0,
         "minimum_training_rows":100,"minimum_holdout_rows":30,"minimum_game_dates":14,
-        "recent_evaluation":evaluate(session,today-timedelta(days=30),today)}
+        "recent_evaluation":evaluate(session,today-timedelta(days=30),today),
+        "today_refresh":get_status(session,"refresh",today),
+        "month_coverage":coverage(session,today)}

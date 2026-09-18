@@ -530,6 +530,18 @@ def main() -> int:
     from mlb_app.my_dashboard_dataset_runtime import mlb_business_date
     _log(f"Predicts stage: {refresh_safely(mlb_business_date().isoformat())}")
 
+    # Resumable current-month recovery from saved pregame artifacts.
+    from datetime import datetime, timedelta
+    from mlb_app.predicts_backfill import backfill_range
+    from mlb_app.predicts_service import session_factory
+    today = mlb_business_date()
+    if today.day > 1:
+        with session_factory()() as session:
+            report = backfill_range(session, today.replace(day=1), today-timedelta(days=1),
+                                    now=datetime.utcnow())
+        _log(f"Predicts month backfill: imported_players={report['imported_players']} "
+             f"graded_now={report['graded_now']}")
+
     _log("Refresh job completed successfully")
     return 0
 
