@@ -23,6 +23,8 @@ import MyDashboardReportBuilderRoute from './pages/MyDashboardReportBuilderRoute
 import AdminControlCenterPage from './pages/AdminControlCenterPage'
 import ModelTrackerPage from './pages/ModelTrackerPage'
 
+const MLBGPTPredictsPage = React.lazy(() => import('./pages/MLBGPTPredictsPage'))
+
 // Set VITE_ENABLE_BATTER_PAGE=true in Railway env vars to re-enable the Batter routes.
 // Keep false until the leaderboard endpoint is validated stable in production.
 const ENABLE_BATTER_PAGE = import.meta.env.VITE_ENABLE_BATTER_PAGE === 'true'
@@ -53,6 +55,7 @@ const NAV_GROUPS = [
   {
     label: 'Research',
     items: [
+      { to: '/predicts', label: 'MLBGPT Predicts' },
       { to: '/models/projections', label: 'Model Projections' },
       { to: '/model-tracker', label: 'Model Tracker' },
       { to: '/ai-data-assistant', label: 'AI Data Assistant' },
@@ -123,6 +126,7 @@ export default function App() {
             <Route path="/sportsbook/bet105" element={<Bet105SportsbookPage />} />
             <Route path="/news" element={<NewsPageClean />} />
             <Route path="/models/projections" element={<ModelProjectionsPage />} />
+            <Route path="/predicts" element={<React.Suspense fallback={<p role="status">Loading predictions…</p>}><MLBGPTPredictsPage /></React.Suspense>} />
             <Route path="/model-tracker" element={<ModelTrackerPage />} />
             <Route path="/my-dashboard" element={<MyDashboardReportBuilderRoute />} />
             <Route path="/admin" element={<AdminControlCenterPage />} />

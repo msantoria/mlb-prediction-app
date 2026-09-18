@@ -63,6 +63,7 @@ The current application includes these major surfaces.
 | Competitive Analysis | `/matchup/:game_pk/competitive` | competitive matchup contract |
 | Daily Odds | `/daily-odds` | `mlb_app/daily_odds_routes.py` |
 | Bet105 Sportsbook | `/sportsbook/bet105` | `mlb_app/sportsbook_routes.py` and provider modules |
+| MLBGPT Predicts | `/predicts` | `mlb_app/predicts_routes.py`, frozen pregame intelligence and Final residual learning |
 | Model Projections | `/models/projections` | `mlb_app/model_projection_routes.py`, `mlb_app/model_projections.py`, simulation modules |
 | My Dashboard | `/my-dashboard` | `mlb_app/my_dashboard_routes.py` and dashboard modules |
 | Control Center | `/admin` | `mlb_app/admin_routes.py`, access-control modules |
@@ -624,3 +625,13 @@ When updating this file:
 6. avoid copying transient production incidents into permanent architectural claims unless they reveal a lasting contract.
 
 The goal is not to make this Markdown “never wrong” by freezing it. The goal is to make drift obvious and easy to correct whenever the code evolves.
+
+## MLBGPT Predicts prediction intelligence
+
+MLBGPT Predicts adds a precomputed research board over existing Model Projections,
+canonical player/Trends/Arsenal sources, Statcast, and Final. It freezes pregame
+versions, grades official outcomes, and learns residual corrections only after a
+chronological validation gate. Existing baseline projections remain unchanged.
+
+See [the Predicts implementation and capability boundaries](mlbgpt_predicts.md) for routes, additive tables, refresh integration,
+point-in-time guarantees, model thresholds, backfill, and explicit limitations.

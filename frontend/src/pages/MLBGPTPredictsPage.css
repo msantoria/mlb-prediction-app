@@ -1,0 +1,20 @@
+.predicts-page{max-width:1440px;margin:0 auto;padding:24px;color:var(--text-color,inherit)}
+.predicts-heading{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap}
+.predicts-heading h1{margin:4px 0;font-size:clamp(26px,4vw,42px)}
+.predicts-kicker{font-size:12px;font-weight:700;letter-spacing:.12em;color:#6c90c9}
+.predicts-page label{display:flex;gap:10px;align-items:center;font-size:14px}
+.predicts-page input,.predicts-page select,.predicts-page button{font:inherit;padding:9px 12px;border:1px solid #53647d;border-radius:6px;background:transparent;color:inherit}
+.predicts-page select option{background:#172337;color:#fff}
+.predicts-page button{cursor:pointer}.predicts-page button:focus-visible{outline:3px solid #72a8ff;outline-offset:3px}
+.predicts-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:24px 0}
+.predicts-tabs button[aria-pressed=true]{background:#244a7a;color:white;border-color:#7095c5}
+.predicts-metric{margin:15px 0}.predicts-table-wrap{overflow-x:auto;width:100%}
+.predicts-page table{width:100%;border-collapse:collapse;text-align:left;font-size:14px}
+.predicts-page th,.predicts-page td{padding:14px 12px;border-bottom:1px solid #4d5a6d;white-space:nowrap}
+.predicts-page th{font-size:12px;font-weight:700}.predicts-page small{display:block;opacity:.75;margin-top:5px}
+.predicts-page .predicts-player{border:0;padding:4px 0;text-decoration:underline;text-underline-offset:3px}
+.predicts-detail{margin-top:28px;padding:22px;border:1px solid #64758d;border-radius:12px}
+.predicts-features{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin:20px 0}
+.predicts-feature{border:1px solid #53647d;border-radius:8px;padding:16px}.predicts-feature h3{font-size:14px;margin:0 0 12px}.predicts-feature strong{font-size:24px}.predicts-feature p{font-size:13px;line-height:1.5}
+.predicts-muted{font-size:13px;opacity:.8;line-height:1.6}
+@media(max-width:600px){.predicts-page{padding:14px}.predicts-tabs{gap:6px}.predicts-tabs button{font-size:12px;padding:8px}.predicts-detail{padding:14px}.predicts-features{grid-template-columns:1fr}}

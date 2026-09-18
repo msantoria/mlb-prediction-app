@@ -5,7 +5,7 @@ import os
 from threading import Lock
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 
 from .database import SharedReportArtifact, create_tables, get_engine, get_session
 from .model_projection_performance_cache import build_model_projection_payload
@@ -411,13 +411,17 @@ def snapshot_lightweight_matchup_calendar() -> Dict[str, Any]:
 
 
 @router.post("/models/projections/snapshot/{date_str}")
-def snapshot_model_projections(date_str: str) -> Dict[str, Any]:
+def snapshot_model_projections(date_str: str, background_tasks: BackgroundTasks = None) -> Dict[str, Any]:
     try:
         datetime.datetime.strptime(date_str, "%Y-%m-%d")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="date_str must be YYYY-MM-DD") from exc
     try:
-        return warm_model_projection_payload(date_str)
+        result = warm_model_projection_payload(date_str)
+        from .predicts_service import refresh_safely
+        if background_tasks is not None:
+            background_tasks.add_task(refresh_safely, date_str)
+        return result
     except ProjectionRefreshInProgress as exc:
         raise HTTPException(status_code=409, detail=str(exc), headers={"Retry-After": "30"}) from exc
     except Exception as exc:

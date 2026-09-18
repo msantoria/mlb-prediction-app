@@ -838,6 +838,7 @@ def create_tables(engine) -> None:
     # avoid a database -> model -> database import cycle at module import time.
     from . import dashboard_object_models  # noqa: F401
     from . import final_game_snapshots  # noqa: F401
+    from . import predicts_models  # noqa: F401
 
     Base.metadata.create_all(engine)
     _ensure_dashboard_snapshot_lineup_status_width(engine)
