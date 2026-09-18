@@ -1,5 +1,6 @@
 """Evaluate frozen pregame predictions. Never refit on the evaluated outcomes."""
 from collections import defaultdict
+from copy import deepcopy
 from datetime import timedelta
 import math
 import statistics
@@ -8,6 +9,7 @@ from .predicts_models import PredictsPlayer, PredictsOutcome, PredictsGame
 from .predicts_residuals import vector
 from .predicts_validation import FEATURE_VERSION
 from .predicts_probability import wilson
+from .predicts_decisions import enrich
 
 
 def history_query(start, end):
@@ -40,8 +42,12 @@ def evaluate(session, start, end, *, player_type=None, metric=None, model_versio
     if player_type:
         query = query.where(PredictsPlayer.player_type==player_type)
     groups = defaultdict(list)
-    for snapshot,outcome,_game in session.execute(query):
-        row = snapshot.payload
+    decisions = defaultdict(list)
+    driver_results = defaultdict(list)
+    result_rows = list(session.execute(query))
+    payloads = [deepcopy(snapshot.payload) for snapshot, _outcome, _game in result_rows]
+    enrich(payloads)
+    for (snapshot,outcome,_game), row in zip(result_rows, payloads):
         if model_version and row.get("baseline_model_version") != model_version:
             continue
         if lineup_position and row.get("batting_order") != lineup_position:
@@ -54,6 +60,14 @@ def evaluate(session, start, end, *, player_type=None, metric=None, model_versio
                 continue
             prediction = row.get("predictions", {}).get(name, {})
             groups[(row["player_type"],name,row.get("baseline_model_version"))].append((result,prediction))
+            board = (row.get("decision_board") or {}).get(name) or {}
+            category = board.get("category")
+            if category:
+                decisions[(row["player_type"], name, category)].append((result, board))
+                if category == "confirmed_lineup_shortlist":
+                    for driver in board.get("drivers") or []:
+                        if driver.get("z_score", 0) >= .25:
+                            driver_results[(row["player_type"], name, driver.get("driver"))].append(result)
     summaries = []
     for (role,name,version),pairs in sorted(groups.items(), key=lambda item: str(item[0])):
         errors = [r["residual"] for r,p in pairs]
@@ -79,5 +93,20 @@ def evaluate(session, start, end, *, player_type=None, metric=None, model_versio
             "probability_n":len(probabilities), "brier":statistics.mean((p-y)**2 for p,y in probabilities) if probabilities else None,
             "log_loss":statistics.mean(-y*math.log(max(1e-9,p))-(1-y)*math.log(max(1e-9,1-p)) for p,y in probabilities) if probabilities else None,
             "calibration":calibration})
+    decision_summaries = []
+    for (role, name, category), pairs in sorted(decisions.items(), key=lambda item: str(item[0])):
+        resolved = [result for result, _board in pairs if result.get("residual") is not None]
+        wins = sum(result["residual"] > 0 for result in resolved)
+        decision_summaries.append({"player_type": role, "metric": name, "category": category,
+            "n": len(resolved), "wins": wins, "win_rate": wins / len(resolved) if resolved else None,
+            "average_actual_minus_baseline": statistics.mean(result["residual"] for result in resolved) if resolved else None})
+    drivers = []
+    for (role, name, driver), results in sorted(driver_results.items(), key=lambda item: str(item[0])):
+        resolved = [result for result in results if result.get("residual") is not None]
+        wins = sum(result["residual"] > 0 for result in resolved)
+        drivers.append({"player_type": role, "metric": name, "driver": driver, "n": len(resolved),
+            "wins": wins, "win_rate": wins / len(resolved) if resolved else None,
+            "average_actual_minus_baseline": statistics.mean(result["residual"] for result in resolved) if resolved else None})
     return {"start":start.isoformat(),"end":end.isoformat(),"groups":summaries,
+            "decision_performance": decision_summaries, "winning_drivers": drivers,
             "evaluation":"frozen_pregame_predictions", "empty":not bool(summaries)}

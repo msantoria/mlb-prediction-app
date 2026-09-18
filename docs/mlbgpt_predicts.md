@@ -177,6 +177,30 @@ independent opportunity/leash, fatigue, directional park and formal change-point
 models require further implementation/source enrichment. The first priority is the
 working baseline → pregame snapshot → Final → residual learning chain.
 
+## Daily two-stage prediction contract
+
+The product board has two deliberately separate states:
+
+1. **Model Projection Baseline** — before the lineup is confirmed, the canonical
+   Model Projections mean is the numerical authority. The slate is ranked but is
+   not presented as a confirmed MLBGPT call.
+2. **Confirmed Lineup Prediction** — after lineup status and batting order are
+   confirmed, the refresh freezes a cross-slate convergence score using projection
+   strength, expected opportunity, process quality, recent change, arsenal/location
+   compatibility and pitcher workload as available. A shortlist requires a score
+   of at least 60 and two independent positive supporting signals.
+
+The convergence score ranks evidence; it is not silently substituted for a count
+forecast. `mlbgpt_line` stays equal to the Model Projections baseline until the
+residual model passes its later-date holdout improvement gate. Captured Bet105
+player lines and prices are comparison-only fields and never model inputs.
+
+Final grading records the frozen stage, category and drivers. `/predicts/backtest`
+reports the record, win rate and average actual-minus-baseline result for each
+category, plus the positive drivers present in confirmed-lineup shortlists. This
+is the feedback loop for identifying which unique predictions and evidence
+combinations are working rather than merely displaying today’s projections.
+
 ## Backfill and troubleshooting
 
 ```sh

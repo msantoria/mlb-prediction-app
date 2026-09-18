@@ -16,6 +16,7 @@ from .predicts_snapshots import promote, lock_due, grade
 from .predicts_residuals import adjust, TARGETS
 from .predicts_status import save_status
 from .predicts_validation import utc, MODEL_VERSION
+from .predicts_decisions import enrich
 
 
 def _candidates(session, day):
@@ -66,12 +67,14 @@ def backfill_day(session, day, *, now=None, dry_run=False, hydrate_final=None):
             selected[pk] = (captured, source, rows[pk])
     counts = Counter()
     if not dry_run:
-        for pk, (captured, source, rows) in selected.items():
+        for _pk, (_captured, source, rows) in selected.items():
             for row in rows:
                 row.update(imported_at=now.isoformat()+"Z", archive_source=source,
                     predicts_model_version=MODEL_VERSION,
                     predictions={metric: {**adjust(row, metric, None, []), "status": "archived_baseline"}
                                  for metric in TARGETS[row["player_type"]]})
+        enrich([row for _captured, _source, rows in selected.values() for row in rows], force=True)
+        for pk, (captured, source, rows) in selected.items():
             # The original source timestamp is validated against first pitch by
             # promote. Existing live/locked history is never replaced by replay.
             result = promote(session, rows, captured)

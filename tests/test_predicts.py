@@ -18,6 +18,7 @@ from mlb_app.predicts_features import feature, exposure, workload, expected_arse
 from mlb_app.predicts_probability import empirical
 from mlb_app.predicts_residuals import fit, adjust, vector, FEATURES
 from mlb_app.predicts_validation import asof, validate_player
+from mlb_app.predicts_decisions import enrich
 from mlb_app.shared_artifacts import model_projection_date_key
 from mlb_app.simulation.projections.aggregator import summarize_values
 
@@ -80,6 +81,23 @@ def test_capture_revision_and_duplicate_idempotency(session):
     assert session.query(PredictsPlayer).count()==2
     assert session.get(PredictsGame,777).revision==2
     assert session.query(PredictsPlayer).order_by(PredictsPlayer.id).first().payload["baseline"]["hits"]==1.2
+
+
+def test_two_stage_decision_board_separates_baseline_and_confirmed_lineup():
+    baseline = row(1)
+    baseline.update(lineup_status="projected", batting_order=1)
+    confirmed = row(2)
+    confirmed.update(lineup_status="confirmed", batting_order=2)
+    confirmed["baseline"]["total_bases"] = 2.4
+    confirmed["features"]["trend"] = feature(.9)
+    confirmed["features"]["arsenal"] = feature(.8)
+    enrich([baseline, confirmed], force=True)
+    assert baseline["prediction_stage"] == "model_projection_baseline"
+    assert confirmed["prediction_stage"] == "confirmed_lineup"
+    board = confirmed["decision_board"]["total_bases"]
+    assert board["mlbgpt_line"] == 2.4
+    assert board["line_authority"] == "model_projections_baseline"
+    assert board["convergence_score"] > baseline["decision_board"]["total_bases"]["convergence_score"]
 
 
 def test_lock_and_immutable_history_in_orm_and_bulk_sql(session):
