@@ -17,7 +17,12 @@ def _shadow(game):
             (shared.get("diagnostics") or {}).get("canonical_shadow") or {})
 
 
-def collect(session, payload, target_date, captured):
+def collect(session, payload, target_date, captured, *, source_only=False):
+    """Normalize a saved projection; archive imports use only its embedded evidence.
+
+    Never attach today's mutable analytics or subsequently ingested pitches to an
+    old prediction. Missing historical evidence stays missing.
+    """
     source_time = utc(payload["predicts_source_generated_at"])
     if captured-source_time > timedelta(hours=6):
         raise ValueError("Projection artifact is stale (older than six hours)")
@@ -32,61 +37,74 @@ def collect(session, payload, target_date, captured):
             asof(source_time, captured, game.get("game_time"))
             if str(game.get("status", "")).lower() not in {"preview", "scheduled", "pre-game", "pregame", "warmup"}:
                 raise ValueError("Game is not pregame")
+            if not (_shadow(game).get("player_projections") or {}).get("players"):
+                raise ValueError("Saved game has no player projections")
             games[pk] = game
         except (ValueError, TypeError) as exc:
             rejected.append({"game_pk": game.get("game_pk"), "reason": str(exc)})
     if not games:
         return {}, rejected
     canonical = _player_rows({"games": list(games.values()), "date": target_date.isoformat()})
+    valid = []
+    for row in canonical:
+        try:
+            identity(row["mlb_player_id"])
+            valid.append(row)
+        except (ValueError, TypeError) as exc:
+            rejected.append({"game_pk": row.get("game_pk"), "reason": str(exc)})
+    canonical = valid
     ids = {identity(r["mlb_player_id"]) for r in canonical}
-    current = {r.mlb_player_id: r for r in session.query(DashboardPlayerCurrent).filter(
-        DashboardPlayerCurrent.updated_at <= captured,
-        DashboardPlayerCurrent.promoted_at <= captured)}
-    lineups = {}
-    for r in session.query(DashboardPlayerSnapshot).filter(
-        DashboardPlayerSnapshot.snapshot_date==target_date, DashboardPlayerSnapshot.game_pk.in_(list(games) or [-1]),
-        DashboardPlayerSnapshot.generated_at<=captured, DashboardPlayerSnapshot.refreshed_at<=captured,
-        DashboardPlayerSnapshot.is_approved.is_(True)).order_by(DashboardPlayerSnapshot.generated_at.desc()):
-        lineups.setdefault((r.game_pk,r.mlb_player_id),r)
-    arsenal = defaultdict(list)
-    for r in session.query(BatterPitchTypeMatchup).filter(
-        BatterPitchTypeMatchup.target_date == target_date,
-        BatterPitchTypeMatchup.batter_id.in_(ids or [-1]),
-        BatterPitchTypeMatchup.date_end < target_date,
-        BatterPitchTypeMatchup.refreshed_at <= captured).order_by(BatterPitchTypeMatchup.refreshed_at.desc()):
-        if (r.pitches_seen is not None and not 0 <= r.pitches_seen <= 10000) or (r.pa is not None and not 0 <= r.pa <= 1500):
-            continue
-        key = (r.game_pk, r.batter_id, r.opposing_pitcher_id)
-        if not any(old.pitch_type == r.pitch_type for old in arsenal[key]):
-            arsenal[key].append(r)
-    trends = defaultdict(list)
-    for r in session.query(PlayerTrendSnapshot).filter(PlayerTrendSnapshot.player_id.in_(ids or [-1]),
-        PlayerTrendSnapshot.as_of_date == target_date, PlayerTrendSnapshot.window_end < target_date,
-        PlayerTrendSnapshot.baseline_end < target_date, PlayerTrendSnapshot.generated_at <= captured):
-        trends[r.player_id].append({"metric": r.metric, "window_days": r.window_days,
-            "current": r.current_value, "baseline": r.baseline_value,
-            "sample_size": r.window_sample_size, "baseline_sample_size": r.baseline_sample_size,
-            "generated_at": r.generated_at.isoformat()+"Z", "source": r.source})
-    hitter_ids = {identity(r["mlb_player_id"]) for r in canonical if r["player_type"] == "batter"}
-    pitcher_ids = {identity(r["mlb_player_id"]) for r in canonical if r["player_type"] == "pitcher"}
-    pitcher_ids.update(identity(g[f"{side}_pitcher"]["id"]) for g in games.values()
-                       for side in ("home", "away") if (g.get(f"{side}_pitcher") or {}).get("id"))
-    hitters = bounded_pitches(session, hitter_ids, "batter", target_date)
-    pitchers = bounded_pitches(session, pitcher_ids, "pitcher", target_date)
-    starts = defaultdict(list)
-    # Read only pitcher lines, not large Final payloads/scoring plays for sixty days.
-    finals = session.execute(select(
-        FinalGameSnapshot.payload_json["boxscore"]["away"]["pitchers"].label("away"),
-        FinalGameSnapshot.payload_json["boxscore"]["home"]["pitchers"].label("home"),
-    ).where(FinalGameSnapshot.official_date < target_date,
-        FinalGameSnapshot.official_date >= target_date-timedelta(days=60),
-        FinalGameSnapshot.finalized_at <= captured).order_by(
-            FinalGameSnapshot.official_date.desc(), FinalGameSnapshot.game_pk.desc())).mappings()
-    for final in finals:
-        for side in ("home", "away"):
-            appearances = final[side] or []
-            if appearances and appearances[0].get("id") in pitcher_ids:
-                starts[appearances[0]["id"]].append(appearances[0])
+    current, lineups, hitters, pitchers = {}, {}, {}, {}
+    arsenal, trends, starts = defaultdict(list), defaultdict(list), defaultdict(list)
+    if not source_only:
+        current = {r.mlb_player_id: r for r in session.query(DashboardPlayerCurrent).filter(
+            DashboardPlayerCurrent.updated_at <= captured,
+            DashboardPlayerCurrent.promoted_at <= captured)}
+        lineups = {}
+        for r in session.query(DashboardPlayerSnapshot).filter(
+            DashboardPlayerSnapshot.snapshot_date==target_date, DashboardPlayerSnapshot.game_pk.in_(list(games) or [-1]),
+            DashboardPlayerSnapshot.generated_at<=captured, DashboardPlayerSnapshot.refreshed_at<=captured,
+            DashboardPlayerSnapshot.is_approved.is_(True)).order_by(DashboardPlayerSnapshot.generated_at.desc()):
+            lineups.setdefault((r.game_pk,r.mlb_player_id),r)
+        arsenal = defaultdict(list)
+        for r in session.query(BatterPitchTypeMatchup).filter(
+            BatterPitchTypeMatchup.target_date == target_date,
+            BatterPitchTypeMatchup.batter_id.in_(ids or [-1]),
+            BatterPitchTypeMatchup.date_end < target_date,
+            BatterPitchTypeMatchup.refreshed_at <= captured).order_by(BatterPitchTypeMatchup.refreshed_at.desc()):
+            if (r.pitches_seen is not None and not 0 <= r.pitches_seen <= 10000) or (r.pa is not None and not 0 <= r.pa <= 1500):
+                continue
+            key = (r.game_pk, r.batter_id, r.opposing_pitcher_id)
+            if not any(old.pitch_type == r.pitch_type for old in arsenal[key]):
+                arsenal[key].append(r)
+        trends = defaultdict(list)
+        for r in session.query(PlayerTrendSnapshot).filter(PlayerTrendSnapshot.player_id.in_(ids or [-1]),
+            PlayerTrendSnapshot.as_of_date == target_date, PlayerTrendSnapshot.window_end < target_date,
+            PlayerTrendSnapshot.baseline_end < target_date, PlayerTrendSnapshot.generated_at <= captured):
+            trends[r.player_id].append({"metric": r.metric, "window_days": r.window_days,
+                "current": r.current_value, "baseline": r.baseline_value,
+                "sample_size": r.window_sample_size, "baseline_sample_size": r.baseline_sample_size,
+                "generated_at": r.generated_at.isoformat()+"Z", "source": r.source})
+        hitter_ids = {identity(r["mlb_player_id"]) for r in canonical if r["player_type"] == "batter"}
+        pitcher_ids = {identity(r["mlb_player_id"]) for r in canonical if r["player_type"] == "pitcher"}
+        pitcher_ids.update(identity(g[f"{side}_pitcher"]["id"]) for g in games.values()
+                           for side in ("home", "away") if (g.get(f"{side}_pitcher") or {}).get("id"))
+        hitters = bounded_pitches(session, hitter_ids, "batter", target_date)
+        pitchers = bounded_pitches(session, pitcher_ids, "pitcher", target_date)
+        starts = defaultdict(list)
+        # Read only pitcher lines, not large Final payloads/scoring plays for sixty days.
+        finals = session.execute(select(
+            FinalGameSnapshot.payload_json["boxscore"]["away"]["pitchers"].label("away"),
+            FinalGameSnapshot.payload_json["boxscore"]["home"]["pitchers"].label("home"),
+        ).where(FinalGameSnapshot.official_date < target_date,
+            FinalGameSnapshot.official_date >= target_date-timedelta(days=60),
+            FinalGameSnapshot.finalized_at <= captured).order_by(
+                FinalGameSnapshot.official_date.desc(), FinalGameSnapshot.game_pk.desc())).mappings()
+        for final in finals:
+            for side in ("home", "away"):
+                appearances = final[side] or []
+                if appearances and appearances[0].get("id") in pitcher_ids:
+                    starts[appearances[0]["id"]].append(appearances[0])
     results = defaultdict(list)
     duplicates = set()
     for raw in canonical:
@@ -102,7 +120,14 @@ def collect(session, payload, target_date, captured):
             game = games[pk]
             opposing = "away" if side == "home" else "home"
             team, opponent = game[f"{side}_team"], game[f"{opposing}_team"]
-            if identity(raw["team_id"]) != identity(team["id"]):
+            # A newly promoted starter can have an MLBAM identity before the
+            # player directory has a team. The saved probable-starter slot is
+            # independent game-specific evidence of membership; mismatches fail.
+            resolved_team = raw["team_id"]
+            if resolved_team is None and role == "pitcher" and str(
+                    (game.get(f"{side}_pitcher") or {}).get("id")) == str(pid):
+                resolved_team = team["id"]
+            if identity(resolved_team) != identity(team["id"]):
                 raise ValueError("Player attached to wrong team")
             starter = game.get(f"{opposing}_pitcher") or {}
             opponent_id = identity(starter["id"]) if starter.get("id") else None
@@ -162,7 +187,8 @@ def collect(session, payload, target_date, captured):
                 "source_timestamps": {"model_projections": source_time.isoformat()+"Z",
                     "dashboard_current": own.updated_at.isoformat()+"Z" if own else None,
                     "statcast_event_cutoff_exclusive": target_date.isoformat()},
-                "provenance": "true_point_in_time_snapshot", "current_analytics": metrics,
+                "provenance": "archived_pregame_projection" if source_only else "true_point_in_time_snapshot",
+                "current_analytics": metrics,
                 "player_trends": trends.get(pid, []), "opportunity_windows": windows,
                 "features": {"opportunity": feature(pa if role=="batter" else means.get("batters_faced"),
                     source="model_projections", distribution=summaries.get("plate_appearances" if role=="batter" else "batters_faced")),

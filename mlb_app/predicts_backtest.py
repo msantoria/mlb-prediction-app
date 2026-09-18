@@ -24,7 +24,7 @@ def training_records(session, target_date, captured):
     groups = defaultdict(list)
     for snapshot,outcome,game in session.execute(query):
         row = snapshot.payload
-        if row.get("provenance") != "true_point_in_time_snapshot" or not row.get("baseline_model_version"):
+        if row.get("provenance") not in {"true_point_in_time_snapshot", "archived_pregame_projection"} or not row.get("baseline_model_version"):
             continue
         for metric, result in outcome.payload["metrics"].items():
             if result.get("residual") is not None:

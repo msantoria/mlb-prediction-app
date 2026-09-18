@@ -346,3 +346,31 @@ def test_matchup_detail_dashboard_query_and_csv_http_contracts(session,monkeypat
         exported=client.post('/my-dashboard/reports/export.csv',json=request)
         assert exported.status_code==200,exported.text
         assert 'Player 1' in exported.text and 'Player 20' in exported.text
+
+def test_archive_backfill_imports_only_saved_pregame_projection(session):
+    from mlb_app.predicts_backfill import backfill_day
+    past=DAY-timedelta(days=1)
+    payload=artifact_payload(); payload['date']=past.isoformat()
+    payload['games'][0]['game_date']=past.isoformat()
+    payload['games'][0]['game_time']=(NOW-timedelta(days=1)+timedelta(hours=2)).isoformat()+'Z'
+    captured=NOW-timedelta(days=1)
+    payload.pop('predicts_source_generated_at')
+    session.add(SharedReportArtifact(artifact_key='old-projection',artifact_type='model_projection_date',
+        target_date=past,payload_json=payload,generated_at=captured,updated_at=captured))
+    session.commit()
+    report=backfill_day(session,past,now=NOW)
+    assert report['imported_games']==1 and report['imported_players']==3
+    saved=session.query(PredictsPlayer).first().payload
+    assert saved['provenance']=='archived_pregame_projection'
+    assert saved['features']['process']['value'] is None
+    assert saved['predictions'][next(iter(saved['predictions']))]['status']=='archived_baseline'
+    assert backfill_day(session,past,now=NOW)['imported_games']==0
+
+
+def test_probable_starter_without_directory_team_is_accepted(session):
+    payload=artifact_payload()
+    players=payload['games'][0]['sharedSimulation']['diagnostics']['canonical_shadow']['player_projections']['players']
+    next(p for p in players if p['player_id']=='10')['team_id']=None
+    rows,rejected=collect(session,payload,DAY,NOW)
+    assert 777 in rows
+    assert not rejected
