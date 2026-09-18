@@ -392,3 +392,69 @@ def test_probable_starter_without_directory_team_is_accepted(session):
     rows,rejected=collect(session,payload,DAY,NOW)
     assert 777 in rows
     assert not rejected
+
+
+@pytest.mark.parametrize('status', ['unconfirmed', 'not confirmed', 'projected', '', None])
+def test_only_explicit_confirmation_promotes(status):
+    candidate = row(); candidate['lineup_status'] = status
+    candidate['predictions']['hits'] = {'status': 'ready', 'adjusted': 2.0}
+    enrich([candidate])
+    assert candidate['prediction_stage'] == 'model_projection_baseline'
+    assert candidate['decision_board']['hits']['mlbgpt_line'] == 1.2
+
+
+def test_pitcher_lower_allowed_xwoba_ranks_higher():
+    good, poor = row(10, 'pitcher'), row(20, 'pitcher')
+    for candidate in (good, poor):
+        candidate['lineup_status'] = 'confirmed'
+    good['features']['process'] = feature(.2)
+    poor['features']['process'] = feature(.4)
+    good['features']['trend'] = feature(-.5)
+    poor['features']['trend'] = feature(.5)
+    enrich([good, poor])
+    assert good['decision_board']['strikeouts']['convergence_score'] > poor['decision_board']['strikeouts']['convergence_score']
+
+
+def test_market_identity_cutoff_and_repeat_reads():
+    from mlb_app.predicts_decisions import attach_markets
+    candidate = row(); candidate['as_of'] = NOW.isoformat()+'Z'
+    enrich([candidate])
+    def market(**changes):
+        values = dict(player_id=1, player_name='Test Player', game_pk=777,
+            captured_at=NOW-timedelta(minutes=2), market_key='player_hits',
+            market_name='Player Hits', book='Bet105', provider='bet105',
+            selection_label='Over', line=1.5, price=-110, implied_probability=.52)
+        return SimpleNamespace(**{**values, **changes})
+    prices = [market(), market(game_pk=778), market(captured_at=NOW+timedelta(minutes=1)),
+              market(player_id=None), market(market_key='hits_runs_rbis', market_name='Hits Runs RBIs')]
+    attach_markets([candidate], prices)
+    attach_markets([candidate], prices)
+    assert len(candidate['decision_board']['hits']['book_markets']) == 1
+    assert candidate['decision_board']['hits']['book_markets'][0]['captured_at'] == (NOW-timedelta(minutes=2)).isoformat()+'Z'
+
+
+def test_backtest_never_invents_historical_shortlists(session):
+    candidate = row(); candidate['lineup_status'] = 'confirmed'
+    promote(session, [candidate], NOW)
+    final(session); grade(session, START+timedelta(hours=4))
+    result = evaluate(session, DAY, DAY)
+    assert result['groups']
+    assert result['decision_performance'] == []
+
+
+def test_results_report_equal_separately(session):
+    candidate = row(); candidate['lineup_status'] = 'confirmed'; candidate['baseline']['hits'] = 2
+    enrich([candidate]); promote(session, [candidate], NOW)
+    final(session); grade(session, START+timedelta(hours=4))
+    result = evaluate(session, DAY, DAY)
+    hits = next(r for r in result['decision_performance'] if r['metric'] == 'hits')
+    assert (hits['above'], hits['below'], hits['equal']) == (0, 0, 1)
+
+
+def test_tracker_retirement_preserves_dashboard_routes():
+    from mlb_app.model_tracker_routes import router
+    paths = {route.path for route in router.routes}
+    assert not any(path.startswith('/model-tracker') for path in paths)
+    assert '/my-dashboard/auth/login' in paths
+    assert '/my-dashboard/workspace' in paths
+    assert '/my-dashboard/folders/{folder_id}' in paths

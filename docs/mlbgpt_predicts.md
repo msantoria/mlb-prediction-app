@@ -252,3 +252,39 @@ python -m pytest -q tests/test_predicts.py tests/test_dashboard_projection_repor
 
 The local runner used the existing dependency cache plus isolated `httpx` and
 `feedparser` test dependencies; no application dependency manifest was changed.
+
+## Production cleanup: separate outputs and honest records
+
+The Predictions tab offers a two-option dropdown. **Model Projections — baseline**
+shows all captured players, including confirmed players, sorted by the selected
+original projection. **Confirmed Lineup Analysis** shows explicitly confirmed
+players and offers a shortlist filter. Confirmation is not statistical validation.
+The convergence score is a heuristic slate ranking, not a win probability; its
+supporting signals may be correlated. Pitcher process/trend rank direction now
+correctly favors lower xwOBA allowed (convergence_v2).
+
+Today’s page rereads saved snapshots every minute and provides a manual read-only
+refresh button. It does not start simulations or training. New calculations still
+require the existing background projection/refresh pipeline. Baseline values in
+both views come from the latest saved pregame revision, not a separately retained
+first-of-day forecast. Existing immutable revisions are preserved.
+
+Results show above/below/equal to the baseline, not sportsbook wins/losses.
+Decision-category records use only categories actually stored pregame, separated
+by heuristic version. Legacy rows without stored categories still contribute to
+baseline error metrics, but do not acquire retrospective shortlist records.
+Driver associations do not establish causality. Historical version-one frozen
+rankings are preserved; corrected ranking applies on subsequent captures.
+
+Book comparisons require matching MLBAM player ID and game PK and a price captured
+no later than the prediction snapshot and before first pitch. Name-only or unmapped
+markets remain unavailable. Repeated reads do not append duplicate prices or mutate
+saved payloads. Book context remains comparison-only, without a sportsbook P&L claim.
+
+The old Model Tracker UI redirects to `/predicts`. Its six API endpoints are unregistered. The shared router remains registered
+because it also owns MyDashboard authentication, folders, and workspace routes. Shared historical tracker tables,
+Dashboard saved reports, and the sportsbook price capture service remain available;
+no historical data is deleted. Price capture/list endpoints move to
+`/odds/price-snapshots`; external callers of the old path must update their URL. No schema migration or new environment variable is
+required. Live deployment and real-production data acceptance remain separate from
+local validation.

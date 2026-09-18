@@ -377,7 +377,7 @@ def compare_odds_events(date: Optional[str] = None, books: str = "bet105,draftki
     return _comparison_payload(date=date, books=list(payloads.keys()), payloads=payloads)
 
 
-@router.post("/model-tracker/price-snapshots")
+@router.post("/odds/price-snapshots")
 def model_tracker_price_snapshot_capture(date: Optional[str] = None, provider: str = "bet105") -> Dict[str, Any]:
     target = _target_date(date)
     selected_provider = (provider or "bet105").strip().lower()
@@ -388,7 +388,7 @@ def model_tracker_price_snapshot_capture(date: Optional[str] = None, provider: s
         return capture_bet105_price_snapshots(session, target)
 
 
-@router.get("/model-tracker/price-snapshots")
+@router.get("/odds/price-snapshots")
 def model_tracker_price_snapshot_list(date: Optional[str] = None, provider: Optional[str] = "bet105") -> Dict[str, Any]:
     target = _target_date(date)
     selected_provider = (provider or "").strip().lower() or None

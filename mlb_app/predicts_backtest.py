@@ -9,7 +9,6 @@ from .predicts_models import PredictsPlayer, PredictsOutcome, PredictsGame
 from .predicts_residuals import vector
 from .predicts_validation import FEATURE_VERSION
 from .predicts_probability import wilson
-from .predicts_decisions import enrich
 
 
 def history_query(start, end):
@@ -46,7 +45,6 @@ def evaluate(session, start, end, *, player_type=None, metric=None, model_versio
     driver_results = defaultdict(list)
     result_rows = list(session.execute(query))
     payloads = [deepcopy(snapshot.payload) for snapshot, _outcome, _game in result_rows]
-    enrich(payloads)
     for (snapshot,outcome,_game), row in zip(result_rows, payloads):
         if model_version and row.get("baseline_model_version") != model_version:
             continue
@@ -63,7 +61,7 @@ def evaluate(session, start, end, *, player_type=None, metric=None, model_versio
             board = (row.get("decision_board") or {}).get(name) or {}
             category = board.get("category")
             if category:
-                decisions[(row["player_type"], name, category)].append((result, board))
+                decisions[(row["player_type"], name, category, board.get("method_version", "legacy_v1"))].append((result, board))
                 if category == "confirmed_lineup_shortlist":
                     for driver in board.get("drivers") or []:
                         if driver.get("z_score", 0) >= .25:
@@ -94,11 +92,14 @@ def evaluate(session, start, end, *, player_type=None, metric=None, model_versio
             "log_loss":statistics.mean(-y*math.log(max(1e-9,p))-(1-y)*math.log(max(1e-9,1-p)) for p,y in probabilities) if probabilities else None,
             "calibration":calibration})
     decision_summaries = []
-    for (role, name, category), pairs in sorted(decisions.items(), key=lambda item: str(item[0])):
+    for (role, name, category, method_version), pairs in sorted(decisions.items(), key=lambda item: str(item[0])):
         resolved = [result for result, _board in pairs if result.get("residual") is not None]
         wins = sum(result["residual"] > 0 for result in resolved)
         decision_summaries.append({"player_type": role, "metric": name, "category": category,
+            "method_version": method_version,
             "n": len(resolved), "wins": wins, "win_rate": wins / len(resolved) if resolved else None,
+            "above": wins, "below": sum(r["residual"] < 0 for r in resolved),
+            "equal": sum(r["residual"] == 0 for r in resolved),
             "average_actual_minus_baseline": statistics.mean(result["residual"] for result in resolved) if resolved else None})
     drivers = []
     for (role, name, driver), results in sorted(driver_results.items(), key=lambda item: str(item[0])):
@@ -109,4 +110,5 @@ def evaluate(session, start, end, *, player_type=None, metric=None, model_versio
             "average_actual_minus_baseline": statistics.mean(result["residual"] for result in resolved) if resolved else None})
     return {"start":start.isoformat(),"end":end.isoformat(),"groups":summaries,
             "decision_performance": decision_summaries, "winning_drivers": drivers,
-            "evaluation":"frozen_pregame_predictions", "empty":not bool(summaries)}
+            "evaluation":"frozen_pregame_predictions",
+            "record_definition":"Above/below/equal to Model Projections; not a sportsbook win/loss record. Only stored decision categories are evaluated.", "empty":not bool(summaries)}
