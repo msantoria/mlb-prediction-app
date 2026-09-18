@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta
 from functools import lru_cache
 import logging
 import os
-from sqlalchemy import select, func
+from sqlalchemy import select, func, inspect
 from .database import SharedReportArtifact, create_tables, get_engine, get_session
 from .shared_artifacts import model_projection_date_key
 from .predicts_models import PredictsGame, PredictsPlayer, PredictsOutcome, PredictsModelRun
@@ -14,6 +14,7 @@ from .predicts_backtest import training_records, evaluate
 from .predicts_residuals import fit, adjust, TARGETS
 from .predicts_validation import MODEL_VERSION, FEATURE_VERSION
 from .predicts_status import coverage, get_status, save_status
+from .predicts_decisions import enrich, attach_markets
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,8 @@ def refresh(session, target_date, now=None):
             for metric in TARGETS[row["player_type"]]:
                 key = (row["player_type"],metric,row["baseline_model_version"])
                 row["predictions"][metric] = adjust(row,metric,models.get(key),records.get(key,[]))
+    enrich([row for players in rows.values() for row in players], force=True)
+    for pk,players in rows.items():
         captured = clock()
         lock_due(session,captured)
         from .predicts_validation import utc
@@ -121,10 +124,37 @@ def slate(session,target_date=None,game_pk=None,player_id=None):
         rows.append({**player.payload,"snapshot_id":player.id,
             "locked":game.locked_at is not None or game.starts_at<=now,
             "outcome":{**outcome.payload,"graded_at":outcome.graded_at.isoformat()+"Z"} if outcome else None})
+    enrich(rows)
+    if rows:
+        try:
+            from .model_tracker_price_snapshots import ModelTrackerPriceSnapshot
+            if inspect(session.get_bind()).has_table(ModelTrackerPriceSnapshot.__tablename__):
+                market_date = target_date or date.fromisoformat(rows[0]["date"])
+                market_query = select(ModelTrackerPriceSnapshot).where(
+                    ModelTrackerPriceSnapshot.snapshot_date == market_date,
+                    ModelTrackerPriceSnapshot.provider == "bet105").order_by(
+                        ModelTrackerPriceSnapshot.captured_at.desc())
+                latest, seen = [], set()
+                for market in session.scalars(market_query):
+                    key = (market.player_id, market.player_name, market.market_key, market.selection_label, market.line)
+                    if key not in seen:
+                        seen.add(key); latest.append(market)
+                attach_markets(rows, latest)
+        except Exception:
+            # Price capture is optional. Prediction reads must remain available.
+            logger.warning("Predicts market context unavailable", exc_info=True)
+    stage_counts = dict(Counter(row["prediction_stage"] for row in rows))
     return {"date":target_date.isoformat() if target_date else None,"records":rows,
             "status":"ready" if rows else "unavailable", "record_count":len(rows),
+            "stage_counts":stage_counts,
             "reason":None if rows else "No eligible pregame snapshots have been captured for this selection.",
-            "feature_version":FEATURE_VERSION,"model_version":MODEL_VERSION}
+            "feature_version":FEATURE_VERSION,"model_version":MODEL_VERSION,
+            "timing_contract":{
+                "before_confirmed_lineup":"Model Projections is the numerical driver and the slate remains a baseline board.",
+                "after_confirmed_lineup":"The confirmed nine are re-ranked with frozen projection, opportunity, trend, process and matchup evidence.",
+                "numerical_adjustment":"The MLBGPT line changes only when the residual model beats the baseline on a later temporal holdout.",
+                "market_context":"Captured Bet105 lines are comparison-only and never model inputs.",
+            }}
 
 
 def health(session,today):
