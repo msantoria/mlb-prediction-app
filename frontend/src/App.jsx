@@ -1,5 +1,5 @@
 import React from 'react'
-import { BrowserRouter, Routes, Route, NavLink, useLocation, useParams } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, NavLink, useLocation, useParams, Navigate } from 'react-router-dom'
 import './styles/bet105-mobile.css'
 import HomePage from './pages/HomePage'
 import LandingV2Page from './pages/LandingV2Page'
@@ -21,7 +21,6 @@ import ModelProjectionsPage from './pages/ModelProjectionsPage'
 import NewsPageClean from './pages/NewsPageClean'
 import MyDashboardReportBuilderRoute from './pages/MyDashboardReportBuilderRoute'
 import AdminControlCenterPage from './pages/AdminControlCenterPage'
-import ModelTrackerPage from './pages/ModelTrackerPage'
 
 const MLBGPTPredictsPage = React.lazy(() => import('./pages/MLBGPTPredictsPage'))
 
@@ -57,7 +56,6 @@ const NAV_GROUPS = [
     items: [
       { to: '/predicts', label: 'MLBGPT Predicts' },
       { to: '/models/projections', label: 'Model Projections' },
-      { to: '/model-tracker', label: 'Model Tracker' },
       { to: '/ai-data-assistant', label: 'AI Data Assistant' },
     ],
   },
@@ -127,7 +125,7 @@ export default function App() {
             <Route path="/news" element={<NewsPageClean />} />
             <Route path="/models/projections" element={<ModelProjectionsPage />} />
             <Route path="/predicts" element={<React.Suspense fallback={<p role="status">Loading predictions…</p>}><MLBGPTPredictsPage /></React.Suspense>} />
-            <Route path="/model-tracker" element={<ModelTrackerPage />} />
+            <Route path="/model-tracker" element={<Navigate to="/predicts" replace />} />
             <Route path="/my-dashboard" element={<MyDashboardReportBuilderRoute />} />
             <Route path="/admin" element={<AdminControlCenterPage />} />
             <Route path="/matchup/:game_pk" element={<MatchupRoute />} />

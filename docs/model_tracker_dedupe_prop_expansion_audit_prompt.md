@@ -277,8 +277,8 @@ Audit and design:
    If a price snapshot endpoint exists after implementation, verify:
 
    ```bash
-   curl -sS -X POST "https://mlbgpt.com/model-tracker/price-snapshots?date=YYYY-MM-DD&provider=bet105" | jq .
-   curl -sS "https://mlbgpt.com/model-tracker/price-snapshots?date=YYYY-MM-DD&provider=bet105" | jq '{snapshots: (.snapshots | length)}'
+   curl -sS -X POST "https://mlbgpt.com/odds/price-snapshots?date=YYYY-MM-DD&provider=bet105" | jq .
+   curl -sS "https://mlbgpt.com/odds/price-snapshots?date=YYYY-MM-DD&provider=bet105" | jq '{snapshots: (.snapshots | length)}'
    ```
 
 ### 7. Required new tracker sections

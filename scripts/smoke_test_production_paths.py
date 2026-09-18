@@ -92,62 +92,14 @@ def _check_dashboard_solver(data: Any, path: str) -> None:
         raise SmokeFailure("My Dashboard solver items must be a list")
 
 
-def _check_tracker_health(data: Any, path: str) -> None:
+def _check_predicts(data: Any, path: str) -> None:
     payload = _expect_dict(data, path)
-    if payload.get("component") != "model_tracker" or payload.get("status") != "ok":
-        raise SmokeFailure(f"Unexpected Model Tracker health payload for {path}: {payload}")
-
-
-def _check_tracker_snapshot(data: Any, path: str) -> None:
-    payload = _expect_dict(data, path)
-    for key in ["date", "rows_collected", "upsert", "errors"]:
-        if key not in payload:
-            raise SmokeFailure(f"Model Tracker snapshot payload missing {key}")
-    if not isinstance(payload.get("errors"), list):
-        raise SmokeFailure("Model Tracker snapshot errors must be a list")
-    if payload.get("errors"):
-        raise SmokeFailure(f"Model Tracker snapshot returned source errors: {payload.get('errors')[:3]}")
-    if int(payload.get("rows_collected") or 0) <= 0:
-        raise SmokeFailure(f"Model Tracker snapshot collected zero rows: {payload}")
-    best_plays = payload.get("best_plays") or {}
-    if int(best_plays.get("rows_collected") or 0) <= 0:
-        raise SmokeFailure(f"Model Tracker snapshot collected zero best_plays rows: {best_plays}")
-
-
-def _check_tracker_list(data: Any, path: str) -> None:
-    payload = _expect_dict(data, path)
-    for key in ["date", "rows", "games", "summary", "errors"]:
-        if key not in payload:
-            raise SmokeFailure(f"Model Tracker list payload missing {key}")
-    if not isinstance(payload.get("rows"), list) or not isinstance(payload.get("games"), list):
-        raise SmokeFailure("Model Tracker rows/games must be lists")
-
-
-def _check_tracker_list_has_best_plays(data: Any, path: str) -> None:
-    _check_tracker_list(data, path)
-    rows = _expect_dict(data, path).get("rows") or []
-    if not rows:
-        raise SmokeFailure(f"Model Tracker list returned zero rows after snapshot for {path}")
-    best_rows = [row for row in rows if row.get("source") == "best_plays"]
-    if not best_rows:
-        raise SmokeFailure(f"Model Tracker list has no best_plays rows after snapshot for {path}")
-    if not any(row.get("model_probability") is not None or row.get("score") is not None for row in best_rows):
-        raise SmokeFailure("best_plays rows have no model_probability or score values")
-    meaningful = {"qualified", "watchlist", "model_signal", "watchlist_only"}
-    if not any(row.get("source_component") in meaningful or row.get("grade") in meaningful for row in best_rows):
-        raise SmokeFailure("best_plays rows have no qualified/watchlist/model_signal tier")
-    for row in best_rows:
-        missing = [key for key in ["game_pk", "market_type", "pick_type"] if not row.get(key)]
-        if not (row.get("pick_label") or row.get("team_name") or row.get("player_name")):
-            missing.append("pick_label/team/player")
-        if row.get("confidence") is None and row.get("score") is None:
-            missing.append("confidence_or_score")
-        if not isinstance(row.get("missing_inputs") or [], list):
-            missing.append("missing_inputs_list")
-        if missing:
-            raise SmokeFailure(f"best_plays row missing required fields: {missing}; row={row}")
-    if not any(row.get("source_component") == "qualified" or row.get("grade") == "pending" for row in best_rows):
-        print("WARN model_tracker_list_after_snapshot: no qualified best_plays rows, but watchlist/model_signal rows exist")
+    if not isinstance(payload.get("records"), list):
+        raise SmokeFailure("Predicts records must be a list")
+    if payload.get("status") not in {"ready", "unavailable"}:
+        raise SmokeFailure("Unexpected Predicts status")
+    if not payload["records"]:
+        print("WARN predicts: no saved pregame predictions for this date")
 
 
 def _run_check(base_url: str, label: str, path: str, validator: Callable[[Any, str], None], method: str = "GET") -> bool:
@@ -165,7 +117,6 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Smoke-test production-critical MLB backend paths.")
     parser.add_argument("--base-url", default=os.getenv("BACKEND_BASE_URL", DEFAULT_BACKEND_BASE_URL))
     parser.add_argument("--date", default=os.getenv("SMOKE_TEST_DATE", _today_eastern_iso()))
-    parser.add_argument("--include-mutating-tracker-checks", action="store_true")
     args = parser.parse_args()
     date = args.date[:10]
     query_date = urllib.parse.urlencode({"date": date})
@@ -182,12 +133,8 @@ def main() -> int:
         ("my_dashboard_health", "/my-dashboard/health", _check_health, "GET"),
         ("my_dashboard_solver_hitters", f"/my-dashboard/solver?{dashboard_hitter_query}", _check_dashboard_solver, "GET"),
         ("my_dashboard_solver_pitchers", f"/my-dashboard/solver?{dashboard_pitcher_query}", _check_dashboard_solver, "GET"),
-        ("model_tracker_health", "/model-tracker/health", _check_tracker_health, "GET"),
-        ("model_tracker_list", f"/model-tracker?{query_date}", _check_tracker_list, "GET"),
+        ("predicts", f"/predicts?{query_date}", _check_predicts, "GET"),
     ]
-    if args.include_mutating_tracker_checks:
-        checks.append(("model_tracker_snapshot", f"/model-tracker/snapshot?{query_date}", _check_tracker_snapshot, "POST"))
-        checks.append(("model_tracker_list_after_snapshot", f"/model-tracker?{query_date}", _check_tracker_list_has_best_plays, "GET"))
     print(f"Backend base URL: {args.base_url.rstrip('/')}")
     print(f"Smoke-test date: {date}")
     passed = 0

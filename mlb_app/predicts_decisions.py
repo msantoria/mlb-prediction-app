@@ -31,12 +31,12 @@ def _number(value):
 
 def _confirmed(row):
     status = str(row.get("lineup_status") or "").lower()
-    if "confirm" not in status:
+    if status != "confirmed":
         return False
     if row.get("player_type") == "pitcher":
         return True
     order = row.get("batting_order")
-    return isinstance(order, int) and 1 <= order <= 9
+    return type(order) is int and 1 <= order <= 9
 
 
 def _z(value, values):
@@ -79,7 +79,7 @@ def enrich(rows, *, force=False):
         for metric in metrics.get(role, ()):
             prediction = row.get("predictions", {}).get(metric) or {}
             baseline = _number(row.get("baseline", {}).get(metric))
-            adjusted = _number(prediction.get("adjusted")) if prediction.get("status") == "ready" else None
+            adjusted = _number(prediction.get("adjusted")) if confirmed and prediction.get("status") == "ready" else None
             contributions = []
             weighted_sum = weight_used = 0.0
             for signal, weight in weights.items():
@@ -87,6 +87,8 @@ def enrich(rows, *, force=False):
                 score = _z(raw, populations[(role, metric, signal)])
                 if score is None:
                     continue
+                if role == "pitcher" and signal in {"process", "trend"}:
+                    score = -score  # Lower xwOBA allowed and declining xwOBA are favorable.
                 contribution = weight * score
                 weighted_sum += contribution
                 weight_used += weight
@@ -101,6 +103,8 @@ def enrich(rows, *, force=False):
                 category = "confirmed_lineup_shortlist" if convergence >= 60 and supporting >= 2 else "confirmed_lineup_pool"
             row["decision_board"][metric] = {
                 "category": category,
+                "method_version": "convergence_v2",
+                "score_kind": "heuristic_slate_rank_not_probability",
                 "convergence_score": round(convergence, 2),
                 "supporting_signals": supporting,
                 "opposing_signals": opposing,
@@ -115,23 +119,35 @@ def enrich(rows, *, force=False):
 
 def attach_markets(rows, market_rows):
     """Attach captured book context; market prices never enter model scoring."""
-    by_id, by_name = defaultdict(list), defaultdict(list)
+    from .predicts_validation import utc
+
+    by_id = defaultdict(list)
     for market in market_rows:
         if market.player_id:
             by_id[market.player_id].append(market)
-        if market.player_name:
-            by_name[market.player_name.strip().lower()].append(market)
     terms = {
         "hits": ("hit",), "total_bases": ("total base", "total_base"),
         "home_runs": ("home run", "home_run"), "strikeouts": ("strikeout",),
     }
     for row in rows:
-        candidates = by_id.get(row.get("player_id"), []) or by_name.get(str(row.get("player_name") or "").strip().lower(), [])
+        candidates = by_id.get(row.get("player_id"), [])
         for metric, board in row.get("decision_board", {}).items():
-            for market in candidates:
+            board["book_markets"] = []
+            seen = set()
+            for market in sorted(candidates, key=lambda m: m.captured_at, reverse=True):
+                if market.game_pk != row.get("game_pk") or not row.get("as_of"):
+                    continue
+                if utc(market.captured_at) > utc(row["as_of"]) or utc(market.captured_at) >= utc(row["game_time"]):
+                    continue
                 text = " ".join(str(value or "") for value in (market.market_key, market.market_name)).lower()
                 if not any(term in text for term in terms[metric]):
                     continue
+                if metric == "hits" and any(term in text for term in ("allowed", "runs", "rbi", "bases")):
+                    continue
+                key = (market.book or market.provider, market.market_key, market.selection_label, market.line)
+                if key in seen:
+                    continue
+                seen.add(key)
                 line = _number(market.line)
                 board["book_markets"].append({
                     "book": market.book or market.provider, "market": market.market_name,

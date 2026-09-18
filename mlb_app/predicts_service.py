@@ -1,5 +1,6 @@
 """Predicts orchestration: expensive work runs in refresh; GETs only read snapshots."""
 from collections import Counter
+from copy import deepcopy
 from datetime import date, datetime, timedelta
 from functools import lru_cache
 import logging
@@ -121,25 +122,20 @@ def slate(session,target_date=None,game_pk=None,player_id=None):
         query = query.where(PredictsPlayer.player_id==player_id)
     now,rows = datetime.utcnow(),[]
     for player,game,outcome in session.execute(query.order_by(PredictsGame.starts_at,PredictsPlayer.player_id)):
-        rows.append({**player.payload,"snapshot_id":player.id,
+        rows.append({**deepcopy(player.payload),"snapshot_id":player.id,
             "locked":game.locked_at is not None or game.starts_at<=now,
             "outcome":{**outcome.payload,"graded_at":outcome.graded_at.isoformat()+"Z"} if outcome else None})
     enrich(rows)
     if rows:
         try:
             from .model_tracker_price_snapshots import ModelTrackerPriceSnapshot
-            if inspect(session.get_bind()).has_table(ModelTrackerPriceSnapshot.__tablename__):
+            if inspect(session.connection()).has_table(ModelTrackerPriceSnapshot.__tablename__):
                 market_date = target_date or date.fromisoformat(rows[0]["date"])
                 market_query = select(ModelTrackerPriceSnapshot).where(
                     ModelTrackerPriceSnapshot.snapshot_date == market_date,
                     ModelTrackerPriceSnapshot.provider == "bet105").order_by(
                         ModelTrackerPriceSnapshot.captured_at.desc())
-                latest, seen = [], set()
-                for market in session.scalars(market_query):
-                    key = (market.player_id, market.player_name, market.market_key, market.selection_label, market.line)
-                    if key not in seen:
-                        seen.add(key); latest.append(market)
-                attach_markets(rows, latest)
+                attach_markets(rows, list(session.scalars(market_query)))
         except Exception:
             # Price capture is optional. Prediction reads must remain available.
             logger.warning("Predicts market context unavailable", exc_info=True)

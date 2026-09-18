@@ -50,7 +50,8 @@ from .model_tracker import (
 from .model_tracker_safe_snapshot import build_tracker_snapshot_safe
 from .my_dashboard_dataset_runtime import mlb_business_date
 
-router = APIRouter(tags=["model-tracker", "my-dashboard"])
+router = APIRouter(tags=["my-dashboard"])
+# Legacy tracker functions remain importable; only MyDashboard routes are exposed.
 
 DASHBOARD_SESSION_COOKIE = "mlb_dashboard_session"
 DASHBOARD_SESSION_HOURS = 6
@@ -919,7 +920,6 @@ def _issue_dashboard_session(
     }
 
 
-@router.get("/model-tracker/health")
 def model_tracker_health() -> Dict[str, Any]:
     return {
         "status": "ok",
@@ -929,7 +929,6 @@ def model_tracker_health() -> Dict[str, Any]:
     }
 
 
-@router.post("/model-tracker/snapshot")
 def model_tracker_snapshot(date: Optional[str] = Query(default=None)) -> Dict[str, Any]:
     target = _target_date(date)
     try:
@@ -942,7 +941,6 @@ def model_tracker_snapshot(date: Optional[str] = Query(default=None)) -> Dict[st
         raise HTTPException(status_code=500, detail={"message": "Model Tracker snapshot failed", "error": str(exc)}) from exc
 
 
-@router.get("/model-tracker")
 def model_tracker_list(date: Optional[str] = Query(default=None)) -> Dict[str, Any]:
     target = _target_date(date)
     try:
@@ -955,7 +953,6 @@ def model_tracker_list(date: Optional[str] = Query(default=None)) -> Dict[str, A
         raise HTTPException(status_code=500, detail={"message": "Model Tracker list failed", "error": str(exc)}) from exc
 
 
-@router.get("/model-tracker/range")
 def model_tracker_range(
     start: str = Query(..., description="Inclusive YYYY-MM-DD start date"),
     end: str = Query(..., description="Inclusive YYYY-MM-DD end date"),
@@ -971,7 +968,6 @@ def model_tracker_range(
         raise HTTPException(status_code=500, detail={"message": "Model Tracker range failed", "error": str(exc)}) from exc
 
 
-@router.get("/model-tracker/game/{game_pk}")
 def model_tracker_game(game_pk: int, date: Optional[str] = Query(default=None)) -> Dict[str, Any]:
     target = _target_date(date)
     try:
@@ -986,7 +982,6 @@ def model_tracker_game(game_pk: int, date: Optional[str] = Query(default=None)) 
         raise HTTPException(status_code=500, detail={"message": "Model Tracker game lookup failed", "error": str(exc)}) from exc
 
 
-@router.post("/model-tracker/results/refresh")
 def model_tracker_results_refresh(date: Optional[str] = Query(default=None)) -> Dict[str, Any]:
     target = _target_date(date)
     try:
