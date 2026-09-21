@@ -85,6 +85,38 @@ SHARED_REPORT_ARTIFACT_DELETE_ENABLED = (
     )
     == "1"
 )
+MY_DASHBOARD_RETENTION_ENABLED = (
+    os.environ.get(
+        "MY_DASHBOARD_RETENTION_ENABLED",
+        "1",
+    )
+    == "1"
+)
+MY_DASHBOARD_RETENTION_DAYS = max(
+    1,
+    int(
+        os.environ.get(
+            "MY_DASHBOARD_RETENTION_DAYS",
+            "7",
+        )
+    ),
+)
+MY_DASHBOARD_RETENTION_DELETE_ENABLED = (
+    os.environ.get(
+        "MY_DASHBOARD_RETENTION_DELETE_ENABLED",
+        "0",
+    )
+    == "1"
+)
+MY_DASHBOARD_RETENTION_DELETE_LIMIT = max(
+    1,
+    int(
+        os.environ.get(
+            "MY_DASHBOARD_RETENTION_DELETE_LIMIT",
+            "10000",
+        )
+    ),
+)
 REFRESH_ETL_BACKFILL_DAYS = int(os.environ.get("REFRESH_ETL_BACKFILL_DAYS", "1"))
 os.environ.setdefault("STATCAST_LOOKBACK_DAYS", "365")
 os.environ.setdefault("HITTING_MATCHUPS_DAYS_BACK", "365")
@@ -452,6 +484,45 @@ def _run_shared_report_artifact_retention(
     )
 
 
+def _run_my_dashboard_dataset_retention() -> None:
+    """Evaluate or apply bounded superseded-version retention."""
+
+    if not MY_DASHBOARD_RETENTION_ENABLED:
+        _log(
+            "Skipping My Dashboard dataset retention "
+            "because MY_DASHBOARD_RETENTION_ENABLED=0"
+        )
+        return
+
+    from mlb_app.my_dashboard_dataset_retention import (
+        apply_my_dashboard_dataset_retention,
+    )
+    from mlb_app.predicts_service import session_factory
+
+    with session_factory()() as session:
+        report = apply_my_dashboard_dataset_retention(
+            session,
+            as_of=dt.datetime.utcnow(),
+            retention_days=(
+                MY_DASHBOARD_RETENTION_DAYS
+            ),
+            delete_enabled=(
+                MY_DASHBOARD_RETENTION_DELETE_ENABLED
+            ),
+            delete_limit=(
+                MY_DASHBOARD_RETENTION_DELETE_LIMIT
+            ),
+        )
+
+    _log(
+        "My Dashboard dataset retention: "
+        + json.dumps(
+            report.to_diagnostics(),
+            sort_keys=True,
+        )
+    )
+
+
 def _load_targets() -> list[tuple[str, str]]:
     targets: list[tuple[str, str]] = []
 
@@ -614,6 +685,14 @@ def main() -> int:
     except Exception as exc:
         _log(
             "Shared report artifact retention failed; "
+            f"refresh remains successful: {exc!r}"
+        )
+
+    try:
+        _run_my_dashboard_dataset_retention()
+    except Exception as exc:
+        _log(
+            "My Dashboard dataset retention failed; "
             f"refresh remains successful: {exc!r}"
         )
 
