@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Tuple
+from typing import Callable, Optional, Tuple
 
 from mlb_app.simulation.events import (
     Base,
@@ -17,6 +17,9 @@ from mlb_app.simulation.events import (
 from .batted_ball_resolution import (
     resolve_canonical_batted_ball_outcome,
 )
+from .defensive_event_rematerialization import (
+    CanonicalDefensiveEventRematerialization,
+)
 from .probability import (
     CanonicalPlateAppearanceOutcome,
     CanonicalSampledPlateAppearance,
@@ -25,6 +28,13 @@ from .probability import (
 
 def resolve_canonical_sampled_plate_appearance(
     sampled: CanonicalSampledPlateAppearance,
+    *,
+    defensive_event_observer: Optional[
+        Callable[
+            [CanonicalDefensiveEventRematerialization],
+            None,
+        ]
+    ] = None,
 ) -> PlayEvent:
     """
     Convert one sampled PA category into a canonical play event.
@@ -86,9 +96,19 @@ def resolve_canonical_sampled_plate_appearance(
         CanonicalPlateAppearanceOutcome.DOUBLE,
         CanonicalPlateAppearanceOutcome.TRIPLE,
     }:
-        event = resolve_canonical_batted_ball_outcome(
-            sampled
-        ).event
+        resolution = (
+            resolve_canonical_batted_ball_outcome(
+                sampled
+            )
+        )
+
+        if defensive_event_observer is not None:
+            defensive_event_observer(
+                resolution
+                .defensive_event_rematerialization
+            )
+
+        event = resolution.event
 
         if event.event_type in {
             CanonicalPlateAppearanceOutcome.SINGLE.value,

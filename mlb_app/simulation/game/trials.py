@@ -25,6 +25,10 @@ from .box_score import (
     reduce_canonical_game_box_score,
     validate_game_box_score_reconciliation,
 )
+from .defensive_event_authority import (
+    CanonicalDefensiveEventAuthoritySummary,
+    aggregate_canonical_defensive_event_authority,
+)
 from .executed_trial import (
     CanonicalExecutedTrial,
     overlay_reconstructed_pitcher_run_lines,
@@ -175,6 +179,13 @@ class CanonicalTrialDiagnostics:
     warnings: Tuple[str, ...] = field(
         default_factory=tuple
     )
+    defensive_event_authority: (
+        CanonicalDefensiveEventAuthoritySummary
+    ) = field(
+        default_factory=(
+            CanonicalDefensiveEventAuthoritySummary.empty
+        )
+    )
 
     def __post_init__(self) -> None:
         for name, value in (
@@ -191,6 +202,15 @@ class CanonicalTrialDiagnostics:
                 raise ValueError(
                     f"{name} must be between 0 and 1"
                 )
+
+        if not isinstance(
+            self.defensive_event_authority,
+            CanonicalDefensiveEventAuthoritySummary,
+        ):
+            raise TypeError(
+                "defensive_event_authority must be a "
+                "CanonicalDefensiveEventAuthoritySummary"
+            )
 
 
 @dataclass(frozen=True)
@@ -274,6 +294,7 @@ def run_canonical_trials(
     box_scores = []
     reconciliations = []
     game_validation_values = []
+    defensive_event_authority_records = []
 
     for trial_index in range(simulations):
         produced = trial_factory(trial_index)
@@ -290,6 +311,9 @@ def run_canonical_trials(
             reconstruction_complete = (
                 produced
                 .earned_run_reconstruction_complete
+            )
+            defensive_event_authority_records.extend(
+                produced.defensive_event_authority_records
             )
         elif isinstance(
             produced,
@@ -389,6 +413,12 @@ def run_canonical_trials(
         )
     )
 
+    defensive_event_authority = (
+        aggregate_canonical_defensive_event_authority(
+            defensive_event_authority_records
+        )
+    )
+
     warnings = []
 
     if game_pass_rate < 1.0:
@@ -420,6 +450,9 @@ def run_canonical_trials(
                 reconciliation_pass_rate
             ),
             warnings=tuple(sorted(warnings)),
+            defensive_event_authority=(
+                defensive_event_authority
+            ),
         ),
     )
 
