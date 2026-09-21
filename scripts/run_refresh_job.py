@@ -62,6 +62,29 @@ RUN_STATCAST_ETL = os.environ.get("RUN_STATCAST_ETL", "0") == "1"
 RUN_HITTER_STATCAST_BACKFILL = os.environ.get("RUN_HITTER_STATCAST_BACKFILL", "0") == "1"
 RUN_HITTING_MATCHUPS_REFRESH = os.environ.get("RUN_HITTING_MATCHUPS_REFRESH", "1") == "1"
 RUN_CANONICAL_DASHBOARD_REFRESH = os.environ.get("RUN_CANONICAL_DASHBOARD_REFRESH", "1") == "1"
+SHARED_REPORT_ARTIFACT_RETENTION_ENABLED = (
+    os.environ.get(
+        "SHARED_REPORT_ARTIFACT_RETENTION_ENABLED",
+        "1",
+    )
+    == "1"
+)
+SHARED_REPORT_ARTIFACT_RETENTION_DAYS = max(
+    1,
+    int(
+        os.environ.get(
+            "SHARED_REPORT_ARTIFACT_RETENTION_DAYS",
+            "14",
+        )
+    ),
+)
+SHARED_REPORT_ARTIFACT_DELETE_ENABLED = (
+    os.environ.get(
+        "SHARED_REPORT_ARTIFACT_DELETE_ENABLED",
+        "0",
+    )
+    == "1"
+)
 REFRESH_ETL_BACKFILL_DAYS = int(os.environ.get("REFRESH_ETL_BACKFILL_DAYS", "1"))
 os.environ.setdefault("STATCAST_LOOKBACK_DAYS", "365")
 os.environ.setdefault("HITTING_MATCHUPS_DAYS_BACK", "365")
@@ -389,6 +412,46 @@ def _run_canonical_dashboard_refresh() -> None:
     )
 
 
+def _run_shared_report_artifact_retention(
+    *,
+    as_of_date: dt.date,
+) -> None:
+    """Evaluate or apply bounded projection retention."""
+
+    if not SHARED_REPORT_ARTIFACT_RETENTION_ENABLED:
+        _log(
+            "Skipping shared report artifact retention "
+            "because "
+            "SHARED_REPORT_ARTIFACT_RETENTION_ENABLED=0"
+        )
+        return
+
+    from mlb_app.predicts_service import session_factory
+    from mlb_app.shared_report_artifact_retention import (
+        apply_shared_report_artifact_retention,
+    )
+
+    with session_factory()() as session:
+        report = apply_shared_report_artifact_retention(
+            session,
+            as_of_date=as_of_date,
+            retention_days=(
+                SHARED_REPORT_ARTIFACT_RETENTION_DAYS
+            ),
+            delete_enabled=(
+                SHARED_REPORT_ARTIFACT_DELETE_ENABLED
+            ),
+        )
+
+    _log(
+        "Shared report artifact retention: "
+        + json.dumps(
+            report.to_diagnostics(),
+            sort_keys=True,
+        )
+    )
+
+
 def _load_targets() -> list[tuple[str, str]]:
     targets: list[tuple[str, str]] = []
 
@@ -541,6 +604,18 @@ def main() -> int:
                                     now=datetime.utcnow())
         _log(f"Predicts month backfill: imported_players={report['imported_players']} "
              f"graded_now={report['graded_now']}")
+
+    # Retention runs only after the warmed artifact has been
+    # consumed by Predicts and its resumable month backfill.
+    try:
+        _run_shared_report_artifact_retention(
+            as_of_date=today,
+        )
+    except Exception as exc:
+        _log(
+            "Shared report artifact retention failed; "
+            f"refresh remains successful: {exc!r}"
+        )
 
     _log("Refresh job completed successfully")
     return 0
