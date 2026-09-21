@@ -412,6 +412,15 @@ def run_canonical_trial_execution_plan(
             else False
         )
 
+        defensive_event_authority_records = (
+            resolver.defensive_event_authority_snapshot()
+            if hasattr(
+                resolver,
+                "defensive_event_authority_snapshot",
+            )
+            else ()
+        )
+
         return CanonicalExecutedTrial(
             game=game,
             reconstructed_pitcher_run_lines=(
@@ -419,6 +428,11 @@ def run_canonical_trial_execution_plan(
             ),
             earned_run_reconstruction_complete=(
                 reconstruction_complete
+            ),
+            defensive_event_authority_records=(
+                tuple(
+                    defensive_event_authority_records
+                )
             ),
         )
 

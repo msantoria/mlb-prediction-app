@@ -84,6 +84,12 @@ from .defensive_hit_type import (
     build_canonical_defensive_hit_type_distribution,
     sample_canonical_defensive_hit_type,
 )
+from .defensive_event_authority import (
+    CANONICAL_DEFENSIVE_EVENT_AUTHORITY_VERSION,
+    CanonicalDefensiveEventAuthorityRecord,
+    CanonicalDefensiveEventAuthoritySummary,
+    aggregate_canonical_defensive_event_authority,
+)
 from .defensive_event_rematerialization import (
     CANONICAL_DEFENSIVE_EVENT_REMATERIALIZATION_VERSION,
     CanonicalDefensiveEventRematerialization,
@@ -308,6 +314,9 @@ __all__ = [
     "PRIMARY_HIT_OUTCOMES",
     "RECONCILED_HIT_OUTCOMES",
     "SUPPORTED_PRIMARY_OUTCOMES",
+    "CANONICAL_DEFENSIVE_EVENT_AUTHORITY_VERSION",
+    "CanonicalDefensiveEventAuthorityRecord",
+    "CanonicalDefensiveEventAuthoritySummary",
     "CanonicalDefensiveEventRematerialization",
     "CANONICAL_DEFENSIVE_EVENT_REMATERIALIZATION_VERSION",
     "CanonicalDefensiveOutcomeReconciliation",
@@ -438,6 +447,7 @@ __all__ = [
     "resolve_canonical_defensive_opportunity",
     "build_baseline_defensive_outcome_probabilities",
     "sample_canonical_defensive_outcome",
+    "aggregate_canonical_defensive_event_authority",
     "rematerialize_canonical_defensive_event",
     "reconcile_canonical_defensive_outcome",
     "build_canonical_defensive_hit_type_distribution",

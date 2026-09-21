@@ -95,6 +95,11 @@ def canonical_trial_batch_to_shadow_payload(
         "warnings": list(
             batch.diagnostics.warnings
         ),
+        "defensive_event_authority": (
+            batch.diagnostics
+            .defensive_event_authority
+            .to_diagnostics()
+        ),
     }
 
     payload["shadow_metadata"] = {

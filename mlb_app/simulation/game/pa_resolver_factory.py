@@ -10,6 +10,12 @@ from mlb_app.simulation.events import (
     PlayEvent,
 )
 
+from .defensive_event_authority import (
+    CanonicalDefensiveEventAuthorityRecord,
+)
+from .defensive_event_rematerialization import (
+    CanonicalDefensiveEventRematerialization,
+)
 from .bulk_follower_hook_policy import (
     CanonicalBulkFollowerHookPolicy,
     build_baseline_bulk_follower_hook_policy,
@@ -202,6 +208,10 @@ class _CanonicalPlateAppearanceResolver:
         Tuple[int, str, str],
         ...,
     ] = ()
+    defensive_event_authority_records: Tuple[
+        CanonicalDefensiveEventAuthorityRecord,
+        ...,
+    ] = ()
 
     def active_pitcher_id(
         self,
@@ -316,6 +326,32 @@ class _CanonicalPlateAppearanceResolver:
             + len(event.runs_scored),
         )
 
+    def record_defensive_event_authority(
+        self,
+        value: CanonicalDefensiveEventRematerialization,
+    ) -> None:
+        record = (
+            CanonicalDefensiveEventAuthorityRecord
+            .from_rematerialization(value)
+        )
+
+        object.__setattr__(
+            self,
+            "defensive_event_authority_records",
+            (
+                self.defensive_event_authority_records
+                + (record,)
+            ),
+        )
+
+    def defensive_event_authority_snapshot(
+        self,
+    ) -> Tuple[
+        CanonicalDefensiveEventAuthorityRecord,
+        ...,
+    ]:
+        return self.defensive_event_authority_records
+
     def earned_run_reconstruction_complete(
         self,
     ) -> bool:
@@ -401,7 +437,10 @@ class _CanonicalPlateAppearanceResolver:
 
         event = (
             resolve_canonical_sampled_plate_appearance(
-                sampled
+                sampled,
+                defensive_event_observer=(
+                    self.record_defensive_event_authority
+                ),
             )
         )
 

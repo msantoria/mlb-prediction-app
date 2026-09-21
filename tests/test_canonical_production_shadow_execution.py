@@ -1909,3 +1909,38 @@ def test_blocked_defensive_alignment_preserves_execution():
         matchup_input.home_lineup.defensive_alignment
         is None
     )
+
+
+def test_production_shadow_exposes_defensive_event_authority_summary():
+    result = run()
+
+    assert result.status == "executed"
+    assert result.material is not None
+
+    diagnostics = (
+        result.material
+        .canonical_payload["trial_diagnostics"]
+        ["defensive_event_authority"]
+    )
+
+    assert diagnostics["schema_version"] == (
+        "canonical_defensive_event_authority_v1"
+    )
+    assert diagnostics["observation_count"] > 0
+    assert (
+        diagnostics["applied_count"]
+        + diagnostics["preserved_count"]
+        == diagnostics["observation_count"]
+    )
+    assert 0.0 <= diagnostics["authority_rate"] <= 1.0
+    assert isinstance(
+        diagnostics["final_event_type_counts"],
+        dict,
+    )
+    assert sum(
+        diagnostics["final_event_type_counts"].values()
+    ) == diagnostics["observation_count"]
+    assert isinstance(
+        diagnostics["blocker_counts"],
+        dict,
+    )

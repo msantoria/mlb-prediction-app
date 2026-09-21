@@ -11,6 +11,9 @@ from mlb_app.simulation.box_score import (
 )
 
 from .contracts import CanonicalGameResult
+from .defensive_event_authority import (
+    CanonicalDefensiveEventAuthorityRecord,
+)
 from .earned_run_reconstruction import (
     CanonicalPitcherRunLine,
 )
@@ -32,6 +35,10 @@ class CanonicalExecutedTrial:
         ...,
     ] = ()
     earned_run_reconstruction_complete: bool = False
+    defensive_event_authority_records: Tuple[
+        CanonicalDefensiveEventAuthorityRecord,
+        ...,
+    ] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(
@@ -72,6 +79,19 @@ class CanonicalExecutedTrial:
             raise TypeError(
                 "earned_run_reconstruction_complete "
                 "must be a boolean"
+            )
+
+        if any(
+            not isinstance(
+                record,
+                CanonicalDefensiveEventAuthorityRecord,
+            )
+            for record
+            in self.defensive_event_authority_records
+        ):
+            raise TypeError(
+                "defensive event authority records must use "
+                "CanonicalDefensiveEventAuthorityRecord"
             )
 
 
