@@ -587,29 +587,40 @@ def _run_fast_matchup_refresh() -> None:
         raise
 
     targets = _load_targets()
-    failures: list[str] = []
+    failures: list[tuple[str, str]] = []
+    succeeded: set[str] = set()
 
     for label, base_url in targets:
         _log(f"[{label}] Starting target refresh against {base_url}")
         try:
             _run_target(label, base_url)
+            succeeded.add(label)
             _log(f"[{label}] Target refresh completed successfully")
         except urllib.error.HTTPError as exc:
             message = f"[{label}] HTTP error: {exc.code} {exc.reason}"
             _log(message)
-            failures.append(message)
+            failures.append((label, message))
         except urllib.error.URLError as exc:
             message = f"[{label}] Network error: {exc}"
             _log(message)
-            failures.append(message)
+            failures.append((label, message))
         except Exception as exc:
             message = f"[{label}] Unexpected error: {exc}"
             _log(message)
-            failures.append(message)
+            failures.append((label, message))
 
-    if failures:
+    required_failures = []
+    for label, message in failures:
+        if label == "sandbox" and "production" in succeeded:
+            _log(
+                "WARNING: Optional sandbox refresh failed after production succeeded; "
+                f"continuing production dashboard and Predicts stages. {message}"
+            )
+        else:
+            required_failures.append(message)
+    if required_failures:
         _log("Fast matchup refresh completed with target failures:")
-        for failure in failures:
+        for failure in required_failures:
             _log(f" - {failure}")
         raise RuntimeError("One or more refresh targets failed")
 
