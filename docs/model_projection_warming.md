@@ -10,8 +10,20 @@ Create a dedicated Railway cron service using
 
 `0 * * * *`
 
-The service calls the production web service and warms yesterday, today, and tomorrow. The 180-second per-request timeout covers the canonical production
-trial batch without reverting the public GET route to cold computation.
+The service calls the production web service for today and tomorrow, using the
+America/New_York business date. It no longer warms yesterday, today, and tomorrow:
+past dates must use saved artifacts, not repeated simulations of completed games.
+
+The configured timeout remains 180 seconds. Production diagnostics on September
+22 showed builds lasting up to 1,279 seconds, so this timeout is **not** evidence
+that a build completed. A timeout does not cancel work already running on the API.
+After a projection error the warmer defers the next projection build, continues
+lightweight/non-projection actions, reports `status: failed`, and exits nonzero.
+It never automatically retries a timed-out projection POST. A later scheduled
+run can try again; the API's existing process lock prevents overlapping builds.
+This patch reduces waste but does not move simulation CPU off the web service or
+eliminate HTTP gateway timeouts. Railway logs and successful warm completion are
+required for production acceptance.
 
 The warmer must run after every deployment and hourly during game days.
 A successful model-projection snapshot reports `warmed: true` and a positive

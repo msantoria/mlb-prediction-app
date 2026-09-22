@@ -561,7 +561,8 @@ def _check_readiness(label: str, base_url: str) -> None:
 
 def _run_target(label: str, base_url: str) -> None:
     _check_readiness(label, base_url)
-    today = dt.date.today()
+    from mlb_app.my_dashboard_dataset_runtime import mlb_business_date
+    today = mlb_business_date()
     tomorrow = today + dt.timedelta(days=1)
 
     for target_date in (today, tomorrow):
@@ -611,6 +612,21 @@ def _run_fast_matchup_refresh() -> None:
         for failure in failures:
             _log(f" - {failure}")
         raise RuntimeError("One or more refresh targets failed")
+
+
+def _run_predicts_backfill(today: dt.date) -> None:
+    from mlb_app.predicts_backfill import backfill_range
+    from mlb_app.predicts_service import session_factory
+    end = today - dt.timedelta(days=1)
+    start = (today.replace(day=1) if os.getenv("RUN_PREDICTS_MONTH_BACKFILL", "0") == "1"
+             and today.day > 1 else end)
+    with session_factory()() as session:
+        report = backfill_range(session, start, end, now=dt.datetime.utcnow())
+    _log(f"Predicts backfill: start={start} end={end} "
+         f"imported_players={report['imported_players']} graded_now={report['graded_now']}")
+    errors = [day for day in report["days"] if day.get("status") == "source_error"]
+    if errors:
+        raise RuntimeError(f"Predicts archive source errors: {errors}")
 
 
 def main() -> int:
@@ -664,20 +680,17 @@ def main() -> int:
     from mlb_app.my_dashboard_dataset_runtime import mlb_business_date
     _log(f"Predicts stage: {refresh_safely(mlb_business_date().isoformat())}")
 
-    # Resumable current-month recovery from saved pregame artifacts.
-    from datetime import datetime, timedelta
-    from mlb_app.predicts_backfill import backfill_range
-    from mlb_app.predicts_service import session_factory
+    # Hourly jobs recover yesterday only. Full month replay is an explicit
+    # operator task, not repeated deserialization of every historical artifact.
     today = mlb_business_date()
-    if today.day > 1:
-        with session_factory()() as session:
-            report = backfill_range(session, today.replace(day=1), today-timedelta(days=1),
-                                    now=datetime.utcnow())
-        _log(f"Predicts month backfill: imported_players={report['imported_players']} "
-             f"graded_now={report['graded_now']}")
+    backfill_failed = False
+    try:
+        _run_predicts_backfill(today)
+    except Exception as exc:
+        _log(f"Predicts backfill failed: {exc!r}")
+        backfill_failed = True
 
-    # Retention runs only after the warmed artifact has been
-    # consumed by Predicts and its resumable month backfill.
+    # Evaluate retention after the Predicts stages, even if archive recovery fails.
     try:
         _run_shared_report_artifact_retention(
             as_of_date=today,
@@ -696,6 +709,9 @@ def main() -> int:
             f"refresh remains successful: {exc!r}"
         )
 
+    if backfill_failed:
+        _log("Refresh job failed in Predicts backfill; upstream refreshes completed")
+        return 1
     _log("Refresh job completed successfully")
     return 0
 
