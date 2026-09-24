@@ -777,3 +777,19 @@ from .extras_walkoff_activation import (
     CanonicalExtrasWalkoffActivation,
     evaluate_canonical_extras_walkoff_activation,
 )
+
+from .defensive_distribution_backtest import (
+    CANONICAL_DEFENSIVE_DISTRIBUTION_BACKTEST_VERSION,
+    CANONICAL_OBSERVED_DEFENSIVE_DISTRIBUTION_VERSION,
+    CanonicalDefensiveDistributionBacktest,
+    CanonicalObservedDefensiveDistribution,
+    backtest_canonical_defensive_distribution,
+)
+
+__all__ += [
+    "CANONICAL_DEFENSIVE_DISTRIBUTION_BACKTEST_VERSION",
+    "CANONICAL_OBSERVED_DEFENSIVE_DISTRIBUTION_VERSION",
+    "CanonicalDefensiveDistributionBacktest",
+    "CanonicalObservedDefensiveDistribution",
+    "backtest_canonical_defensive_distribution",
+]
