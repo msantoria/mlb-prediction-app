@@ -793,3 +793,15 @@ __all__ += [
     "CanonicalObservedDefensiveDistribution",
     "backtest_canonical_defensive_distribution",
 ]
+
+from .statcast_defensive_distribution_source import (
+    CANONICAL_STATCAST_DEFENSIVE_DISTRIBUTION_SOURCE_VERSION,
+    CanonicalStatcastDefensiveDistributionSource,
+    source_statcast_defensive_distribution,
+)
+
+__all__ += [
+    "CANONICAL_STATCAST_DEFENSIVE_DISTRIBUTION_SOURCE_VERSION",
+    "CanonicalStatcastDefensiveDistributionSource",
+    "source_statcast_defensive_distribution",
+]
