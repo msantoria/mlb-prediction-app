@@ -1924,7 +1924,7 @@ def test_production_shadow_exposes_defensive_event_authority_summary():
     )
 
     assert diagnostics["schema_version"] == (
-        "canonical_defensive_event_authority_v1"
+        "canonical_defensive_event_authority_v2"
     )
     assert diagnostics["observation_count"] > 0
     assert (
@@ -1933,6 +1933,54 @@ def test_production_shadow_exposes_defensive_event_authority_summary():
         == diagnostics["observation_count"]
     )
     assert 0.0 <= diagnostics["authority_rate"] <= 1.0
+
+    original_counts = diagnostics[
+        "original_event_type_counts"
+    ]
+    applied_original_counts = diagnostics[
+        "applied_original_event_type_counts"
+    ]
+    preserved_original_counts = diagnostics[
+        "preserved_original_event_type_counts"
+    ]
+    authority_rates = diagnostics[
+        "authority_rate_by_original_event_type"
+    ]
+    transition_counts = diagnostics[
+        "event_transition_counts"
+    ]
+
+    assert isinstance(original_counts, dict)
+    assert sum(original_counts.values()) == (
+        diagnostics["observation_count"]
+    )
+    assert sum(applied_original_counts.values()) == (
+        diagnostics["applied_count"]
+    )
+    assert sum(preserved_original_counts.values()) == (
+        diagnostics["preserved_count"]
+    )
+    assert set(authority_rates) == set(original_counts)
+    assert all(
+        0.0 <= rate <= 1.0
+        for rate in authority_rates.values()
+    )
+    assert sum(
+        count
+        for final_counts in transition_counts.values()
+        for count in final_counts.values()
+    ) == diagnostics["observation_count"]
+
+    for event_type, count in original_counts.items():
+        assert (
+            applied_original_counts.get(event_type, 0)
+            + preserved_original_counts.get(
+                event_type,
+                0,
+            )
+            == count
+        )
+
     assert isinstance(
         diagnostics["final_event_type_counts"],
         dict,

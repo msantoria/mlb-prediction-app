@@ -3,6 +3,7 @@ import pytest
 from mlb_app.simulation.game import (
     CANONICAL_DEFENSIVE_EVENT_AUTHORITY_VERSION,
     CanonicalDefensiveEventAuthorityRecord,
+    CanonicalDefensiveEventAuthoritySummary,
     aggregate_canonical_defensive_event_authority,
 )
 
@@ -34,6 +35,20 @@ def test_empty_summary_is_explicit():
     assert summary.applied_count == 0
     assert summary.preserved_count == 0
     assert summary.authority_rate == 0.0
+    assert summary.original_event_type_counts == ()
+    assert (
+        summary.applied_original_event_type_counts
+        == ()
+    )
+    assert (
+        summary.preserved_original_event_type_counts
+        == ()
+    )
+    assert (
+        summary.authority_rate_by_original_event_type
+        == ()
+    )
+    assert summary.event_transition_counts == ()
     assert summary.final_event_type_counts == ()
     assert summary.blocker_counts == ()
 
@@ -72,6 +87,38 @@ def test_aggregates_exact_observed_authority():
     assert summary.applied_count == 2
     assert summary.preserved_count == 2
     assert summary.authority_rate == 0.5
+    assert dict(
+        summary.original_event_type_counts
+    ) == {
+        "double": 1,
+        "out": 1,
+        "single": 2,
+    }
+    assert dict(
+        summary.applied_original_event_type_counts
+    ) == {
+        "out": 1,
+        "single": 1,
+    }
+    assert dict(
+        summary.preserved_original_event_type_counts
+    ) == {
+        "double": 1,
+        "single": 1,
+    }
+    assert dict(
+        summary.authority_rate_by_original_event_type
+    ) == {
+        "double": 0.0,
+        "out": 1.0,
+        "single": 0.5,
+    }
+    assert summary.event_transition_counts == (
+        ("double", "double", 1),
+        ("out", "double", 1),
+        ("single", "out", 1),
+        ("single", "single", 1),
+    )
     assert dict(summary.final_event_type_counts) == {
         "double": 2,
         "out": 1,
@@ -103,6 +150,27 @@ def test_diagnostics_are_json_ready():
     )
     assert diagnostics["observation_count"] == 1
     assert diagnostics["authority_rate"] == 1.0
+    assert diagnostics["original_event_type_counts"] == {
+        "out": 1,
+    }
+    assert diagnostics[
+        "applied_original_event_type_counts"
+    ] == {
+        "out": 1,
+    }
+    assert diagnostics[
+        "preserved_original_event_type_counts"
+    ] == {}
+    assert diagnostics[
+        "authority_rate_by_original_event_type"
+    ] == {
+        "out": 1.0,
+    }
+    assert diagnostics["event_transition_counts"] == {
+        "out": {
+            "reached_on_error": 1,
+        },
+    }
     assert diagnostics["final_event_type_counts"] == {
         "reached_on_error": 1,
     }
@@ -131,4 +199,33 @@ def test_record_rejects_false_authority_for_applied_event():
             original_event_type="single",
             final_event_type="out",
             blocker=None,
+        )
+
+
+
+def test_summary_rejects_nonreconciling_transition_counts():
+    with pytest.raises(
+        ValueError,
+        match="transition counts must reconcile",
+    ):
+        CanonicalDefensiveEventAuthoritySummary(
+            observation_count=1,
+            applied_count=1,
+            preserved_count=0,
+            authority_rate=1.0,
+            original_event_type_counts=(
+                ("out", 1),
+            ),
+            applied_original_event_type_counts=(
+                ("out", 1),
+            ),
+            authority_rate_by_original_event_type=(
+                ("out", 1.0),
+            ),
+            event_transition_counts=(
+                ("out", "single", 2),
+            ),
+            final_event_type_counts=(
+                ("single", 1),
+            ),
         )
