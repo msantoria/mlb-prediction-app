@@ -805,3 +805,16 @@ __all__ += [
     "CanonicalStatcastDefensiveDistributionSource",
     "source_statcast_defensive_distribution",
 ]
+
+
+from .defensive_distribution_evidence import (
+    CANONICAL_DEFENSIVE_DISTRIBUTION_EVIDENCE_VERSION,
+    CanonicalDefensiveDistributionEvidence,
+    execute_canonical_defensive_distribution_evidence,
+)
+
+__all__ += [
+    "CANONICAL_DEFENSIVE_DISTRIBUTION_EVIDENCE_VERSION",
+    "CanonicalDefensiveDistributionEvidence",
+    "execute_canonical_defensive_distribution_evidence",
+]
