@@ -818,3 +818,16 @@ __all__ += [
     "CanonicalDefensiveDistributionEvidence",
     "execute_canonical_defensive_distribution_evidence",
 ]
+
+
+from .defensive_database_evidence import (
+    CANONICAL_DEFENSIVE_DATABASE_EVIDENCE_VERSION,
+    CanonicalDefensiveDatabaseEvidence,
+    execute_canonical_defensive_database_evidence,
+)
+
+__all__ += [
+    "CANONICAL_DEFENSIVE_DATABASE_EVIDENCE_VERSION",
+    "CanonicalDefensiveDatabaseEvidence",
+    "execute_canonical_defensive_database_evidence",
+]
