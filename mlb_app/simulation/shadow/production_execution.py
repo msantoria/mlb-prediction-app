@@ -20,6 +20,10 @@ from mlb_app.simulation.game import (
     build_canonical_trial_factory_input,
 )
 
+from mlb_app.simulation.game.trials import (
+    CanonicalTrialBatch,
+)
+
 from .bullpen_discovery import (
     CanonicalShadowBullpenDiscovery,
 )
@@ -74,6 +78,9 @@ class CanonicalProductionShadowExecution:
     execution_inputs: Optional[
         CanonicalShadowExecutionInputs
     ] = None
+    trial_batch: Optional[
+        CanonicalTrialBatch
+    ] = None
     status: str = "not_run"
     simulation_count: int = 0
     error_type: Optional[str] = None
@@ -119,6 +126,18 @@ class CanonicalProductionShadowExecution:
             raise TypeError(
                 "execution_inputs must be "
                 "CanonicalShadowExecutionInputs or None"
+            )
+
+        if (
+            self.trial_batch is not None
+            and not isinstance(
+                self.trial_batch,
+                CanonicalTrialBatch,
+            )
+        ):
+            raise TypeError(
+                "trial_batch must be "
+                "CanonicalTrialBatch or None"
             )
 
         if (
@@ -169,6 +188,20 @@ class CanonicalProductionShadowExecution:
             "executed": self.executed,
             "simulation_count": self.simulation_count,
             "canonical_available": self.executed,
+            "trial_batch_available": (
+                self.trial_batch is not None
+            ),
+            "trial_batch_source": (
+                "canonical_shadow_execution_bundle"
+                if self.trial_batch is not None
+                else None
+            ),
+            "trial_batch_simulation_count": (
+                len(self.trial_batch.games)
+                if self.trial_batch is not None
+                else 0
+            ),
+            "independent_trial_execution": False,
             "provider_identity": (
                 self.execution_inputs.provider_identity
                 if self.execution_inputs is not None
@@ -613,6 +646,7 @@ def run_canonical_production_shadow(
         return CanonicalProductionShadowExecution(
             material=material,
             execution_inputs=atomic_execution_inputs,
+            trial_batch=bundle.trial_batch,
             status="executed",
             simulation_count=(
                 normalized_simulation_count
