@@ -1992,3 +1992,96 @@ def test_production_shadow_exposes_defensive_event_authority_summary():
         diagnostics["blocker_counts"],
         dict,
     )
+
+
+def test_production_execution_exposes_exact_bundle_trial_batch(
+    monkeypatch,
+):
+    from mlb_app.simulation.shadow import (
+        production_execution as production_module,
+    )
+
+    captured = {}
+    original_adapter = (
+        production_module
+        .canonical_shadow_execution_bundle_to_material
+    )
+
+    def capture_bundle(bundle):
+        captured["trial_batch"] = bundle.trial_batch
+        return original_adapter(bundle)
+
+    monkeypatch.setattr(
+        production_module,
+        "canonical_shadow_execution_bundle_to_material",
+        capture_bundle,
+    )
+
+    result = run()
+
+    assert result.status == "executed"
+    assert result.trial_batch is captured["trial_batch"]
+    assert len(result.trial_batch.games) == (
+        result.simulation_count
+    )
+
+
+def test_production_material_is_derived_from_exposed_trial_batch():
+    from mlb_app.simulation.shadow.trial_adapter import (
+        canonical_trial_batch_to_shadow_payload,
+    )
+
+    result = run()
+
+    assert result.trial_batch is not None
+    assert result.material is not None
+    assert result.material.canonical_payload == (
+        canonical_trial_batch_to_shadow_payload(
+            result.trial_batch
+        )
+    )
+
+
+def test_blocked_production_execution_has_no_trial_batch():
+    result = run(
+        bootstrap_ready=False,
+    )
+
+    assert result.status == "blocked"
+    assert result.trial_batch is None
+
+    diagnostics = result.to_diagnostics()
+
+    assert diagnostics["trial_batch_available"] is False
+    assert diagnostics["trial_batch_source"] is None
+    assert diagnostics["trial_batch_simulation_count"] == 0
+    assert diagnostics["independent_trial_execution"] is False
+
+
+def test_production_trial_batch_diagnostics_are_transport_only():
+    result = run()
+    diagnostics = result.to_diagnostics()
+
+    assert diagnostics["trial_batch_available"] is True
+    assert diagnostics["trial_batch_source"] == (
+        "canonical_shadow_execution_bundle"
+    )
+    assert diagnostics["trial_batch_simulation_count"] == 2
+    assert diagnostics["independent_trial_execution"] is False
+    assert diagnostics["activation_permitted"] is False
+    assert diagnostics["production_authority_changed"] is False
+    assert diagnostics["authoritative_source"] == "legacy"
+
+
+def test_production_execution_rejects_invalid_trial_batch():
+    from mlb_app.simulation.shadow.production_execution import (
+        CanonicalProductionShadowExecution,
+    )
+
+    with pytest.raises(
+        TypeError,
+        match="trial_batch",
+    ):
+        CanonicalProductionShadowExecution(
+            trial_batch=object(),
+        )
