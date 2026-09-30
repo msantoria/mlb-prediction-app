@@ -831,3 +831,16 @@ __all__ += [
     "CanonicalDefensiveDatabaseEvidence",
     "execute_canonical_defensive_database_evidence",
 ]
+
+
+from .defensive_trial_evidence import (
+    CANONICAL_DEFENSIVE_TRIAL_EVIDENCE_VERSION,
+    CanonicalDefensiveTrialEvidence,
+    execute_canonical_defensive_trial_evidence,
+)
+
+__all__ += [
+    "CANONICAL_DEFENSIVE_TRIAL_EVIDENCE_VERSION",
+    "CanonicalDefensiveTrialEvidence",
+    "execute_canonical_defensive_trial_evidence",
+]
