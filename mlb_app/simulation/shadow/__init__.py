@@ -856,3 +856,15 @@ __all__ += [
     "CanonicalProductionRunEnvironment",
     "measure_canonical_production_run_environment",
 ]
+
+from .observed_run_environment_source import (
+    CANONICAL_OBSERVED_RUN_ENVIRONMENT_SOURCE_VERSION,
+    CanonicalObservedRunEnvironment,
+    source_canonical_observed_run_environment,
+)
+
+__all__ += [
+    "CANONICAL_OBSERVED_RUN_ENVIRONMENT_SOURCE_VERSION",
+    "CanonicalObservedRunEnvironment",
+    "source_canonical_observed_run_environment",
+]
