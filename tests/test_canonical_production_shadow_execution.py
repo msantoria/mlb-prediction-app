@@ -2085,3 +2085,128 @@ def test_production_execution_rejects_invalid_trial_batch():
         CanonicalProductionShadowExecution(
             trial_batch=object(),
         )
+
+
+def test_measures_production_owned_run_environment():
+    from mlb_app.simulation.shadow import (
+        measure_canonical_production_run_environment,
+    )
+
+    execution = run()
+    result = measure_canonical_production_run_environment(
+        execution
+    )
+
+    assert result.simulation_count == 2
+    assert result.total_runs.count == 2
+    assert result.total_runs.mean == (
+        sum(game.total_runs for game in execution.trial_batch.games)
+        / result.simulation_count
+    )
+    assert result.box_score_run_mismatch_count == 0
+    assert len(result.artifact_digest) == 64
+
+
+def test_run_environment_exposes_scoring_funnel():
+    from mlb_app.simulation.shadow import (
+        measure_canonical_production_run_environment,
+    )
+
+    result = measure_canonical_production_run_environment(run())
+    means = dict(result.box_score_metric_means)
+    rates = dict(result.scoring_rates)
+    thresholds = dict(result.total_threshold_rates)
+
+    assert means["plate_appearances_per_game"] > 0.0
+    assert means["hits_per_game"] >= 0.0
+    assert means["runs_per_game"] == result.total_runs.mean
+    assert 0.0 <= rates["reach_rate_per_pa"] <= 1.0
+    assert 0.0 <= rates["home_run_rate_per_pa"] <= 1.0
+    assert 0.0 <= rates["strikeout_rate_per_pa"] <= 1.0
+    assert 0.0 <= thresholds["total_runs_6_or_fewer_rate"] <= 1.0
+    assert 0.0 <= thresholds["total_runs_9_or_more_rate"] <= 1.0
+
+
+def test_run_environment_preserves_probability_diagnostics():
+    from mlb_app.simulation.shadow import (
+        measure_canonical_production_run_environment,
+    )
+
+    execution = run()
+    result = measure_canonical_production_run_environment(
+        execution
+    )
+    probability = (
+        execution.material.probability_resolution_diagnostics
+    )
+
+    assert result.probability_resolution_count == (
+        probability.total_resolutions
+    )
+    assert sum(
+        count for _, count in result.probability_tier_counts
+    ) == probability.total_resolutions
+    assert result.probability_fallback_rate == round(
+        probability.fallback_rate,
+        6,
+    )
+
+
+def test_run_environment_is_deterministic_and_measurement_only():
+    from mlb_app.simulation.shadow import (
+        measure_canonical_production_run_environment,
+    )
+
+    execution = run()
+    first = measure_canonical_production_run_environment(execution)
+    second = measure_canonical_production_run_environment(execution)
+
+    assert first == second
+    assert first.artifact_digest == second.artifact_digest
+
+    diagnostics = first.to_diagnostics()
+    assert diagnostics["source"] == (
+        "production_owned_canonical_trial_batch"
+    )
+    assert diagnostics["trial_batch_consumed"] is True
+    assert diagnostics["independent_trial_execution"] is False
+    assert diagnostics["measurement_only"] is True
+    assert diagnostics["calibration_parameters_selected"] is False
+    assert diagnostics["activation_permitted"] is False
+    assert diagnostics["production_authority_changed"] is False
+
+
+def test_run_environment_rejects_nonexecuted_production_result():
+    from mlb_app.simulation.shadow import (
+        measure_canonical_production_run_environment,
+    )
+    from mlb_app.simulation.shadow.production_execution import (
+        CanonicalProductionShadowExecution,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="executed production shadow",
+    ):
+        measure_canonical_production_run_environment(
+            CanonicalProductionShadowExecution(
+                status="blocked",
+                simulation_count=0,
+            )
+        )
+
+
+def test_run_environment_rejects_invalid_artifact_digest():
+    from dataclasses import replace
+
+    from mlb_app.simulation.shadow import (
+        measure_canonical_production_run_environment,
+    )
+
+    valid = measure_canonical_production_run_environment(run())
+
+    with pytest.raises(
+        ValueError,
+        match="artifact_digest",
+    ):
+        replace(valid, artifact_digest="invalid")
