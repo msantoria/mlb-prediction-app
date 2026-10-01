@@ -844,3 +844,15 @@ __all__ += [
     "CanonicalDefensiveTrialEvidence",
     "execute_canonical_defensive_trial_evidence",
 ]
+
+from .production_run_environment import (
+    CANONICAL_PRODUCTION_RUN_ENVIRONMENT_VERSION,
+    CanonicalProductionRunEnvironment,
+    measure_canonical_production_run_environment,
+)
+
+__all__ += [
+    "CANONICAL_PRODUCTION_RUN_ENVIRONMENT_VERSION",
+    "CanonicalProductionRunEnvironment",
+    "measure_canonical_production_run_environment",
+]
