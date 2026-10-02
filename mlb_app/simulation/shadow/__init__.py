@@ -868,3 +868,15 @@ __all__ += [
     "CanonicalObservedRunEnvironment",
     "source_canonical_observed_run_environment",
 ]
+
+from .production_run_environment_backtest import (
+    CANONICAL_PRODUCTION_RUN_ENVIRONMENT_BACKTEST_VERSION,
+    CanonicalProductionRunEnvironmentBacktest,
+    backtest_canonical_production_run_environment,
+)
+
+__all__ += [
+    "CANONICAL_PRODUCTION_RUN_ENVIRONMENT_BACKTEST_VERSION",
+    "CanonicalProductionRunEnvironmentBacktest",
+    "backtest_canonical_production_run_environment",
+]
