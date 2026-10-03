@@ -2210,3 +2210,270 @@ def test_run_environment_rejects_invalid_artifact_digest():
         match="artifact_digest",
     ):
         replace(valid, artifact_digest="invalid")
+
+
+import datetime as evidence_dt
+
+from sqlalchemy import create_engine as evidence_create_engine
+from sqlalchemy.orm import sessionmaker as evidence_sessionmaker
+
+from mlb_app.final_game_snapshots import FinalGameSnapshot
+from mlb_app.simulation.shadow.production_run_environment_evidence import (
+    CanonicalProductionRunEnvironmentEvidence,
+    execute_canonical_production_run_environment_evidence,
+)
+
+
+@pytest.fixture
+def run_environment_evidence_session():
+    engine = evidence_create_engine("sqlite:///:memory:")
+    FinalGameSnapshot.__table__.create(engine)
+    factory = evidence_sessionmaker(bind=engine)
+    value = factory()
+    try:
+        yield value
+    finally:
+        value.close()
+        engine.dispose()
+
+
+def _run_environment_evidence_payload():
+    batter = {
+        "at_bats": 4,
+        "hits": 1,
+        "doubles": 0,
+        "triples": 0,
+        "home_runs": 0,
+        "walks": 1,
+        "hit_by_pitch": 0,
+        "strikeouts": 1,
+        "stolen_bases": 0,
+        "caught_stealing": 0,
+    }
+    return {
+        "boxscore": {
+            "away": {"batters": [dict(batter)]},
+            "home": {"batters": [dict(batter)]},
+        },
+        "linescore": {
+            "totals": {
+                "away": {
+                    "left_on_base": 5,
+                    "errors": 0,
+                },
+                "home": {
+                    "left_on_base": 6,
+                    "errors": 0,
+                },
+            }
+        },
+    }
+
+
+def _add_run_environment_evidence_snapshot(
+    session,
+    *,
+    game_pk=9001,
+    away_score=30,
+    home_score=30,
+):
+    session.add(
+        FinalGameSnapshot(
+            game_pk=game_pk,
+            official_date=evidence_dt.date(2026, 8, 15),
+            status_detail="Final",
+            away_score=away_score,
+            home_score=home_score,
+            payload_json=(
+                _run_environment_evidence_payload()
+            ),
+            snapshot_version=1,
+            source="mlb_live_feed",
+        )
+    )
+    session.commit()
+
+
+def _execute_run_environment_evidence(session, execution=None):
+    return execute_canonical_production_run_environment_evidence(
+        session,
+        execution=run() if execution is None else execution,
+        window_start="2026-08-01",
+        window_end="2026-08-31",
+        through_date="2026-09-01",
+    )
+
+
+def test_production_run_environment_evidence_ready(
+    run_environment_evidence_session,
+):
+    session = run_environment_evidence_session
+    _add_run_environment_evidence_snapshot(session)
+    before = session.query(FinalGameSnapshot).count()
+
+    result = _execute_run_environment_evidence(session)
+
+    assert isinstance(
+        result,
+        CanonicalProductionRunEnvironmentEvidence,
+    )
+    assert result.status == "ready"
+    assert result.ready is True
+    assert result.database_query_performed is True
+    assert result.production is not None
+    assert result.observed is not None
+    assert result.backtest is not None
+    assert result.backtest.low_total_signal is True
+    assert len(result.artifact_digest) == 64
+    assert session.query(FinalGameSnapshot).count() == before
+
+
+def test_production_run_environment_evidence_empty_window(
+    run_environment_evidence_session,
+):
+    result = _execute_run_environment_evidence(
+        run_environment_evidence_session
+    )
+
+    assert result.status == "unavailable"
+    assert result.ready is False
+    assert result.blocker == "database_window_empty"
+    assert result.database_query_performed is True
+    assert result.production is not None
+    assert result.observed is None
+    assert result.backtest is None
+    assert len(result.artifact_digest) == 64
+
+
+def test_production_run_environment_evidence_blocked_execution(
+    run_environment_evidence_session,
+):
+    result = _execute_run_environment_evidence(
+        run_environment_evidence_session,
+        execution=run(bootstrap_ready=False),
+    )
+
+    assert result.status == "unavailable"
+    assert result.blocker == "production_execution_unavailable"
+    assert result.database_query_performed is False
+    assert result.production is None
+    assert result.observed is None
+    assert result.backtest is None
+
+
+def test_production_run_environment_evidence_is_deterministic(
+    run_environment_evidence_session,
+):
+    session = run_environment_evidence_session
+    _add_run_environment_evidence_snapshot(session)
+    execution = run()
+
+    first = _execute_run_environment_evidence(
+        session,
+        execution=execution,
+    )
+    second = _execute_run_environment_evidence(
+        session,
+        execution=execution,
+    )
+
+    assert first == second
+    assert first.artifact_digest == second.artifact_digest
+
+
+def test_production_run_environment_evidence_diagnostics_are_safe(
+    run_environment_evidence_session,
+):
+    session = run_environment_evidence_session
+    _add_run_environment_evidence_snapshot(session)
+
+    diagnostics = (
+        _execute_run_environment_evidence(session)
+        .to_diagnostics()
+    )
+
+    assert diagnostics["database_accessed"] is True
+    assert diagnostics["database_query_performed"] is True
+    assert diagnostics["database_query_mode"] == "read_only"
+    assert diagnostics["production_execution_consumed"] is True
+    assert diagnostics["independent_trial_execution"] is False
+    assert diagnostics["network_accessed"] is False
+    assert diagnostics["external_fetch_performed"] is False
+    assert diagnostics["persistence_performed"] is False
+    assert diagnostics["measurement_only"] is True
+    assert diagnostics["causal_claim_permitted"] is False
+    assert diagnostics["calibration_parameters_selected"] is False
+    assert diagnostics["activation_permitted"] is False
+    assert diagnostics["production_authority_changed"] is False
+
+
+def test_production_run_environment_evidence_contains_errors(
+    run_environment_evidence_session,
+):
+    result = execute_canonical_production_run_environment_evidence(
+        run_environment_evidence_session,
+        execution=object(),
+        window_start="invalid",
+        window_end="2026-08-31",
+        through_date="2026-09-01",
+    )
+
+    assert result.status == "error"
+    assert result.ready is False
+    assert result.production is None
+    assert result.observed is None
+    assert result.backtest is None
+    assert result.artifact_digest == ""
+    assert result.blocker is None
+    assert "TypeError" in result.error
+
+
+def test_production_run_environment_evidence_incomplete_window(
+    run_environment_evidence_session,
+):
+    session = run_environment_evidence_session
+    session.add(
+        FinalGameSnapshot(
+            game_pk=9002,
+            official_date=evidence_dt.date(2026, 8, 16),
+            status_detail="Final",
+            away_score=3,
+            home_score=2,
+            payload_json={"boxscore": {}},
+            snapshot_version=1,
+            source="mlb_live_feed",
+        )
+    )
+    session.commit()
+
+    result = _execute_run_environment_evidence(session)
+
+    assert result.status == "unavailable"
+    assert result.blocker == "observed_window_incomplete"
+    assert result.database_query_performed is True
+    assert result.production is not None
+    assert result.observed is None
+    assert result.backtest is None
+    assert len(result.artifact_digest) == 64
+
+
+def test_production_run_environment_evidence_contains_invalid_date(
+    run_environment_evidence_session,
+):
+    result = execute_canonical_production_run_environment_evidence(
+        run_environment_evidence_session,
+        execution=run(),
+        window_start="invalid",
+        window_end="2026-08-31",
+        through_date="2026-09-01",
+    )
+
+    assert result.status == "error"
+    assert result.ready is False
+    assert result.database_query_performed is False
+    assert result.production is None
+    assert result.observed is None
+    assert result.backtest is None
+    assert result.artifact_digest == ""
+    assert result.blocker is None
+    assert "window_start must be an ISO date" in result.error
