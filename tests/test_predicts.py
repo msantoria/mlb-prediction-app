@@ -458,3 +458,28 @@ def test_tracker_retirement_preserves_dashboard_routes():
     assert '/my-dashboard/auth/login' in paths
     assert '/my-dashboard/workspace' in paths
     assert '/my-dashboard/folders/{folder_id}' in paths
+
+
+def test_archive_candidate_payloads_are_loaded_lazily(session):
+    from sqlalchemy import event
+    from mlb_app.predicts_backfill import _candidates
+    past = DAY - timedelta(days=1)
+    captured = NOW - timedelta(days=1)
+    for i in range(4):
+        session.add(SharedReportArtifact(artifact_key=f'lazy-{i}', artifact_type='model_projection_date',
+            target_date=past, payload_json={'games': [{'game_pk': i}]},
+            generated_at=captured + timedelta(minutes=i), updated_at=captured + timedelta(minutes=i)))
+    session.commit()
+    queries = []
+    engine = session.get_bind()
+    def record(conn, cursor, statement, parameters, context, executemany):
+        queries.append(statement)
+    event.listen(engine, 'before_cursor_execute', record)
+    try:
+        candidates = _candidates(session, past)
+        first = next(candidates)
+        assert first[2]['games'][0]['game_pk'] == 3
+        assert sum('shared_report_artifacts.payload_json' in q for q in queries) == 1
+        assert [item[2]['games'][0]['game_pk'] for item in candidates] == [2, 1, 0]
+    finally:
+        event.remove(engine, 'before_cursor_execute', record)

@@ -5,6 +5,7 @@ import datetime
 import json
 import os
 import sys
+from zoneinfo import ZoneInfo
 import urllib.error
 import urllib.request
 from typing import Any, Dict, List
@@ -32,7 +33,7 @@ def _dates(today: datetime.date) -> Dict[str, str]:
 
 
 def warm(base_url: str, timeout: int = 60) -> Dict[str, Any]:
-    today = datetime.date.today()
+    today = datetime.datetime.now(ZoneInfo("America/New_York")).date()
     dates = _dates(today)
     base = base_url.rstrip("/")
     actions: List[Dict[str, Any]] = []
@@ -52,7 +53,7 @@ def warm(base_url: str, timeout: int = 60) -> Dict[str, Any]:
 
     # 2. Explicitly warm heavyweight matchups and projections outside the user path.
     # User-facing pages should reuse these artifacts instead of cold-building on click.
-    for label in ("today", "tomorrow", "yesterday"):
+    for label in ("today", "tomorrow"):
         date_value = dates[label]
         actions.append({
             "name": f"bet105_board_snapshot_{label}",
@@ -71,12 +72,21 @@ def warm(base_url: str, timeout: int = 60) -> Dict[str, Any]:
         })
 
     results = []
+    projection_busy = False
     for action in actions:
-        result = _request(action["method"], action["url"], timeout)
+        is_projection = action["name"].startswith("model_projection_snapshot")
+        if is_projection and projection_busy:
+            result = {"error": "deferred", "message": "Earlier projection build may still be running"}
+        else:
+            result = _request(action["method"], action["url"], timeout)
+        if is_projection and result.get("error"):
+            # HTTP timeout does not cancel synchronous work on the API. Do not
+            # launch another slate build into the same overloaded process.
+            projection_busy = True
         results.append({"action": action["name"], "url": action["url"], "result": result})
 
     return {
-        "status": "ok",
+        "status": "failed" if any(row["result"].get("error") for row in results) else "ok",
         "base_url": base,
         "dates": dates,
         "results": results,
@@ -88,8 +98,9 @@ def main() -> int:
     parser.add_argument("--base-url", default=os.getenv("MLBGPT_BASE_URL", "http://127.0.0.1:8000"))
     parser.add_argument("--timeout", type=int, default=int(os.getenv("MLBGPT_WARM_TIMEOUT_SECONDS", "60")))
     args = parser.parse_args()
-    print(json.dumps(warm(args.base_url, timeout=args.timeout), indent=2, sort_keys=True))
-    return 0
+    result = warm(args.base_url, timeout=args.timeout)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0 if result["status"] == "ok" else 1
 
 
 if __name__ == "__main__":

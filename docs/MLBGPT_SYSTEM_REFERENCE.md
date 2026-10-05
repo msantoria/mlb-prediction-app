@@ -635,3 +635,39 @@ chronological validation gate. Existing baseline projections remain unchanged.
 
 See [the Predicts implementation and capability boundaries](mlbgpt_predicts.md) for routes, additive tables, refresh integration,
 point-in-time guarantees, model thresholds, backfill, and explicit limitations.
+
+## September 22 refresh and memory bounds
+
+The shared process payload cache now uses LRU eviction with a default 128 MiB
+budget (recursive Python-container size estimate), 256 entries, and a six-hour
+maximum retention age. Configure on the API service with
+`SHARED_PAYLOAD_CACHE_MAX_BYTES`, `SHARED_PAYLOAD_CACHE_MAX_ENTRIES`, and
+`SHARED_PAYLOAD_CACHE_MAX_AGE_SECONDS`. Zero disables retention. Oversized values
+are returned without caching. Existing request TTLs and caller-copy isolation
+remain; a cache hit no longer serializes the payload just to measure its size.
+`/debug/performance` includes cache entry count, estimated bytes, and limits.
+The budget is not a total process RSS limit and does not cover in-flight
+simulations, response copies, or other caches.
+
+The hourly refresh recovers only yesterday's genuine Predicts source archives,
+including across month boundaries. Full current-month recovery is opt-in via
+`RUN_PREDICTS_MONTH_BACKFILL=1` on the refresh worker or the existing bounded
+backfill CLI. Do not leave full-month replay enabled on an hourly schedule.
+Archive candidates are ordered by small timestamp/ID metadata, then JSON payloads
+are loaded one at a time. Latest eligible pregame evidence and immutable-history
+rules remain unchanged. Source-error reports produce a failed job after retention
+has had a chance to run; missing historical coverage is not treated as an error.
+
+These changes do not enable either retention deletion flag. No production data
+is deleted by default. Billing impact requires before/after Railway memory
+metrics; cron recovery requires the first fatal exception and a successful run.
+
+### Production and sandbox refresh failure isolation
+
+A configured sandbox is best-effort only when the production target completed
+successfully in the same run. Its failure is logged as a warning and does not
+prevent canonical MyDashboard, Predicts, or retention stages. Production and
+legacy target failures remain fatal. A sandbox-only job also remains strict.
+This avoids a retired sandbox URL aborting otherwise healthy production work.
+If the sandbox has been retired, remove `SANDBOX_REFRESH_BASE_URL` from the
+Railway refresh worker; preserve the working `PRODUCTION_REFRESH_BASE_URL`.
