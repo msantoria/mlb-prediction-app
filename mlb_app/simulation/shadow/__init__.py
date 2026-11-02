@@ -893,3 +893,16 @@ __all__ += (
     "CanonicalProductionRunEnvironmentEvidence",
     "execute_canonical_production_run_environment_evidence",
 )
+
+
+from .production_run_environment_evidence_accumulator import (
+    CANONICAL_PRODUCTION_RUN_ENVIRONMENT_EVIDENCE_ACCUMULATOR_VERSION,
+    CanonicalProductionRunEnvironmentEvidenceAccumulator,
+    accumulate_canonical_production_run_environment_evidence,
+)
+
+__all__ += (
+    "CANONICAL_PRODUCTION_RUN_ENVIRONMENT_EVIDENCE_ACCUMULATOR_VERSION",
+    "CanonicalProductionRunEnvironmentEvidenceAccumulator",
+    "accumulate_canonical_production_run_environment_evidence",
+)
