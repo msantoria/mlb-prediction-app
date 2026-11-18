@@ -274,3 +274,208 @@ def test_backtest_rejects_invalid_inputs_and_artifact():
     valid = backtest()
     with pytest.raises(ValueError, match="artifact_digest"):
         replace(valid, artifact_digest="invalid")
+
+
+from mlb_app.simulation.shadow.production_run_environment_evidence import (
+    CanonicalProductionRunEnvironmentEvidence,
+)
+from mlb_app.simulation.shadow.production_run_environment_evidence_accumulator import (
+    CanonicalProductionRunEnvironmentEvidenceAccumulator,
+    accumulate_canonical_production_run_environment_evidence,
+)
+
+
+def accumulated_evidence(*, high=False, digest_character="d"):
+    production_artifact = production(high=high)
+    observed_artifact = observed()
+    backtest_artifact = (
+        backtest_canonical_production_run_environment(
+            production_artifact,
+            observed_artifact,
+        )
+    )
+    return CanonicalProductionRunEnvironmentEvidence(
+        status="ready",
+        window_start="2026-08-01",
+        window_end="2026-08-31",
+        through_date="2026-09-01",
+        database_query_performed=True,
+        production=production_artifact,
+        observed=observed_artifact,
+        backtest=backtest_artifact,
+        artifact_digest=digest_character * 64,
+    )
+
+
+def unavailable_accumulated_evidence():
+    return CanonicalProductionRunEnvironmentEvidence(
+        status="unavailable",
+        window_start="2026-08-01",
+        window_end="2026-08-31",
+        through_date="2026-09-01",
+        database_query_performed=False,
+        artifact_digest="f" * 64,
+        blocker="production_execution_unavailable",
+    )
+
+
+def error_accumulated_evidence():
+    return CanonicalProductionRunEnvironmentEvidence(
+        status="error",
+        window_start="invalid",
+        window_end="2026-08-31",
+        through_date="2026-09-01",
+        database_query_performed=False,
+        error="ValueError: invalid fixture",
+    )
+
+
+def test_accumulator_combines_ready_evidence():
+    result = accumulate_canonical_production_run_environment_evidence(
+        (
+            accumulated_evidence(
+                high=False,
+                digest_character="d",
+            ),
+            accumulated_evidence(
+                high=True,
+                digest_character="e",
+            ),
+        )
+    )
+
+    assert isinstance(
+        result,
+        CanonicalProductionRunEnvironmentEvidenceAccumulator,
+    )
+    assert result.status == "ready"
+    assert result.ready is True
+    assert result.input_evidence_count == 2
+    assert result.unique_evidence_count == 2
+    assert result.duplicate_evidence_count == 0
+    assert result.ready_evidence_count == 2
+    assert result.simulation_count == 4
+    assert result.unique_observed_artifact_count == 1
+    assert result.unique_observed_game_count == 2
+    assert result.low_total_signal_count == 1
+    assert result.low_total_signal_rate == 0.5
+    assert result.total_run_mean_delta_summary.count == 2
+    assert result.total_run_mean_delta_summary.mean == -1.0
+    diagnoses = dict(result.component_diagnosis_counts)
+    assert diagnoses["power"] == 1
+    assert diagnoses["unattributed"] == 0
+    assert len(result.artifact_digest) == 64
+
+
+def test_accumulator_deduplicates_identical_evidence():
+    evidence = accumulated_evidence()
+
+    result = accumulate_canonical_production_run_environment_evidence(
+        (evidence, evidence)
+    )
+
+    assert result.input_evidence_count == 2
+    assert result.unique_evidence_count == 1
+    assert result.duplicate_evidence_count == 1
+    assert result.ready_evidence_count == 1
+    assert result.simulation_count == 2
+    assert result.unique_observed_artifact_count == 1
+    assert result.unique_observed_game_count == 2
+    assert result.low_total_signal_count == 1
+
+
+def test_accumulator_reports_no_ready_evidence():
+    result = accumulate_canonical_production_run_environment_evidence(
+        (
+            unavailable_accumulated_evidence(),
+            error_accumulated_evidence(),
+        )
+    )
+
+    assert result.status == "unavailable"
+    assert result.ready is False
+    assert result.blocker == "ready_evidence_empty"
+    assert result.ready_evidence_count == 0
+    assert result.unavailable_evidence_count == 1
+    assert result.error_evidence_count == 1
+    assert result.simulation_count == 0
+    assert result.low_total_signal_count == 0
+    assert result.low_total_signal_rate == 0.0
+    assert result.total_run_mean_delta_summary is None
+    assert dict(result.blocker_counts) == {
+        "production_execution_unavailable": 1
+    }
+
+
+def test_accumulator_is_order_invariant():
+    low = accumulated_evidence(
+        high=False,
+        digest_character="d",
+    )
+    high = accumulated_evidence(
+        high=True,
+        digest_character="e",
+    )
+
+    first = accumulate_canonical_production_run_environment_evidence(
+        (low, high)
+    )
+    second = accumulate_canonical_production_run_environment_evidence(
+        (high, low)
+    )
+
+    assert first == second
+    assert first.artifact_digest == second.artifact_digest
+
+
+def test_accumulator_diagnostics_are_measurement_only():
+    diagnostics = (
+        accumulate_canonical_production_run_environment_evidence(
+            (accumulated_evidence(),)
+        ).to_diagnostics()
+    )
+
+    assert diagnostics["input_evidence_consumed"] is True
+    assert diagnostics["duplicate_evidence_deduplicated"] is True
+    assert diagnostics["observed_artifacts_deduplicated"] is True
+    assert diagnostics["independent_trial_execution"] is False
+    assert diagnostics["database_accessed"] is False
+    assert diagnostics["network_accessed"] is False
+    assert diagnostics["external_fetch_performed"] is False
+    assert diagnostics["persistence_performed"] is False
+    assert diagnostics["measurement_only"] is True
+    assert diagnostics["causal_claim_permitted"] is False
+    assert diagnostics["calibration_parameters_selected"] is False
+    assert diagnostics["activation_permitted"] is False
+    assert diagnostics["production_authority_changed"] is False
+
+
+def test_accumulator_rejects_invalid_inputs():
+    with pytest.raises(
+        ValueError,
+        match="evidence_artifacts cannot be empty",
+    ):
+        accumulate_canonical_production_run_environment_evidence(())
+
+    with pytest.raises(
+        TypeError,
+        match="CanonicalProductionRunEnvironmentEvidence",
+    ):
+        accumulate_canonical_production_run_environment_evidence(
+            (object(),)
+        )
+
+
+def test_accumulator_rejects_invalid_artifact_contract():
+    valid = accumulate_canonical_production_run_environment_evidence(
+        (accumulated_evidence(),)
+    )
+
+    with pytest.raises(ValueError, match="artifact_digest"):
+        replace(valid, artifact_digest="invalid")
+
+    with pytest.raises(
+        ValueError,
+        match="low-total rate",
+    ):
+        replace(valid, low_total_signal_rate=0.0)
