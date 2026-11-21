@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import copy
+from collections import OrderedDict
+from threading import RLock
+import sys
 import hashlib
 import inspect
 import json
@@ -11,7 +14,38 @@ from typing import Any, Callable, Dict, Optional, Tuple
 from .performance import estimate_payload_bytes, record_cache_status, record_span, timing_span
 
 CacheRecord = Tuple[float, Any]
-_CACHE: Dict[str, CacheRecord] = {}
+_CACHE: OrderedDict[str, CacheRecord] = OrderedDict()
+_CACHE_SIZES: Dict[str, Tuple[int, Optional[int]]] = {}
+_CACHE_LOCK = RLock()
+# Resident Python-object estimates, not JSON size or a total process RSS limit.
+_CACHE_MAX_BYTES = max(0, int(os.getenv("SHARED_PAYLOAD_CACHE_MAX_BYTES", str(128 * 1024 * 1024))))
+_CACHE_MAX_ENTRIES = max(0, int(os.getenv("SHARED_PAYLOAD_CACHE_MAX_ENTRIES", "256")))
+_CACHE_MAX_AGE_SECONDS = max(0, int(os.getenv("SHARED_PAYLOAD_CACHE_MAX_AGE_SECONDS", "21600")))
+
+
+def _resident_bytes(value: Any, seen=None) -> int:
+    seen = set() if seen is None else seen
+    if id(value) in seen:
+        return 0
+    seen.add(id(value))
+    size = sys.getsizeof(value)
+    if isinstance(value, dict):
+        size += sum(_resident_bytes(k, seen) + _resident_bytes(v, seen) for k, v in value.items())
+    elif isinstance(value, (list, tuple, set, frozenset)):
+        size += sum(_resident_bytes(v, seen) for v in value)
+    return size
+
+
+def _remove(key: str):
+    _CACHE_SIZES.pop(key, None)
+    return _CACHE.pop(key, None)
+
+
+def cache_diagnostics() -> Dict[str, Any]:
+    with _CACHE_LOCK:
+        return {"entries": len(_CACHE), "estimated_resident_bytes": sum(v[0] for v in _CACHE_SIZES.values()),
+                "max_bytes": _CACHE_MAX_BYTES, "max_entries": _CACHE_MAX_ENTRIES}
+
 
 DEFAULT_TTLS = {
     "MODEL_PROJECTION_CACHE_TTL_SECONDS": 600,
@@ -96,7 +130,12 @@ def _explicit_matchup_snapshot_refresh(key: str) -> bool:
 
 
 def get_cache(key: str, ttl_seconds: int) -> Optional[Any]:
-    ttl_seconds = _effective_ttl(key, ttl_seconds)
+    with _CACHE_LOCK:
+        return _get_cache_locked(key, ttl_seconds)
+
+
+def _get_cache_locked(key: str, ttl_seconds: int) -> Optional[Any]:
+    ttl_seconds = min(_effective_ttl(key, ttl_seconds), _CACHE_MAX_AGE_SECONDS)
     with timing_span(
         "shared_payload_cache.get_cache",
         category="cache",
@@ -104,7 +143,7 @@ def get_cache(key: str, ttl_seconds: int) -> Optional[Any]:
         extra={"cache_key_prefix": str(key).split(":", 1)[0], "ttl_seconds": ttl_seconds},
     ):
         if _explicit_matchup_snapshot_refresh(key):
-            previous = _CACHE.pop(key, None)
+            previous = _remove(key)
             record_cache_status("MISS")
             record_span(
                 "shared_payload_cache.lookup",
@@ -126,12 +165,13 @@ def get_cache(key: str, ttl_seconds: int) -> Optional[Any]:
             return None
         created_at, value = record
         if ttl_seconds <= 0 or _now() - created_at > ttl_seconds:
-            _CACHE.pop(key, None)
+            _remove(key)
             record_cache_status("MISS")
             record_span("shared_payload_cache.lookup", category="cache", cache_status="EXPIRED", payload_bytes=estimate_payload_bytes(value), extra={"cache_key_prefix": str(key).split(":", 1)[0], "ttl_seconds": ttl_seconds})
             return None
         record_cache_status("HIT")
-        payload_bytes = estimate_payload_bytes(value)
+        payload_bytes = _CACHE_SIZES.get(key, (0, None))[1]
+        _CACHE.move_to_end(key)
         with timing_span("shared_payload_cache.deepcopy.get", category="cache", cache_status="HIT", extra={"cache_key_prefix": str(key).split(":", 1)[0], "payload_bytes": payload_bytes}):
             copied = copy.deepcopy(value)
         record_span("shared_payload_cache.lookup", category="cache", cache_status="HIT", payload_bytes=payload_bytes, extra={"cache_key_prefix": str(key).split(":", 1)[0], "ttl_seconds": ttl_seconds})
@@ -139,13 +179,31 @@ def get_cache(key: str, ttl_seconds: int) -> Optional[Any]:
 
 
 def set_cache(key: str, value: Any) -> Any:
+    # Measure once on insertion, never JSON-serialize the cached object on a hit.
+    resident_bytes = _resident_bytes(value)
     payload_bytes = estimate_payload_bytes(value)
-    with timing_span("shared_payload_cache.deepcopy.set_store", category="cache", extra={"cache_key_prefix": str(key).split(":", 1)[0], "payload_bytes": payload_bytes}):
-        stored = copy.deepcopy(value)
-    _CACHE[key] = (_now(), stored)
-    with timing_span("shared_payload_cache.deepcopy.set_return", category="cache", extra={"cache_key_prefix": str(key).split(":", 1)[0], "payload_bytes": payload_bytes}):
+    with _CACHE_LOCK:
+        now = _now()
+        for old_key, (created_at, _) in list(_CACHE.items()):
+            if now - created_at > _CACHE_MAX_AGE_SECONDS:
+                _remove(old_key)
+        _remove(key)
+        if (_CACHE_MAX_ENTRIES > 0 and _CACHE_MAX_AGE_SECONDS > 0
+                and resident_bytes <= _CACHE_MAX_BYTES):
+            while _CACHE and (len(_CACHE) >= _CACHE_MAX_ENTRIES or
+                    sum(size[0] for size in _CACHE_SIZES.values()) + resident_bytes > _CACHE_MAX_BYTES):
+                _remove(next(iter(_CACHE)))
+            with timing_span("shared_payload_cache.deepcopy.set_store", category="cache"):
+                _CACHE[key] = (now, copy.deepcopy(value))
+            _CACHE_SIZES[key] = (resident_bytes, payload_bytes)
+            status = "STORE"
+        else:
+            status = "BYPASS"
+    # Preserve caller isolation even when an oversized value is not retained.
+    with timing_span("shared_payload_cache.deepcopy.set_return", category="cache"):
         returned = copy.deepcopy(value)
-    record_span("shared_payload_cache.set_cache", category="cache", cache_status="STORE", payload_bytes=payload_bytes, extra={"cache_key_prefix": str(key).split(":", 1)[0]})
+    record_span("shared_payload_cache.set_cache", category="cache", cache_status=status,
+                payload_bytes=payload_bytes, extra={"cache_key_prefix": str(key).split(":", 1)[0]})
     return returned
 
 
@@ -172,11 +230,11 @@ def get_or_set(key: str, ttl_seconds: int, builder: Callable[[], Any]) -> Any:
 
 
 def clear_shared_payload_cache(prefix: Optional[str] = None) -> Dict[str, Any]:
-    if not prefix:
-        count = len(_CACHE)
-        _CACHE.clear()
-        return {"cleared": True, "entries": count}
-    keys = [key for key in _CACHE if key.startswith(prefix)]
-    for key in keys:
-        _CACHE.pop(key, None)
-    return {"cleared": True, "prefix": prefix, "entries": len(keys)}
+    with _CACHE_LOCK:
+        keys = [key for key in _CACHE if not prefix or key.startswith(prefix)]
+        for key in keys:
+            _remove(key)
+        result = {"cleared": True, "entries": len(keys)}
+        if prefix:
+            result["prefix"] = prefix
+        return result

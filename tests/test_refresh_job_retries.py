@@ -333,3 +333,37 @@ def test_target_isolation_is_preserved_after_exhausted_failure(
         run_refresh_job._run_fast_matchup_refresh()
 
     assert calls == ["production", "sandbox"]
+
+
+@pytest.mark.parametrize('sandbox_error', [
+    urllib.error.HTTPError('https://sandbox.test/health', 404, 'Not Found', {}, None),
+    TimeoutError('sandbox timed out'),
+])
+def test_failed_sandbox_does_not_block_successful_production(monkeypatch, sandbox_error):
+    calls = []
+    logs = []
+    monkeypatch.setattr(run_refresh_job, 'RUN_FAST_MATCHUP_REFRESH', True)
+    monkeypatch.setattr(run_refresh_job, '_run_hitting_matchups_refresh', lambda: None)
+    monkeypatch.setattr(run_refresh_job, '_load_targets', lambda: [
+        ('production', 'https://production.test'), ('sandbox', 'https://sandbox.test')])
+    monkeypatch.setattr(run_refresh_job, '_log', logs.append)
+    def run_target(label, url):
+        calls.append(label)
+        if label == 'sandbox':
+            raise sandbox_error
+    monkeypatch.setattr(run_refresh_job, '_run_target', run_target)
+    run_refresh_job._run_fast_matchup_refresh()
+    assert calls == ['production', 'sandbox']
+    assert any('WARNING: Optional sandbox refresh failed' in log for log in logs)
+
+
+@pytest.mark.parametrize('label', ['sandbox', 'legacy', 'production'])
+def test_sole_refresh_target_failure_remains_fatal(monkeypatch, label):
+    monkeypatch.setattr(run_refresh_job, 'RUN_FAST_MATCHUP_REFRESH', True)
+    monkeypatch.setattr(run_refresh_job, '_run_hitting_matchups_refresh', lambda: None)
+    monkeypatch.setattr(run_refresh_job, '_load_targets', lambda: [(label, 'https://example.test')])
+    def run_target(*args):
+        raise urllib.error.HTTPError('https://example.test/health', 404, 'Not Found', {}, None)
+    monkeypatch.setattr(run_refresh_job, '_run_target', run_target)
+    with pytest.raises(RuntimeError, match='One or more refresh targets failed'):
+        run_refresh_job._run_fast_matchup_refresh()

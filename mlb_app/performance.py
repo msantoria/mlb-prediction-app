@@ -240,9 +240,11 @@ def performance_snapshot() -> Dict[str, Any]:
         reverse=True,
     )[:50]
     slow_simulations = [span for span in slow_spans if span.get("category") == "simulation"][:20]
+    from .shared_payload_cache import cache_diagnostics
 
     return {
         "status": "ok",
+        "shared_payload_cache": cache_diagnostics(),
         "sample_count": len(samples),
         "sample_limit": _MAX_SAMPLES,
         "span_count": len(spans),

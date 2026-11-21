@@ -6,6 +6,7 @@ features. Post-start archives and missing source days are reported, not invented
 from collections import Counter
 from datetime import datetime, timedelta
 import json
+import logging
 from sqlalchemy import select
 from .database import SharedReportArtifact
 from .model_tracker import ModelTrackerSnapshot
@@ -18,35 +19,43 @@ from .predicts_status import save_status
 from .predicts_validation import utc, MODEL_VERSION
 from .predicts_decisions import enrich
 
+logger = logging.getLogger(__name__)
+
 
 def _candidates(session, day):
-    # All workspace versions: the current public GET intentionally hides older
-    # versions, but their stored pregame baselines remain legitimate evidence.
-    for artifact in session.scalars(select(SharedReportArtifact).where(
+    # Sort small metadata first. Loading/sorting ORM entities here retained all
+    # historical JSON versions simultaneously, even for already imported games.
+    candidates = []
+    for row in session.execute(select(SharedReportArtifact.id, SharedReportArtifact.generated_at,
+            SharedReportArtifact.updated_at).where(
             SharedReportArtifact.artifact_type == "model_projection_date",
             SharedReportArtifact.target_date == day)):
-        payload = artifact.payload_json
-        if not isinstance(payload, dict):
-            continue
-        captured = max(utc(artifact.generated_at), utc(artifact.updated_at or artifact.generated_at))
-        for game in payload.get("games") or []:
-            yield captured, f"shared_report_artifacts:{artifact.id}", {
-                **payload, "games": [game], "predicts_source_generated_at": captured.isoformat()+"Z"}
-    for row in session.scalars(select(ModelTrackerSnapshot).where(
-            ModelTrackerSnapshot.snapshot_date == day,
+        captured = max(utc(row.generated_at), utc(row.updated_at or row.generated_at))
+        candidates.append((captured, f"shared_report_artifacts:{row.id}", "artifact", row.id))
+    for row in session.execute(select(ModelTrackerSnapshot.id, ModelTrackerSnapshot.created_at,
+            ModelTrackerSnapshot.updated_at).where(ModelTrackerSnapshot.snapshot_date == day,
             ModelTrackerSnapshot.source == "model_projections")):
-        try:
-            raw = json.loads(row.raw_payload_json or "null")
-        except (TypeError, ValueError):
-            continue
-        if not isinstance(raw, dict) or not isinstance(raw.get("game"), dict):
-            continue
-        # Tracker upserts can replace the payload. created_at does not prove the
-        # currently stored prediction was available at that earlier time.
-        captured = max(utc(row.created_at), utc(row.updated_at))
-        yield captured, f"model_tracker_snapshots:{row.id}", {
-            "date": day.isoformat(), "games": [raw["game"]],
-            "predicts_source_generated_at": captured.isoformat()+"Z"}
+        candidates.append((max(utc(row.created_at), utc(row.updated_at)),
+                           f"model_tracker_snapshots:{row.id}", "tracker", row.id))
+    for captured, source, kind, row_id in sorted(candidates, reverse=True):
+        if kind == "artifact":
+            payload = session.scalar(select(SharedReportArtifact.payload_json).where(SharedReportArtifact.id == row_id))
+            if not isinstance(payload, dict):
+                continue
+            for game in payload.get("games") or []:
+                yield captured, source, {**payload, "games": [game],
+                    "predicts_source_generated_at": captured.isoformat()+"Z"}
+            del payload
+        else:
+            raw_json = session.scalar(select(ModelTrackerSnapshot.raw_payload_json).where(ModelTrackerSnapshot.id == row_id))
+            try:
+                raw = json.loads(raw_json or "null")
+            except (TypeError, ValueError):
+                continue
+            if isinstance(raw, dict) and isinstance(raw.get("game"), dict):
+                yield captured, source, {"date": day.isoformat(), "games": [raw["game"]],
+                    "predicts_source_generated_at": captured.isoformat()+"Z"}
+            del raw, raw_json
 
 
 def backfill_day(session, day, *, now=None, dry_run=False, hydrate_final=None):
@@ -54,9 +63,10 @@ def backfill_day(session, day, *, now=None, dry_run=False, hydrate_final=None):
     if day >= now.date():
         raise ValueError("Backfill accepts completed dates only; use refresh for today")
     existing = set(session.scalars(select(PredictsGame.game_pk).where(PredictsGame.target_date == day)))
-    candidates = sorted(_candidates(session, day), key=lambda item: (item[0], item[1]), reverse=True)
+    candidate_count = 0
     selected, skipped = {}, []
-    for captured, source, payload in candidates:
+    for captured, source, payload in _candidates(session, day):
+        candidate_count += 1
         game = payload["games"][0]
         pk = game.get("game_pk")
         if pk in existing or pk in selected:
@@ -107,7 +117,7 @@ def backfill_day(session, day, *, now=None, dry_run=False, hydrate_final=None):
     missing = {str(r.get("game_pk")) for r in skipped if r.get("game_pk") not in ids}
     report = {"date": day.isoformat(), "status": "dry_run" if dry_run else
         "partial" if missing or ids-finals else "complete" if ids else "no_saved_pregame_source",
-        "source_candidates": len(candidates), "eligible_games": len(selected),
+        "source_candidates": candidate_count, "eligible_games": len(selected),
         "eligible_players": sum(len(r) for _, _, r in selected.values()),
         "already_present_games": len(existing), "imported_games": counts["captured"],
         "imported_players": counts["players"], "graded_now": graded,
@@ -131,6 +141,7 @@ def backfill_range(session, start, end, *, now=None, dry_run=False, hydrate_fina
         try:
             report = backfill_day(session, day, now=now, dry_run=dry_run, hydrate_final=hydrate_final)
         except Exception as exc:
+            logger.exception("Predicts archive backfill failed for %s", day)
             session.rollback()
             report = {"date": day.isoformat(), "status": "source_error", "reason": type(exc).__name__}
             if not dry_run:
